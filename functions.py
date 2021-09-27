@@ -456,17 +456,20 @@ def count_kmers(infile,
 #mapping is the path to the table in parquet format that relates kmers to their positions in the image
 #we do not need to save the ascii dsk kmer counts to disk, but the program requires a file
 #so we will create a temporary file and delete it
-def make_image(infile, outfolder, mapping, threads = 1, overwrite = False):
-    start_time = time.time()
-    kmers = pd.read_parquet(mapping).set_index('kmer')
-    kmer_size = len(kmers.index[0])
-    
+def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
     Path(outfolder).mkdir(exist_ok = True)
-    outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.png'
+    outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.png'    
     
     if not overwrite and (outfolder/outfile).is_file():
         eprint('File exists. Skipping image for file:',str(infile))
         return(OrderedDict())
+
+    start_time = time.time()
+    kmer_size = len(kmers.index[0])
+    
+
+    
+
     
     
     with tempfile.TemporaryDirectory(prefix='dsk') as outdir:

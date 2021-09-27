@@ -105,6 +105,10 @@ if args.command == 'image':
     all_stats = defaultdict(OrderedDict)
     if Path('stats.csv').exists():
         all_stats.update(pd.read_csv('stats.csv', index_col = [0,1]).to_dict(orient = 'index'))
+        
+    ### the same kmer mapping will be used for all files, so we will use it as a global variable
+    map_path= Path(__file__).resolve().parent/'kmer_mapping'/(str(args.kmer_size) + 'mer_mapping.parquet')
+    kmer_mapping = pd.read_parquet(map_path).set_index('kmer')
 
     ### To be able to run samples in parallel using python, we will transform all the following code
     ### into a function
@@ -175,14 +179,14 @@ if args.command == 'image':
         #### STEP E - create images
         # the table mapping canonical kmers to pixels is stored as a feather file in
         # the same folder as this script
-        map_table = Path(__file__).resolve().parent/'kmer_mapping'/(str(args.kmer_size) + 'mer_mapping.parquet')
+        
         img_key = 'k' + str(args.kmer_size) + '_img_time'
         
         stats[(x['taxon'],x['sample'])][img_key] = 0
         for infile in kmer_counts_d.glob(x['taxon'] + '__' + x['sample'] + '*'):
             img_stats = make_image(infile = infile, 
                                    outfolder = images_d, 
-                                   mapping = map_table,
+                                   kmers = kmer_mapping,
                                    overwrite = args.overwrite,
                                    threads = cores_per_process)
             try:
@@ -198,7 +202,8 @@ if args.command == 'image':
 
     pool = multiprocessing.Pool(processes=int(args.n_threads))
     new_stats = OrderedDict()
-    for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = 1):
+    #for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = 1):
+    for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
         new_stats.update(stats)
         for k in new_stats.keys():
             all_stats[k].update(new_stats[k])
