@@ -11,6 +11,7 @@ import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
 import re, sys, gzip, time, humanfriendly, random, multiprocessing, math
 
 from scipy.stats import boxcox
+from scipy.stats import rankdata
 
 
 from fastai.torch_core import set_seed
@@ -420,7 +421,7 @@ def count_kmers(infile,
     start_time = time.time()
     
     Path(outfolder).mkdir(exist_ok = True)
-    outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.h5'
+    outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.fq.h5'
     outpath = outfolder/outfile
     
     if not overwrite and outpath.is_file():
@@ -460,6 +461,7 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
     Path(outfolder).mkdir(exist_ok = True)
     outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.png'    
     
+    
     if not overwrite and (outfolder/outfile).is_file():
         eprint('File exists. Skipping image for file:',str(infile))
         return(OrderedDict())
@@ -489,7 +491,7 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
         dsk_out = dsk_out.decode('UTF-8')
         counts = pd.read_csv(StringIO(dsk_out), sep=" ",names=['sequence','count'],index_col=0)
         counts = kmers.join(counts).groupby(['x','y']).agg(sum).reset_index()
-        counts.loc[:,'count'] = counts['count'].fillna(0) + 1 #data transformation will require positive numbers, so we add 1
+        counts.loc[:,'count'] = counts['count'].fillna(0)
         
         #Now we will place counts in an array, log the counts and rescale to use 8 bit integers
         array_width = kmers['x'].max()
@@ -497,13 +499,26 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
 
         
         #Now let's create the image:
-        kmer_array = np.empty(shape=[array_height, array_width])
-        kmer_array[:] = np.nan
-        arr= boxcox(counts['count'], -0.3)
-        kmer_array[array_height-counts['y'],counts['x']-1] = arr
-        kmer_array = np.uint8(255*(kmer_array - np.nanmin(kmer_array))/ (np.nanmax(kmer_array) - np.nanmin(kmer_array)))
+        #kmer_array = np.zeros(shape=[array_height, array_width])
+        #kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
+        #kmer_array = (kmer_array - np.min(kmer_array))/np.ptp(kmer_array) + 1 #data transformation will require positive numbers, so we add 0.1
+        #kmer_array = boxcox(counts['count'], -0.3)
+        #kmer_array = (kmer_array - np.min(kmer_array))/np.ptp(kmer_array)
+        
+        #kmer_array = np.zeros(shape=[array_height, array_width])
+        #kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
+        #kmer_array = rankdata(kmer_array, method = 'dense').reshape(kmer_array.shape)
+        #kmer_array = np.uint8(kmer_array/np.max(kmer_array) * 255)
+        
+        kmer_array = np.zeros(shape=[array_height, array_width])
+        kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
+        bins = np.quantile(kmer_array, np.arange(0,1,1/256))
+        kmer_array = np.digitize(kmer_array, bins, right = False) - 1
+        kmer_array = np.uint8(kmer_array)
+
+        #kmer_array = np.uint8(255*(kmer_array - np.nanmin(kmer_array))/ (np.nanmax(kmer_array) - np.nanmin(kmer_array)))
         img = Image.fromarray(kmer_array, mode = 'L')
-        #kmer_array = (kmer_array - np.nanmin(kmer_array))/ (np.nanmax(kmer_array) - np.nanmin(kmer_array))
+        
         #mapped_img = np.uint8(255*cm.turbo(kmer_array))
         #img = Image.fromarray(mapped_img)
       
