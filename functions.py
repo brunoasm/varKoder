@@ -432,7 +432,7 @@ def count_kmers(infile,
         for attempt in Retrying(stop = stop_after_attempt(5), wait = wait_random_exponential(multiplier=1, max=60)):
             with attempt:
                 subprocess.run(['dsk',
-                                '-nb-cores', str(1),
+                                '-nb-cores', str(threads),
                                 '-kmer-size', str(k),
                                 '-abundance-min', '1',
                                 '-abundance-min-threshold', '1',
@@ -483,7 +483,7 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
                 dsk_out = subprocess.check_output(['dsk2ascii',
                                                    '-c',
                                                    '-file', str(infile),
-                                                   '-nb-cores', str(1),
+                                                   '-nb-cores', str(threads),
                                                    '-out', str(Path(outdir)/'dsk.txt'),
                                                    '-verbose', '0'
                                                   ],

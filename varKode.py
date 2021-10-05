@@ -10,7 +10,7 @@ from functions import *
 import argparse
 
 # create top-level parser with common arguments
-main_parser = argparse.ArgumentParser(description = 'This program can be used to train or query a neural network to classify species based on barcode images produced from kmer frequencies in raw fastq files',
+main_parser = argparse.ArgumentParser(description = 'varKode: using neural networks for molecular barcoding based on variation in whole-genome kmer frequencies',
                                       add_help = True,
                                       formatter_class = argparse.ArgumentDefaultsHelpFormatter
                                      )
@@ -84,6 +84,7 @@ except TypeError:
 ###################
 
 if args.command == 'image':
+    eprint('Kmer size:',str(args.kmer_size))
     eprint('Processing reads and preparing images')
     eprint('Reading input data')
 
@@ -201,12 +202,16 @@ if args.command == 'image':
         return(stats)
 
     pool = multiprocessing.Pool(processes=int(args.n_threads))
-    new_stats = OrderedDict()
+    
     #for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = 1):
     for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
-        new_stats.update(stats)
-        for k in new_stats.keys():
-            all_stats[k].update(new_stats[k])
+        try:
+            all_stats.update(pd.read_csv('stats.csv', index_col = [0,1]).to_dict(orient = 'index'))
+        except:
+            pass
+        
+        for k in stats.keys():
+            all_stats[k].update(stats[k])
         (pd.DataFrame.from_dict(all_stats, orient = 'index').
           rename_axis(index=['taxon', 'sample']).
           to_csv('stats.csv')
