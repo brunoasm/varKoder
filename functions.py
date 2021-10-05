@@ -512,9 +512,11 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
         
         kmer_array = np.zeros(shape=[array_height, array_width])
         kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
-        bins = np.quantile(kmer_array, np.arange(0,1,1/256))
+        #bins = np.quantile(kmer_array, np.arange(0,1,1/256))
+        bins = np.unique(np.quantile(kmer_array, np.arange(0,1,1/256)))
         kmer_array = np.digitize(kmer_array, bins, right = False) - 1
-        kmer_array = np.uint8(kmer_array)
+        kmer_array = np.uint8((kmer_array-np.min(kmer_array))/np.ptp(kmer_array)*255)
+        #kmer_array = np.uint8(kmer_array)
 
         #kmer_array = np.uint8(255*(kmer_array - np.nanmin(kmer_array))/ (np.nanmax(kmer_array) - np.nanmin(kmer_array)))
         img = Image.fromarray(kmer_array, mode = 'L')

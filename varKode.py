@@ -60,8 +60,8 @@ parser_query.add_argument('-b', '--bp' ,  help = 'Number of post-cleaning basepa
 # execution
 args = main_parser.parse_args()
 
-if args.kmer_size not in (5,6,7,8):
-    raise Exception('kmer size must be between 5 and 8')
+if args.kmer_size not in range(5, 9 + 1):
+    raise Exception('kmer size must be between 5 and 9')
 
 # if no directory provided for intermediate results, create a temporary one 
 #  that will be deleted at the end of the program
