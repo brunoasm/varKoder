@@ -499,33 +499,15 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
 
         
         #Now let's create the image:
-        #kmer_array = np.zeros(shape=[array_height, array_width])
-        #kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
-        #kmer_array = (kmer_array - np.min(kmer_array))/np.ptp(kmer_array) + 1 #data transformation will require positive numbers, so we add 0.1
-        #kmer_array = boxcox(counts['count'], -0.3)
-        #kmer_array = (kmer_array - np.min(kmer_array))/np.ptp(kmer_array)
-        
-        #kmer_array = np.zeros(shape=[array_height, array_width])
-        #kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
-        #kmer_array = rankdata(kmer_array, method = 'dense').reshape(kmer_array.shape)
-        #kmer_array = np.uint8(kmer_array/np.max(kmer_array) * 255)
-        
         kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[array_height-counts['y'],counts['x']-1] = counts['count']
-        #bins = np.quantile(kmer_array, np.arange(0,1,1/256))
-        bins = np.unique(np.quantile(kmer_array, np.arange(0,1,1/256)))
+        kmer_array[array_height-counts['y'],counts['x']-1] = counts['count'] + 1 #we do +1 so empty cells are different from zero-count 
+        bins = np.quantile(kmer_array, np.arange(0,1,1/256))
         kmer_array = np.digitize(kmer_array, bins, right = False) - 1
-        kmer_array = np.uint8((kmer_array-np.min(kmer_array))/np.ptp(kmer_array)*255)
-        #kmer_array = np.uint8(kmer_array)
-
-        #kmer_array = np.uint8(255*(kmer_array - np.nanmin(kmer_array))/ (np.nanmax(kmer_array) - np.nanmin(kmer_array)))
+        kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode = 'L')
         
-        #mapped_img = np.uint8(255*cm.turbo(kmer_array))
-        #img = Image.fromarray(mapped_img)
       
         #finally, save the image
-        
         img.save(Path(outfolder)/outfile, optimize=True)
         
     done_time = time.time()
