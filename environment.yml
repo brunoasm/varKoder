@@ -1,0 +1,26 @@
+name: barcoding
+
+channels:
+  - fastchan
+  - anaconda
+  - bioconda
+  - conda-forge
+  - defaults
+  - agbiome
+
+dependencies:
+  - python==3.9.5
+  - fastai==2.3.1
+  - pytorch==1.8.1
+  - cudatoolkit==11.1.1
+  - pillow==8.2.0
+  - pigz==2.6
+  - dsk==2.3.3
+  - bbtools==37.62
+  - fastp==0.20.1
+  - pyarrow==4.0.0
+  - pandas==1.2.4
+  - humanfriendly==9.2
+  - jupyterlab
+  - ipywidgets==7.6.3
+  - tenacity==8.0.1
