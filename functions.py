@@ -210,47 +210,45 @@ def clean_reads(infiles,
                         tmp_lines = infile.readlines(BUF_SIZE)
 
 
-            # since fastp always writes a report file, we will redirect them to a temporary folder
-            # that will be deleted
-            with tempfile.TemporaryDirectory(prefix = 'fastp') as fastp_reports:
-                # now we can run fastp to remove adapters and merge paired reads
-                if (Path(work_dir)/(basename + '_dedup_paired.fq')).is_file():
-                    # let's build the call to the subprocess. This is the common part
-                    # for some reason, fastp fails with interleaved input unless it is provided from stdin
-                    # for this reason, we will make a pipe
-                    command = ['fastp',
-                               '--stdin',
-                               '--interleaved_in',
-                               '--disable_quality_filtering',
-                               '--disable_length_filtering',
-                               '--thread', str(threads),
-                               '--html', str(Path(fastp_reports)/'fastp.html'),
-                               '--json', str(Path(fastp_reports)/'fastp.json'),
-                               '--stdout'
-                               ]
+            
+            # now we can run fastp to remove adapters and merge paired reads
+            if (Path(work_dir)/(basename + '_dedup_paired.fq')).is_file():
+                # let's build the call to the subprocess. This is the common part
+                # for some reason, fastp fails with interleaved input unless it is provided from stdin
+                # for this reason, we will make a pipe
+                command = ['fastp',
+                           '--stdin',
+                           '--interleaved_in',
+                           '--disable_quality_filtering',
+                           '--disable_length_filtering',
+                           '--thread', str(threads),
+                           '--html', str(Path(work_dir)/(basename + '_fastp_paired.html')),
+                           '--json', str(Path(work_dir)/(basename + '_fastp_paired.json')),
+                           '--stdout'
+                           ]
 
-                    # add arguments depending on adapter option
-                    if cut_adapters:
-                        command.extend(['--detect_adapter_for_pe'])
-                    else:
-                        command.extend(['--disable_adapter_trimming'])
+                # add arguments depending on adapter option
+                if cut_adapters:
+                    command.extend(['--detect_adapter_for_pe'])
+                else:
+                    command.extend(['--disable_adapter_trimming'])
 
-                    # add arguments depending on merge option
-                    if merge_reads:
-                        command.extend(['--merge',
-                                        '--include_unmerged'])
-                    else:
-                        command.extend(['--stdout'])
+                # add arguments depending on merge option
+                if merge_reads:
+                    command.extend(['--merge',
+                                    '--include_unmerged'])
+                else:
+                    command.extend(['--stdout'])
 
-                    with open(Path(work_dir)/(basename + '_clean_paired.fq'), 'wb') as outf:
-                        cat = subprocess.Popen(['cat', str(Path(work_dir)/(basename + '_dedup_paired.fq'))],
-                                              stdout = subprocess.PIPE)
-                        subprocess.run(command,
-                                       check= True,
-                                       stdin = cat.stdout,
-                                       stderr = subprocess.DEVNULL,
-                                       stdout= outf)
-                        (Path(work_dir)/(basename + '_dedup_paired.fq')).unlink(missing_ok = True)
+                with open(Path(work_dir)/(basename + '_clean_paired.fq'), 'wb') as outf:
+                    cat = subprocess.Popen(['cat', str(Path(work_dir)/(basename + '_dedup_paired.fq'))],
+                                          stdout = subprocess.PIPE)
+                    subprocess.run(command,
+                                   check= True,
+                                   stdin = cat.stdout,
+                                   stderr = subprocess.DEVNULL,
+                                   stdout= outf)
+                    (Path(work_dir)/(basename + '_dedup_paired.fq')).unlink(missing_ok = True)
                         
 
 
@@ -259,8 +257,8 @@ def clean_reads(infiles,
                     command = ['fastp',
                                '-i', str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
                                '-o', str(Path(work_dir)/(basename + '_clean_unpaired.fq')),
-                               '--html', str(Path(fastp_reports)/'fastp.html'),
-                               '--json', str(Path(fastp_reports)/'fastp.json'),
+                               '--html', str(Path(work_dir)/(basename + '_fastp_unpaired.html')),
+                               '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
                                '--disable_quality_filtering',
                                '--disable_length_filtering',
                                '--thread', str(threads)]
@@ -296,6 +294,10 @@ def clean_reads(infiles,
                                stdout = outf,
                                stderr = subprocess.DEVNULL,
                                check = True)
+                
+            #copy fastp reports
+            for fastp_f in Path(work_dir).glob('*fastp*'):
+                shutil.copy(fastp_f,outpath.parent/str(fastp_f.name))
 
 
             # stats: numbers of basepairs in each step (we recorded initial bp already when concatenating)
