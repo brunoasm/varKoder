@@ -120,7 +120,7 @@ if args.command == 'image':
         x = it_row[1]
         stats = defaultdict(OrderedDict)
 
-        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + '__' + x['sample'] + '.fq.gz')
+        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + '+' + x['sample'] + '.fq.gz')
         split_reads_d = inter_dir/'split_fastqs'
         kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
         images_d = Path(args.outdir)
@@ -143,9 +143,9 @@ if args.command == 'image':
         stats[(x['taxon'],x['sample'])].update(clean_stats)
 
         #### STEP C - split clean reads into files with different number of reads
-        eprint('Splitting fastqs for', x['taxon'] + '__' + x['sample'])
+        eprint('Splitting fastqs for', x['taxon'] + '+' + x['sample'])
         split_stats = split_fastq(infile = clean_reads_f,
-                                  outprefix = (x['taxon'] + '__' + x['sample']),
+                                  outprefix = (x['taxon'] + '+' + x['sample']),
                                   outfolder = split_reads_d,
                                   min_bp = humanfriendly.parse_size(args.min_bp), 
                                   max_bp = maxbp, 
@@ -157,11 +157,11 @@ if args.command == 'image':
 
 
         #### STEP D - count kmers 
-        eprint('Creating images for', x['taxon'] + '__' + x['sample'])
+        eprint('Creating images for', x['taxon'] + '+' + x['sample'])
         stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
         
         kmer_key = str(args.kmer_size) + 'mer_counting_time'
-        for infile in split_reads_d.glob(x['taxon'] + '__' + x['sample'] + '*'):
+        for infile in split_reads_d.glob(x['taxon'] + '+' + x['sample'] + '*'):
             count_stats = count_kmers(infile = infile,
                                       outfolder = kmer_counts_d, 
                                       threads = cores_per_process,
@@ -184,7 +184,7 @@ if args.command == 'image':
         img_key = 'k' + str(args.kmer_size) + '_img_time'
         
         stats[(x['taxon'],x['sample'])][img_key] = 0
-        for infile in kmer_counts_d.glob(x['taxon'] + '__' + x['sample'] + '*'):
+        for infile in kmer_counts_d.glob(x['taxon'] + '+' + x['sample'] + '*'):
             img_stats = make_image(infile = infile, 
                                    outfolder = images_d, 
                                    kmers = kmer_mapping,
@@ -198,7 +198,7 @@ if args.command == 'image':
                 else: 
                     raise(e)
 
-        eprint('Images done for', x['taxon'] + '__' + x['sample'])
+        eprint('Images done for', x['taxon'] + '+' + x['sample'])
         return(stats)
 
     pool = multiprocessing.Pool(processes=int(args.n_threads))

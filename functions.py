@@ -221,6 +221,7 @@ def clean_reads(infiles,
                            '--interleaved_in',
                            '--disable_quality_filtering',
                            '--disable_length_filtering',
+                           '--trim_poly_g',
                            '--thread', str(threads),
                            '--html', str(Path(work_dir)/(basename + '_fastp_paired.html')),
                            '--json', str(Path(work_dir)/(basename + '_fastp_paired.json')),
@@ -261,6 +262,7 @@ def clean_reads(infiles,
                                '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
                                '--disable_quality_filtering',
                                '--disable_length_filtering',
+                               '--trim_poly_g',
                                '--thread', str(threads)]
 
                     if not cut_adapters:
