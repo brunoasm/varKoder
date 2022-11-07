@@ -2,11 +2,9 @@
 
 ##TO DO: implement option to overwrite or keep existing intermediate files
 
-#import functions
+
+#import functions and libraries
 from functions import *
-
-
-#imports for main program only
 import argparse
 
 # create top-level parser with common arguments
@@ -19,8 +17,6 @@ subparsers = main_parser.add_subparsers(required = True, dest = 'command')
 parent_parser = argparse.ArgumentParser(add_help = False, 
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parent_parser.add_argument('-d', '--seed', help = 'random seed.')
-parent_parser.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
-parent_parser.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
 parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
 
 
@@ -29,6 +25,8 @@ parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Preprocess reads and prepare images for CNN training.')
 parser_img.add_argument('input', help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
+parser_img.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
+parser_img.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
 parser_img.add_argument('-o','--outdir', help = 'path to folder where to write final images.', default = 'images')
 parser_img.add_argument('-i', '--int-folder', help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
 parser_img.add_argument('-m', '--min-bp' ,  type = str, help = 'minimum number of post-cleaning basepairs to make an image. Remaining reads below this threshold will be discarded', default = '10M')
@@ -42,8 +40,49 @@ parser_img.add_argument('-k', '--kmer-size', help = 'size of kmers to count (5â€
 parser_train = subparsers.add_parser('train', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Train a CNN based on provided images.')
-parser_train.add_argument('input', help = 'path to the folder with input images')
-parser_train.add_argument('outdir', help = 'path to the folder where trained model will be stored')
+parser_train.add_argument('input', help = 'path to the folder with input images.')
+parser_train.add_argument('outdir', help = 'path to the folder where trained model will be stored.')
+parser_train.add_argument('-v','--validation-set',
+                          nargs = '+',
+                          help = 'space-separated list of sample IDs to be included in the validation set. Automatically turns off generation of a random validation set.'
+                         ) 
+parser_train.add_argument('-f','--validation-set-fraction',
+                          help = 'fraction of samples within each species to be held as a random validation set.',
+                          type = float,
+                          default = 0.2
+                         ) 
+parser_train.add_argument('-m','--pretrained-model', 
+                          help = 'pickle file with optional pretrained model to update with new images.'
+                         )
+parser_train.add_argument('-e','--epochs', 
+                          help = 'number of epochs to train.',
+                          default = 20
+                         )
+parser_train.add_argument('-r','--architecture', 
+                          help = 'model architecture. See https://github.com/rwightman/pytorch-image-models for possible options.',
+                          default = 'ig_resnext101_32x8d'
+                         )
+parser_train.add_argument('-X','--mix-augmentation', 
+                          help = 'apply MixUp or CutMix augmentation. See https://docs.fast.ai/callback.mixup.html',
+                          choices=['CutMix', 'MixUp', 'None'],
+                          default = 'CutMix'
+                         )
+parser_train.add_argument('-s','--label-smoothing', 
+                          help = 'turn on Label Smoothing. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
+                          action='store_true',
+                          default = False
+                         )
+parser_train.add_argument('-l','--max-lighting', 
+                          help = 'maximum scale of changing brightness. See https://docs.fast.ai/vision.augment.html#aug_transforms',
+                          type=float, 
+                          default = 0.5
+                         )
+parser_train.add_argument('-p','--p-lighting', 
+                          help = 'probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms',
+                          type=float, 
+                          default = 0.75
+                         )
+
 
 
 #create parser for query command
@@ -53,9 +92,11 @@ parser_query = subparsers.add_parser('query', parents = [parent_parser],
 
 parser_query.add_argument('model', help = 'pickle file with fitted neural network.')
 parser_query.add_argument('input', help = 'path to one or more fastq files to be queried.', nargs = '+')
+parser_query.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
+parser_query.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
 parser_query.add_argument('-a', '--no-adapter', help = 'do not attempt to remove adapters from raw reads.', action='store_true')
 parser_query.add_argument('-r', '--no-merge', help = 'do not attempt to merge paired reads.', action='store_true')
-parser_query.add_argument('-b', '--bp' ,  help = 'Number of post-cleaning basepairs to use for making image.')
+parser_query.add_argument('-b', '--bp' ,  help = 'Number of post-cleaning basepairs to use for making image. If not provided, all data will be used.')
 
 # execution
 args = main_parser.parse_args()
@@ -71,7 +112,7 @@ except TypeError:
     inter_dir = Path(tempfile.mkdtemp(prefix='barcoding_'))
 
 
-# set random seed if provided
+# set random seed
 try:
     set_seed(args.seed)
     np_rng = np.random.default_rng(seed)
@@ -222,14 +263,6 @@ if args.command == 'image':
     #    all_stats.update(stats)
 
 
-
-###################
-# query command
-###################
-
-elif args.command == 'query':
-    pass
-
 ###################
 # train command
 ###################
@@ -237,6 +270,16 @@ elif args.command == 'query':
 
 elif ags.command == 'train':
     pass
+
+    
+    
+###################
+# query command
+###################
+
+elif args.command == 'query':
+    pass
+
 
 
 
