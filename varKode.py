@@ -40,6 +40,9 @@ parser_img.add_argument('-c', '--cpus-per-thread',
                         type = int)
 parser_img.add_argument('-o','--outdir', 
                         help = 'path to folder where to write final images.', default = 'images')
+parser_img.add_argument('-f', '--stats-file', 
+                        help = 'path to file where sample statistics will be saved.', 
+                        default ='stats.csv')
 parser_img.add_argument('-i', '--int-folder', 
                         help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
 parser_img.add_argument('-m', '--min-bp',  
@@ -79,12 +82,12 @@ parser_train.add_argument('-m','--pretrained-model',
                           help = 'pickle file with optional pretrained model to update with new images.'
                          )
 parser_train.add_argument('-e','--epochs', 
-                          help = 'number of epochs to train.',
+                          help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
                           default = 20
                          )
 parser_train.add_argument('-z','--freeze-epochs', 
-                          help = 'number of freeze epochs to train. Recommended if using a pretrained model.',
+                          help = 'number of freeze epochs to train. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
                           default = 0
                          )
@@ -120,14 +123,42 @@ parser_query = subparsers.add_parser('query', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Query a fastq file agains a trained neural network. The program will automatically deduplicate, merge overlapping reads, clean adapters, count k-mers, produce images and query this image. The response is written to stdout in json format')
 
-parser_query.add_argument('model', help = 'pickle file with fitted neural network.')
-parser_query.add_argument('input', help = 'path to one or more fastq files to be queried.', nargs = '+')
-parser_query.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
-parser_query.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
-parser_query.add_argument('-i', '--int-folder', help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
-parser_query.add_argument('-a', '--no-adapter', help = 'do not attempt to remove adapters from raw reads.', action='store_true')
-parser_query.add_argument('-r', '--no-merge', help = 'do not attempt to merge paired reads.', action='store_true')
-parser_query.add_argument('-b', '--bp' ,  help = 'Number of post-cleaning basepairs to use for making image. If not provided, all data will be used.')
+parser_query.add_argument('model', 
+                          help = 'pickle file with exported trained model.')
+parser_query.add_argument('input', 
+                          help = 'path to folder with fastq files to be queried.')
+parser_query.add_argument('outdir', 
+                          help = 'path to the folder where results will be saved.')
+parser_query.add_argument('-k', '--kmer-size', 
+                        help = 'size of kmers to count (5–8)', 
+                        type = int, 
+                        default = 7)
+parser_query.add_argument('-n', '--n-threads', 
+                          help = 'number of samples to preprocess in parallel.', 
+                          default = 2, 
+                          type = int)
+parser_query.add_argument('-c', '--cpus-per-thread', 
+                          help = 'number of cpus to use for preprocessing each sample.', 
+                          default = 2, 
+                          type = int)
+parser_query.add_argument('-f', '--stats-file', 
+                        help = 'path to file where sample statistics will be saved.', 
+                        default ='stats.csv')
+parser_query.add_argument('-i', '--int-folder', 
+                          help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used and deleted when done.')
+parser_query.add_argument('-m','--keep-images', 
+                          help = 'whether barcode images should be saved or discarded.',
+                          action='store_true'
+                         )
+parser_query.add_argument('-a', '--no-adapter', 
+                          help = 'do not attempt to remove adapters from raw reads.', 
+                          action='store_true')
+parser_query.add_argument('-r', '--no-merge', 
+                          help = 'do not attempt to merge paired reads.', 
+                          action='store_true')
+parser_query.add_argument('-M', '--max-bp' ,  
+                          help = 'Number of post-cleaning basepairs to use for making image. If not provided, all data will be used.'
+                         )
 
 # execution
 args = main_parser.parse_args()
@@ -141,11 +172,13 @@ except TypeError:
     np_rng = np.random.default_rng()
 
 
-###################
-# image command
-###################
+##################################################
+# preparing images for commands 'image' or 'query'
+##################################################
 
-if args.command == 'image':
+if args.command == 'image' or args.command == 'query':
+          
+    #check if kmer size provided is supported
     if args.kmer_size not in range(5, 9 + 1):
         raise Exception('kmer size must be between 5 and 9')
 
@@ -155,6 +188,16 @@ if args.command == 'image':
         inter_dir = Path(args.int_folder)
     except TypeError:
         inter_dir = Path(tempfile.mkdtemp(prefix='barcoding_'))
+        
+    # set directory to save images
+    if args.command == 'image':
+        images_d = Path(args.outdir)
+    elif args.command == 'query':
+        if args.keep_images:
+            images_d = Path(args.outdir)/'images'
+            images_d.mkdir(parents=True, exist_ok=True)
+        else:
+            images_d = inter_dir/'images'
     
     eprint('Kmer size:',str(args.kmer_size))
     eprint('Processing reads and preparing images')
@@ -163,7 +206,7 @@ if args.command == 'image':
 
     ##### STEP A - parse input and create a table relating reads files to samples and taxa
     inpath = Path(args.input)
-    files_table = process_input(inpath)
+    files_table = process_input(inpath, is_query = args.command == 'query')
  
     condensed_files = (files_table.
                        groupby(['taxon','sample']).
@@ -176,8 +219,9 @@ if args.command == 'image':
     ### If a table already exists, read it
     ### If not, start from scratch
     all_stats = defaultdict(OrderedDict)
-    if Path('stats.csv').exists():
-        all_stats.update(pd.read_csv('stats.csv', index_col = [0,1]).to_dict(orient = 'index'))
+    stats_path = Path(args.stats_file)
+    if stats_path.exists():
+        all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
         
     ### the same kmer mapping will be used for all files, so we will use it as a global variable
     map_path= Path(__file__).resolve().parent/'kmer_mapping'/(str(args.kmer_size) + 'mer_mapping.parquet')
@@ -195,7 +239,7 @@ if args.command == 'image':
         clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + '+' + x['sample'] + '.fq.gz')
         split_reads_d = inter_dir/'split_fastqs'
         kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
-        images_d = Path(args.outdir)
+
 
         #### STEP B - clean reads and merge all files for each sample
         try:
@@ -216,13 +260,22 @@ if args.command == 'image':
 
         #### STEP C - split clean reads into files with different number of reads
         eprint('Splitting fastqs for', x['taxon'] + '+' + x['sample'])
-        split_stats = split_fastq(infile = clean_reads_f,
-                                  outprefix = (x['taxon'] + '+' + x['sample']),
-                                  outfolder = split_reads_d,
-                                  min_bp = humanfriendly.parse_size(args.min_bp), 
-                                  max_bp = maxbp, 
-                                  overwrite = args.overwrite,
-                                  seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
+        if args.command == 'image':
+            split_stats = split_fastq(infile = clean_reads_f,
+                                      outprefix = (x['taxon'] + '+' + x['sample']),
+                                      outfolder = split_reads_d,
+                                      min_bp = humanfriendly.parse_size(args.min_bp), 
+                                      max_bp = maxbp, 
+                                      overwrite = args.overwrite,
+                                      seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
+        elif args.command == 'query':
+             split_stats = split_fastq(infile = clean_reads_f,
+                                      outprefix = (x['taxon'] + '+' + x['sample']),
+                                      outfolder = split_reads_d,
+                                      is_query = True,
+                                      max_bp = maxbp, 
+                                      overwrite = args.overwrite,
+                                      seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))           
 
         stats[(x['taxon'],x['sample'])].update(split_stats)
 
@@ -278,7 +331,7 @@ if args.command == 'image':
     #for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = 1):
     for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
         try:
-            all_stats.update(pd.read_csv('stats.csv', index_col = [0,1]).to_dict(orient = 'index'))
+            all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
         except:
             pass
         
@@ -286,12 +339,23 @@ if args.command == 'image':
             all_stats[k].update(stats[k])
         (pd.DataFrame.from_dict(all_stats, orient = 'index').
           rename_axis(index=['taxon', 'sample']).
-          to_csv('stats.csv')
+          to_csv(stats_path)
         )
     pool.close()
+    
+    eprint('All images done, saved in',str(images_d))
 
     #for stats in res:
     #    all_stats.update(stats)
+    
+    
+###################
+# query command
+###################
+
+elif args.command == 'query':
+    pass
+
 
 
 ###################
@@ -303,7 +367,7 @@ elif args.command == 'train':
     
     #1 let's create a data table for all images.
     image_files = list()
-    for f in Path(args.input).iterdir():
+    for f in Path(args.input).rglob('*'):
         if str(f).endswith('png'):
             image_files.append({'taxon':f.name.split('+')[0],
                                 'sample':f.name.split('+')[1].split('_')[0],
@@ -312,7 +376,7 @@ elif args.command == 'train':
                                })
     image_files = pd.DataFrame(image_files)
     
-    #2 let's add a column to mark images in the validation set, if the user defined them
+    #2 let's add a column to mark images in the validation set according to input options
     if args.validation_set: #if a specific validation set was defined, let's use it
         validation_samples = args.validation_set.split(',')
     else:
@@ -397,18 +461,6 @@ elif args.command == 'train':
     eprint('Model, labels, and data table saved to directory', str(outdir))
         
     
-
-    
-    
-
-    
-    
-###################
-# query command
-###################
-
-elif args.command == 'query':
-    pass
 
 
 
