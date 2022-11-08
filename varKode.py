@@ -24,27 +24,51 @@ parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing resul
 parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Preprocess reads and prepare images for CNN training.')
-parser_img.add_argument('input', help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
-parser_img.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
-parser_img.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
-parser_img.add_argument('-o','--outdir', help = 'path to folder where to write final images.', default = 'images')
-parser_img.add_argument('-i', '--int-folder', help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
-parser_img.add_argument('-m', '--min-bp' ,  type = str, help = 'minimum number of post-cleaning basepairs to make an image. Remaining reads below this threshold will be discarded', default = '10M')
-parser_img.add_argument('-M', '--max-bp' ,  help = 'maximum number of post-cleaning basepairs to include.')
-parser_img.add_argument('-a', '--no-adapter', help = 'do not attempt to remove adapters from raw reads.', action='store_true')
-parser_img.add_argument('-r', '--no-merge', help = 'do not attempt to merge paired reads.', action='store_true')
-parser_img.add_argument('-X', '--no-image', help = 'clean and split raw reads, but do not generate image.', action='store_true')
-parser_img.add_argument('-k', '--kmer-size', help = 'size of kmers to count (5–8)', type = int, default = 7)
+parser_img.add_argument('input', 
+                        help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
+parser_img.add_argument('-k', '--kmer-size', 
+                        help = 'size of kmers to count (5–8)', 
+                        type = int, 
+                        default = 7)
+parser_img.add_argument('-n', '--n-threads', 
+                        help = 'number of samples to preprocess in parallel.', 
+                        default = 2, 
+                        type = int)
+parser_img.add_argument('-c', '--cpus-per-thread', 
+                        help = 'number of cpus to use for preprocessing each sample.', 
+                        default = 2, 
+                        type = int)
+parser_img.add_argument('-o','--outdir', 
+                        help = 'path to folder where to write final images.', default = 'images')
+parser_img.add_argument('-i', '--int-folder', 
+                        help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
+parser_img.add_argument('-m', '--min-bp',  
+                        type = str, 
+                        help = 'minimum number of post-cleaning basepairs to make an image. Samples below this threshold will be discarded', 
+                        default = '10M')
+parser_img.add_argument('-M', '--max-bp' ,  
+                        help = 'maximum number of post-cleaning basepairs to make an image.')
+parser_img.add_argument('-a', '--no-adapter', 
+                        help = 'do not attempt to remove adapters from raw reads.', 
+                        action='store_true')
+parser_img.add_argument('-r', '--no-merge', 
+                        help = 'do not attempt to merge paired reads.', 
+                        action='store_true')
+parser_img.add_argument('-X', '--no-image', 
+                        help = 'clean and split raw reads, but do not generate image.', 
+                        action='store_true')
+
 
 # create parser for train command
 parser_train = subparsers.add_parser('train', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Train a CNN based on provided images.')
-parser_train.add_argument('input', help = 'path to the folder with input images.')
-parser_train.add_argument('outdir', help = 'path to the folder where trained model will be stored.')
+parser_train.add_argument('input', 
+                          help = 'path to the folder with input images.')
+parser_train.add_argument('outdir', 
+                          help = 'path to the folder where trained model will be stored.')
 parser_train.add_argument('-v','--validation-set',
-                          nargs = '+',
-                          help = 'space-separated list of sample IDs to be included in the validation set. Automatically turns off generation of a random validation set.'
+                          help = 'comma-separated list of sample IDs to be included in the validation set. Automatically turns off generation of a random validation set.'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
                           help = 'fraction of samples within each species to be held as a random validation set.',
@@ -56,7 +80,13 @@ parser_train.add_argument('-m','--pretrained-model',
                          )
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train.',
+                          type = int,
                           default = 20
+                         )
+parser_train.add_argument('-z','--freeze-epochs', 
+                          help = 'number of freeze epochs to train. Recommended if using a pretrained model.',
+                          type = int,
+                          default = 0
                          )
 parser_train.add_argument('-r','--architecture', 
                           help = 'model architecture. See https://github.com/rwightman/pytorch-image-models for possible options.',
@@ -94,22 +124,13 @@ parser_query.add_argument('model', help = 'pickle file with fitted neural networ
 parser_query.add_argument('input', help = 'path to one or more fastq files to be queried.', nargs = '+')
 parser_query.add_argument('-n', '--n-threads', help = 'number of samples to preprocess in parallel.', default = 2, type = int)
 parser_query.add_argument('-c', '--cpus-per-thread', help = 'number of cpus to use for preprocessing each sample.', default = 2, type = int)
+parser_query.add_argument('-i', '--int-folder', help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used.')
 parser_query.add_argument('-a', '--no-adapter', help = 'do not attempt to remove adapters from raw reads.', action='store_true')
 parser_query.add_argument('-r', '--no-merge', help = 'do not attempt to merge paired reads.', action='store_true')
 parser_query.add_argument('-b', '--bp' ,  help = 'Number of post-cleaning basepairs to use for making image. If not provided, all data will be used.')
 
 # execution
 args = main_parser.parse_args()
-
-if args.kmer_size not in range(5, 9 + 1):
-    raise Exception('kmer size must be between 5 and 9')
-
-# if no directory provided for intermediate results, create a temporary one 
-#  that will be deleted at the end of the program
-try:
-    inter_dir = Path(args.int_folder)
-except TypeError:
-    inter_dir = Path(tempfile.mkdtemp(prefix='barcoding_'))
 
 
 # set random seed
@@ -125,6 +146,16 @@ except TypeError:
 ###################
 
 if args.command == 'image':
+    if args.kmer_size not in range(5, 9 + 1):
+        raise Exception('kmer size must be between 5 and 9')
+
+    # if no directory provided for intermediate results, create a temporary one 
+    #  that will be deleted at the end of the program
+    try:
+        inter_dir = Path(args.int_folder)
+    except TypeError:
+        inter_dir = Path(tempfile.mkdtemp(prefix='barcoding_'))
+    
     eprint('Kmer size:',str(args.kmer_size))
     eprint('Processing reads and preparing images')
     eprint('Reading input data')
@@ -268,8 +299,107 @@ if args.command == 'image':
 ###################
 
 
-elif ags.command == 'train':
-    pass
+elif args.command == 'train':
+    
+    #1 let's create a data table for all images.
+    image_files = list()
+    for f in Path(args.input).iterdir():
+        if str(f).endswith('png'):
+            image_files.append({'taxon':f.name.split('+')[0],
+                                'sample':f.name.split('+')[1].split('_')[0],
+                                'bp':int(f.name.split('+')[1].split('_')[1].split('K')[0])*1000,
+                                'path':f
+                               })
+    image_files = pd.DataFrame(image_files)
+    
+    #2 let's add a column to mark images in the validation set, if the user defined them
+    if args.validation_set: #if a specific validation set was defined, let's use it
+        validation_samples = args.validation_set.split(',')
+    else:
+        validation_samples = (image_files[['taxon','sample']].
+                              drop_duplicates().
+                              groupby('taxon').
+                              sample(frac = args.validation_set_fraction).
+                              loc[:,'sample']
+                             )
+        
+    image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples))
+    
+        
+    #3 prepare input to training function based on options
+    callback = {'MixUp': MixUp,
+                'CutMix': CutMix,
+                'None': None}[args.mix_augmentation]
+    
+    
+    trans = aug_transforms(do_flip = False,
+                          max_rotate = 0,
+                          max_zoom = 1,
+                          max_lighting = args.max_lighting,
+                          max_warp = 0,
+                          p_affine = 0,
+                          p_lighting = args.p_lighting
+                          )
+    
+    if args.label_smoothing:
+        if args.mix_augmentation == 'None':
+            loss = LabelSmoothingCrossEntropy()
+        else:
+            loss = LabelSmoothingCrossEntropyFlat()
+    else:
+        if args.mix_augmentation == 'None':
+            loss = CrossEntropyLoss()
+        else:
+            loss = CrossEntropyLossFlat()
+    
+    #4 if a pretrained model has been provided, load model state
+    load_on_cpu = True
+    model_state_dict = None
+    
+    try: #within a try-except statement since currently only nightly build has this function
+        if torch.has_mps:
+            load_on_cpu = False
+    except AttributeError:
+        pass
+    
+    if torch.has_cuda and torch.cuda.device_count():
+        load_on_cpu = False
+    
+    if args.pretrained_model:
+        past_learn = load_learner(args.pretrained_model, cpu = load_on_cpu)
+        model_state_dict = past_learn.model.state_dict()
+        del past_learn
+    
+    
+    
+    #5 call training function
+    learn = train_cnn(image_files, 
+                      args.architecture, 
+                      epochs = args.epochs,
+                      freeze_epochs = args.freeze_epochs,
+                      normalize = True, 
+                      pretrained = False, 
+                      callbacks = callback, 
+                      transforms = trans,
+                      loss_fn = loss,
+                      model_state_dict = model_state_dict
+                     )
+    
+    # save results
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    
+    learn.export(outdir/'trained_model.pkl')
+    with open(outdir/'labels.txt','w') as outfile:
+        outfile.write('\n'.join(learn.dls.vocab))
+    image_files.to_csv(outdir/'input_data.csv')
+        
+    eprint('Model, labels, and data table saved to directory', str(outdir))
+        
+    
+
+    
+    
 
     
     
@@ -284,8 +414,12 @@ elif args.command == 'query':
 
 
 # if intermediate results were saved to a temporary file, delete them
-if not args.int_folder:
-    shutil.rmtree(inter_dir)
+try:
+    if not args.int_folder:
+        shutil.rmtree(inter_dir)
+except AttributeError:
+    pass
+        
 
 eprint('DONE')    
     

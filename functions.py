@@ -5,14 +5,29 @@ from pathlib import Path
 from collections import OrderedDict, defaultdict
 from io import StringIO
 from PIL import Image
-from matplotlib import cm
+#from matplotlib import cm
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
 import re, sys, gzip, time, humanfriendly, random, multiprocessing, math
 
-from scipy.stats import boxcox
-from scipy.stats import rankdata
+#from scipy.stats import boxcox
+#from scipy.stats import rankdata
 
+from fastai.data.all import DataBlock, ColSplitter, ColReader, get_c
+from fastai.vision.all import ImageBlock, CategoryBlock, create_head, apply_init, default_split
+from fastai.vision.learner import _update_first_layer, has_pool_type
+from fastai.vision.all import aug_transforms
+from fastai.metrics import accuracy
+from fastai.learner import Learner, load_learner
+from fastai.torch_core import set_seed
+from fastai.callback.mixup import CutMix, MixUp
+from fastai.callback.hook import num_features_model
+from fastai.losses import LabelSmoothingCrossEntropyFlat, CrossEntropyLossFlat, LabelSmoothingCrossEntropy
+from torch.nn import CrossEntropyLoss
+from torch import nn
+import torch
+from timm import create_model
+from math import log
 
 from fastai.torch_core import set_seed
 
@@ -521,9 +536,144 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
     return(stats)
     
 
-##train a cnn to recognize kmer images. input_table should have a column with species ID and another with associated image paths
-##kwargs are optional keyword arguments passed to fine_tune()
-##the final model will be saved to outfolder, as well as a text file listing the names of species in the order that they correspond to classes in the model
-def train_cnn(input_table, outfolder, frozen_epochs, epochs):
-    pass
+###### Functions to train a cnn
+
+#Function: select training and validation set given kmer size and amount of data (as a list).
+#minbp_filter will only consider samples that have yielded at least that amount of data
+def get_train_val_sets():
+    file_path = [x.absolute() for x in (Path('images_' + str(kmer_size))).ls() if x.suffix == '.png']
+    taxon = [x.name.split('+')[0] for x in file_path]
+    sample = [x.name.split('+')[-1].split('_')[0] for x in file_path]
+    n_bp = [int(x.name.split('_')[-1].split('.')[0].replace('K','000')) for x in file_path]
+
+    df = pd.DataFrame({'taxon': taxon,
+                  'sample': sample,
+                  'n_bp': n_bp,
+                  'path': file_path
+                 })
+    
+    if minbp_filter is not None:
+        included_samples = df.loc[df['n_bp'] == 200000000]['sample'].drop_duplicates()
+    else:
+        included_samples = df['sample'].drop_duplicates()
+        
+    df = df.loc[df['sample'].isin(included_samples)]
+
+    valid = (df[['taxon','sample']].
+             drop_duplicates().
+             groupby('taxon').
+             apply(lambda x: x.sample(n_valid, replace=False)).
+             reset_index(drop=True).
+             assign(is_valid = True).
+             merge(df, on = ['taxon','sample'])
+        )
+
+    train = (df.loc[~df['sample'].isin(valid['sample'])].
+             assign(is_valid = False)
+            )
+    train = train.loc[train['n_bp'].isin(bp_training)]
+
+    train_valid = pd.concat([valid, train]).reset_index(drop = True)
+    return train_valid
+
+
+## These functions use timm to create a fastai model
+
+## Note: Functions using timm for choosing models have been adapted from this
+## source: https://walkwithfastai.com/vision.external.timm
+def create_timm_body(arch:str, pretrained=True, cut=None, n_in=3):
+    "Creates a body from any model in the `timm` library."
+    model = create_model(arch, pretrained=pretrained, num_classes=0, global_pool='')
+    _update_first_layer(model, n_in, pretrained)
+    if cut is None:
+        ll = list(enumerate(model.children()))
+        cut = next(i for i,o in reversed(ll) if has_pool_type(o))
+    if isinstance(cut, int): return nn.Sequential(*list(model.children())[:cut])
+    elif callable(cut): return cut(model)
+    else: raise NamedError("cut must be either integer or function")
+    
+def create_timm_model(arch:str, n_out, cut=None, pretrained=True, n_in=3, init=nn.init.kaiming_normal_, custom_head=None,
+                     concat_pool=True, **kwargs):
+    "Create custom architecture using `arch`, `n_in` and `n_out` from the `timm` library"
+    body = create_timm_body(arch, pretrained, None, n_in)
+    if custom_head is None:
+        nf = num_features_model(nn.Sequential(*body.children()))
+        head = create_head(nf, n_out, concat_pool=concat_pool, **kwargs)
+    else: head = custom_head
+    model = nn.Sequential(body, head)
+    if init is not None: apply_init(model[1], init)
+    return model
+
+def timm_learner(dls, arch:str, loss_func=None, pretrained=True, cut=None, splitter=None,
+                y_range=None, config=None, n_out=None, normalize=True, **kwargs):
+    "Build a convnet style learner from `dls` and `arch` using the `timm` library"
+    if config is None: config = {}
+    if n_out is None: n_out = get_c(dls)
+    assert n_out, "`n_out` is not defined, and could not be inferred from data, set `dls.c` or pass `n_out`"
+    if y_range is None and 'y_range' in config: y_range = config.pop('y_range')
+    model = create_timm_model(arch, n_out, default_split, pretrained, y_range=y_range, **config)
+    learn = Learner(dls, model, loss_func=loss_func, splitter=default_split, **kwargs)
+    if pretrained: learn.freeze()
+    return learn
+
+#Function: create a learner and fit model, setting batch size according to number of training images
+def train_cnn(df, 
+              architecture,
+              model_state_dict = None,
+              epochs = 30, 
+              freeze_epochs = 0,
+              normalize = True,  
+              callbacks = CutMix, 
+              transforms = None,
+              pretrained = False,
+              loss_fn = LabelSmoothingCrossEntropyFlat()):
+    
+    
+    #find a batch size that is a power of 2 and splits the dataset in about 10 batches
+    batch_size = min(2**round(log(df[~df['is_valid']].shape[0]/10,2)), 64) 
+    
+    #start data block
+    if 'is_valid' in df.columns:
+        sptr = ColSplitter()
+    else:
+        sptr = RandomSplitter(valid_pct = args.validation_set_fraction)
+        
+    dbl = DataBlock(blocks=(ImageBlock, CategoryBlock),
+                       splitter = sptr,
+                       get_x = ColReader('path'),
+                       get_y = ColReader('taxon'),
+                       item_tfms = None,
+                       batch_tfms = transforms
+                      )
+    
+    #create data loaders with calculated batch size
+    dls = dbl.dataloaders(df, bs = batch_size)
+    
+
+    #create learner
+    learn = timm_learner(dls, 
+                    architecture, 
+                    metrics = accuracy, 
+                    normalize = normalize,
+                    pretrained = pretrained,
+                    cbs = callbacks,
+                    loss_func = loss_fn
+                   ).to_fp16()
+    
+    #if there a pretrained model body weights, replace them
+    #first, filter state dict to only keys that match and values that have the same size
+    #this will allow incomptibilities (e. g. if training on a different number of classes)
+    #solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
+    if model_state_dict:
+        old_state_dict = learn.state_dict()
+        new_state_dict = {k:v for k,v in model_state_dict.items() 
+                          if k in old_state_dict and
+                             old_state_dict[k].size() == v.size()}
+        learn.model.load_state_dict(new_state_dict, strict = False)
+    
+    #train
+    learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = 1e-3)
+        
+    
+    return(learn)
     
