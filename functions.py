@@ -184,7 +184,6 @@ def clean_reads(infiles,
 
                 
                         for line_n, line in enumerate(infile):
-                            if line_n == 0: print(lines_concat)
                             if line_n % 4 == 1:
                                 initial_bp[k] += (len(line) - 1)
                                 
@@ -673,6 +672,7 @@ def timm_learner(dls, arch:str, loss_func=None, pretrained=True, cut=None, split
 #Function: create a learner and fit model, setting batch size according to number of training images
 def train_cnn(df, 
               architecture,
+              max_bs = 64,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
@@ -684,7 +684,8 @@ def train_cnn(df,
     
     
     #find a batch size that is a power of 2 and splits the dataset in about 10 batches
-    batch_size = min(2**round(log(df[~df['is_valid']].shape[0]/10,2)), 64) 
+    batch_size = min(2**round(log(df[~df['is_valid']].shape[0]/10,2)), 64)
+    batch_size = min(batch_size, max_bs)
     
     #start data block
     if 'is_valid' in df.columns:

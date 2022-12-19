@@ -1,7 +1,5 @@
 #!/usr/bin/env python 
 
-##TO DO: implement option to overwrite or keep existing intermediate files
-
 
 #import functions and libraries
 from functions import *
@@ -18,6 +16,11 @@ parent_parser = argparse.ArgumentParser(add_help = False,
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parent_parser.add_argument('-d', '--seed', help = 'random seed.')
 parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
+parent_parser.add_argument('-b', '--max_batch_size', 
+                           help = 'maximum batch size to use for training or querying.',
+                           type = int,
+                           default=64 )
+
 
 
 # create parser for image command
@@ -32,11 +35,11 @@ parser_img.add_argument('-k', '--kmer-size',
                         default = 7)
 parser_img.add_argument('-n', '--n-threads', 
                         help = 'number of samples to preprocess in parallel.', 
-                        default = 2, 
+                        default = 1, 
                         type = int)
 parser_img.add_argument('-c', '--cpus-per-thread', 
                         help = 'number of cpus to use for preprocessing each sample.', 
-                        default = 2, 
+                        default = 1, 
                         type = int)
 parser_img.add_argument('-o','--outdir', 
                         help = 'path to folder where to write final images.', default = 'images')
@@ -129,25 +132,28 @@ parser_query.add_argument('input',
                           help = 'path to folder with fastq files to be queried.')
 parser_query.add_argument('outdir', 
                           help = 'path to the folder where results will be saved.')
+parser_query.add_argument('-I', '--images', 
+                          help = 'input folder contains processed images instead of raw reads.', 
+                          action = 'store_true')
 parser_query.add_argument('-k', '--kmer-size', 
-                        help = 'size of kmers to count (5–8)', 
-                        type = int, 
-                        default = 7)
+                          help = 'size of kmers to count (5–8)', 
+                          type = int, 
+                          default = 7)
 parser_query.add_argument('-n', '--n-threads', 
                           help = 'number of samples to preprocess in parallel.', 
-                          default = 2, 
+                          default = 1, 
                           type = int)
 parser_query.add_argument('-c', '--cpus-per-thread', 
                           help = 'number of cpus to use for preprocessing each sample.', 
-                          default = 2, 
+                          default = 1, 
                           type = int)
 parser_query.add_argument('-f', '--stats-file', 
-                        help = 'path to file where sample statistics will be saved.', 
-                        default ='stats.csv')
+                          help = 'path to file where sample statistics will be saved.', 
+                          default ='stats.csv')
 parser_query.add_argument('-i', '--int-folder', 
                           help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used and deleted when done.')
 parser_query.add_argument('-m','--keep-images', 
-                          help = 'whether barcode images should be saved or discarded.',
+                          help = 'whether barcode images should be saved.',
                           action='store_true'
                          )
 parser_query.add_argument('-a', '--no-adapter', 
@@ -176,8 +182,8 @@ except TypeError:
 # preparing images for commands 'image' or 'query'
 ##################################################
 
-if args.command == 'image' or args.command == 'query':
-          
+if args.command == 'image' or (args.command == 'query' and not args.images):
+         
     #check if kmer size provided is supported
     if args.kmer_size not in range(5, 9 + 1):
         raise Exception('kmer size must be between 5 and 9')
@@ -196,6 +202,8 @@ if args.command == 'image' or args.command == 'query':
         if args.keep_images:
             images_d = Path(args.outdir)/'images'
             images_d.mkdir(parents=True, exist_ok=True)
+        elif args.int_folder:
+            images_d = Path(tempfile.mkdtemp(prefix='barcoding_img_'))
         else:
             images_d = inter_dir/'images'
     
@@ -353,8 +361,29 @@ if args.command == 'image' or args.command == 'query':
 # query command
 ###################
 
-elif args.command == 'query':
-    pass
+if args.command == 'query':
+    if args.images:
+        images_d = Path(args.input)
+    #if we provided sequences rather than images, they were processed in the command above
+        
+    img_paths = [img for img in images_d.iterdir() if img.name.endswith('png')]
+        
+    n_images = len(img_paths)
+    
+    if n_images >= 128:
+        eprint(n_images,'images in the input, will try to use GPU for prediction.')
+        learn = load_learner(args.model, cpu = False)
+    else:
+        eprint(n_images,'images in the input, will use CPU for prediction.')
+        learn = load_learner(args.model, cpu = True)
+    
+    df = pd.DataFrame({'path':img_paths})
+    query_dl = learn.dls.test_dl(df,bs=args.max_batch_size)
+    eprint(learn.get_preds(dl = query_dl, with_decoded = True, with_loss = True, with_targs = False))
+    eprint(learn.dls.vocab)
+    
+        
+   
 
 
 
@@ -363,7 +392,7 @@ elif args.command == 'query':
 ###################
 
 
-elif args.command == 'train':
+if args.command == 'train':
     
     #1 let's create a data table for all images.
     image_files = list()
@@ -439,6 +468,7 @@ elif args.command == 'train':
     #5 call training function
     learn = train_cnn(image_files, 
                       args.architecture, 
+                      max_bs = args.max_batch_size,
                       epochs = args.epochs,
                       freeze_epochs = args.freeze_epochs,
                       normalize = True, 
@@ -465,13 +495,19 @@ elif args.command == 'train':
 
 
 
-# if intermediate results were saved to a temporary file, delete them
-try:
-    if not args.int_folder:
-        shutil.rmtree(inter_dir)
-except AttributeError:
-    pass
-        
+# if intermediate results were saved to a temporary folder, delete them
+#try:
+#    if not args.int_folder:
+#        shutil.rmtree(inter_dir)
+#except AttributeError:
+#    pass
+#
+#try:
+#    if args.command == 'query' and not args.images and not args.keep_images:
+#        shutil.rmtree(images_d)
+#except AttributeError:
+#    pass
+#        
 
 eprint('DONE')    
     
