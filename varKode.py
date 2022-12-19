@@ -74,7 +74,7 @@ parser_train.add_argument('input',
 parser_train.add_argument('outdir', 
                           help = 'path to the folder where trained model will be stored.')
 parser_train.add_argument('-v','--validation-set',
-                          help = 'comma-separated list of sample IDs to be included in the validation set. Automatically turns off generation of a random validation set.'
+                          help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created.'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
                           help = 'fraction of samples within each species to be held as a random validation set.',
@@ -108,16 +108,17 @@ parser_train.add_argument('-s','--label-smoothing',
                           action='store_true',
                           default = False
                          )
-parser_train.add_argument('-l','--max-lighting', 
-                          help = 'maximum scale of changing brightness. See https://docs.fast.ai/vision.augment.html#aug_transforms',
-                          type=float, 
-                          default = 0.5
-                         )
 parser_train.add_argument('-p','--p-lighting', 
                           help = 'probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms',
                           type=float, 
                           default = 0.75
                          )
+parser_train.add_argument('-l','--max-lighting', 
+                          help = 'maximum scale of lighting transform. See https://docs.fast.ai/vision.augment.html#aug_transforms',
+                          type=float, 
+                          default = 0.5
+                         )
+
 
 
 
@@ -379,8 +380,28 @@ if args.command == 'query':
     
     df = pd.DataFrame({'path':img_paths})
     query_dl = learn.dls.test_dl(df,bs=args.max_batch_size)
-    eprint(learn.get_preds(dl = query_dl, with_decoded = True, with_loss = True, with_targs = False))
-    eprint(learn.dls.vocab)
+    pp, _ = learn.get_preds(dl = query_dl)
+    best_ps, best_idx = torch.max(pp, dim = 1)
+    best_labels = learn.dls.vocab[best_idx]
+    predictions_df = pd.DataFrame(pp)
+    predictions_df.columns = learn.dls.vocab
+    
+    predictions_df = pd.concat([pd.DataFrame({'sample_id':[(img.with_suffix('').
+                                                           name.split('+')[-1].
+                                                           split('_')[0]) 
+                                                          for img in img_paths],
+                                              'varKode_image_path': img_paths, 
+                                              'basepairs_used':[(img.with_suffix('').
+                                                                 name.split('+')[-1].
+                                                                 split('_')[1]) 
+                                                                for img in img_paths],
+                                              'best_pred_label': best_labels,
+                                              'best_pred_prob': best_ps
+                                                       }),
+                               predictions_df], axis = 1)
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents = True, exist_ok = True)
+    predictions_df.to_csv(outdir/'predictions.csv')
     
         
    
