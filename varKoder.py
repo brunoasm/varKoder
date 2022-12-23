@@ -429,8 +429,8 @@ if args.command == 'query':
                                                           for img in img_paths],
                                               'varKode_image_path': img_paths, 
                                               'basepairs_used':[(img.with_suffix('').
-                                                                 name.split(label_sample_sep)[-1].
-                                                                 split(sample_bp_sep)[1]) 
+                                                                 name.split(sample_bp_sep)[-1].
+                                                                 split(bp_kmer_sep)[0]) 
                                                                 for img in img_paths],
                                               'best_pred_label': best_labels,
                                               'best_pred_prob': best_ps

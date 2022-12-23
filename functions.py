@@ -33,6 +33,7 @@ from fastai.torch_core import set_seed
 
 #define filename separators
 label_sample_sep = '+'
+bp_kmer_sep = '+'
 sample_bp_sep = '@'
 
 
@@ -544,8 +545,9 @@ def count_kmers(infile,
     start_time = time.time()
     
     Path(outfolder).mkdir(exist_ok = True)
-    outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.fq.h5'
+    outfile = str(Path(infile).name.removesuffix(''.join(Path(infile).suffixes))) + bp_kmer_sep + 'k' + str(k) + '.fq.h5'
     outpath = outfolder/outfile
+    
     
     if not overwrite and outpath.is_file():
         eprint('File exists. Skipping kmer counting for file:',str(infile))
@@ -562,7 +564,8 @@ def count_kmers(infile,
                                 '-max-memory', '1000',
                                 '-file', str(infile),
                                 '-out-tmp', str(tempdir),
-                                '-out-dir', str(outfolder)
+                                #'-out-dir', str(outfolder),
+                                '-out', str(outpath)
                                ],
                                stderr = subprocess.PIPE,
                                stdout = subprocess.DEVNULL,
@@ -657,9 +660,9 @@ def make_image(infile,
 #minbp_filter will only consider samples that have yielded at least that amount of data
 def get_train_val_sets():
     file_path = [x.absolute() for x in (Path('images_' + str(kmer_size))).ls() if x.suffix == '.png']
-    taxon = [x.name.split(label_sample_sep)[0] for x in file_path]
-    sample = [x.name.split(label_sample_sep)[-1].split('_')[0] for x in file_path]
-    n_bp = [int(x.name.split(sample_bp_sep)[-1].split('.')[0].replace('K','000')) for x in file_path]
+    taxon = [x.name.split(sample_bp_sep)[0].split(label_sample_sep)[0] for x in file_path]
+    sample = [x.name.split(sample_bp_sep)[0].split(label_sample_sep)[1] for x in file_path]
+    n_bp = [int(x.name.split(sample_bp_sep)[1].split(bp_kmer_sep)[0].replace('K','000')) for x in file_path]
 
     df = pd.DataFrame({'taxon': taxon,
                   'sample': sample,
