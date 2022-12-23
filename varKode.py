@@ -1,4 +1,5 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 
 #import functions and libraries
@@ -29,8 +30,8 @@ parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      help = 'Preprocess reads and prepare images for CNN training.')
 parser_img.add_argument('input', 
                         help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
-parser_img.add_argument('-k', '--kmer-size', 
-                        help = 'size of kmers to count (5–8)', 
+parser_img.add_argument('-k', '--kmer-size',
+                        help = 'size of kmers to count (5–8)',
                         type = int, 
                         default = 7)
 parser_img.add_argument('-n', '--n-threads', 
@@ -245,7 +246,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
         x = it_row[1]
         stats = defaultdict(OrderedDict)
 
-        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + '+' + x['sample'] + '.fq.gz')
+        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + label_sample_sep + x['sample'] + '.fq.gz')
         split_reads_d = inter_dir/'split_fastqs'
         kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
 
@@ -268,10 +269,12 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
         stats[(x['taxon'],x['sample'])].update(clean_stats)
 
         #### STEP C - split clean reads into files with different number of reads
-        eprint('Splitting fastqs for', x['taxon'] + '+' + x['sample'])
+        eprint('Splitting fastqs for', x['taxon'] + label_sample_sep + x['sample'])
         if args.command == 'image':
             split_stats = split_fastq(infile = clean_reads_f,
-                                      outprefix = (x['taxon'] + '+' + x['sample']),
+                                      outprefix = (x['taxon'] + 
+                                                   label_sample_sep + 
+                                                   x['sample']),
                                       outfolder = split_reads_d,
                                       min_bp = humanfriendly.parse_size(args.min_bp), 
                                       max_bp = maxbp, 
@@ -279,7 +282,9 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                       seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
         elif args.command == 'query':
              split_stats = split_fastq(infile = clean_reads_f,
-                                      outprefix = (x['taxon'] + '+' + x['sample']),
+                                      outprefix = (x['taxon'] + 
+                                                   label_sample_sep + 
+                                                   x['sample']),
                                       outfolder = split_reads_d,
                                       is_query = True,
                                       max_bp = maxbp, 
@@ -287,70 +292,91 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                       seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))           
 
         stats[(x['taxon'],x['sample'])].update(split_stats)
-
-
-
-        #### STEP D - count kmers 
-        eprint('Creating images for', x['taxon'] + '+' + x['sample'])
-        stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
         
-        kmer_key = str(args.kmer_size) + 'mer_counting_time'
-        for infile in split_reads_d.glob(x['taxon'] + '+' + x['sample'] + '*'):
-            count_stats = count_kmers(infile = infile,
-                                      outfolder = kmer_counts_d, 
-                                      threads = cores_per_process,
-                                      k = args.kmer_size,
-                                      overwrite = args.overwrite)
-            
-            try:
-                stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
-            except KeyError as e:
-                if e.args[0] == kmer_key:
-                    pass
-                else: 
-                    raise(e)
+        eprint('Cleaning and splitting reads done for', x['taxon'] + label_sample_sep + x['sample'])
 
 
-        #### STEP E - create images
-        # the table mapping canonical kmers to pixels is stored as a feather file in
-        # the same folder as this script
-        
-        img_key = 'k' + str(args.kmer_size) + '_img_time'
-        
-        stats[(x['taxon'],x['sample'])][img_key] = 0
-        for infile in kmer_counts_d.glob(x['taxon'] + '+' + x['sample'] + '*'):
-            img_stats = make_image(infile = infile, 
-                                   outfolder = images_d, 
-                                   kmers = kmer_mapping,
-                                   overwrite = args.overwrite,
-                                   threads = cores_per_process)
-            try:
-                stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
-            except KeyError as e:
-                if e.args[0] == img_key:
-                    pass
-                else: 
-                    raise(e)
 
-        eprint('Images done for', x['taxon'] + '+' + x['sample'])
+        #### STEP D - count kmers
+        if not args.no_image:
+            eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
+            stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
+
+            kmer_key = str(args.kmer_size) + 'mer_counting_time'
+            for infile in split_reads_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+                count_stats = count_kmers(infile = infile,
+                                          outfolder = kmer_counts_d, 
+                                          threads = cores_per_process,
+                                          k = args.kmer_size,
+                                          overwrite = args.overwrite)
+
+                try:
+                    stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
+                except KeyError as e:
+                    if e.args[0] == kmer_key:
+                        pass
+                    else: 
+                        raise(e)
+
+
+            #### STEP E - create images
+            # the table mapping canonical kmers to pixels is stored as a feather file in
+            # the same folder as this script
+
+            img_key = 'k' + str(args.kmer_size) + '_img_time'
+
+            stats[(x['taxon'],x['sample'])][img_key] = 0
+            for infile in kmer_counts_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+                img_stats = make_image(infile = infile, 
+                                       outfolder = images_d, 
+                                       kmers = kmer_mapping,
+                                       overwrite = args.overwrite,
+                                       threads = cores_per_process)
+                try:
+                    stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
+                except KeyError as e:
+                    if e.args[0] == img_key:
+                        pass
+                    else: 
+                        raise(e)
+
+            eprint('Images done for', x['taxon'] + label_sample_sep + x['sample'])
         return(stats)
-
-    pool = multiprocessing.Pool(processes=int(args.n_threads))
     
-    #for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = 1):
-    for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
-        try:
-            all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
-        except:
-            pass
+    
+    #if only one sample processed at a time, we do a for loop
+    if args.n_threads == 1:  
+        for x in condensed_files.iterrows():
+            stats = run_clean2img(x)
+            try:
+                all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
+            except:
+                pass
+            for k in stats.keys():
+                all_stats[k].update(stats[k])
+            (pd.DataFrame.from_dict(all_stats, orient = 'index').
+              rename_axis(index=['taxon', 'sample']).
+              to_csv(stats_path)
+            )
         
-        for k in stats.keys():
-            all_stats[k].update(stats[k])
-        (pd.DataFrame.from_dict(all_stats, orient = 'index').
-          rename_axis(index=['taxon', 'sample']).
-          to_csv(stats_path)
-        )
-    pool.close()
+    #if more than one sample processed at a time, use multiprocessing
+    else:
+        pool = multiprocessing.Pool(processes=int(args.n_threads))
+    
+        for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
+            try:
+                all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
+            except:
+                pass
+            
+            for k in stats.keys():
+                all_stats[k].update(stats[k])
+            (pd.DataFrame.from_dict(all_stats, orient = 'index').
+              rename_axis(index=['taxon', 'sample']).
+              to_csv(stats_path)
+            )
+        pool.close()
+    
     
     eprint('All images done, saved in',str(images_d))
 
@@ -387,13 +413,13 @@ if args.command == 'query':
     predictions_df.columns = learn.dls.vocab
     
     predictions_df = pd.concat([pd.DataFrame({'sample_id':[(img.with_suffix('').
-                                                           name.split('+')[-1].
-                                                           split('_')[0]) 
+                                                           name.split(label_sample_sep)[-1].
+                                                           split(sample_bp_sep)[0]) 
                                                           for img in img_paths],
                                               'varKode_image_path': img_paths, 
                                               'basepairs_used':[(img.with_suffix('').
-                                                                 name.split('+')[-1].
-                                                                 split('_')[1]) 
+                                                                 name.split(label_sample_sep)[-1].
+                                                                 split(sample_bp_sep)[1]) 
                                                                 for img in img_paths],
                                               'best_pred_label': best_labels,
                                               'best_pred_prob': best_ps
@@ -419,9 +445,9 @@ if args.command == 'train':
     image_files = list()
     for f in Path(args.input).rglob('*'):
         if str(f).endswith('png'):
-            image_files.append({'taxon':f.name.split('+')[0],
-                                'sample':f.name.split('+')[1].split('_')[0],
-                                'bp':int(f.name.split('+')[1].split('_')[1].split('K')[0])*1000,
+            image_files.append({'taxon':f.name.split(label_sample_sep)[0],
+                                'sample':f.name.split(label_sample_sep)[1].split(sample_bp_sep)[0],
+                                'bp':int(f.name.split(label_sample_sep)[1].split(sample_bp_sep)[1].split('K')[0])*1000,
                                 'path':f
                                })
     image_files = pd.DataFrame(image_files)

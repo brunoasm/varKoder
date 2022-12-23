@@ -31,6 +31,10 @@ from math import log
 
 from fastai.torch_core import set_seed
 
+#define filename separators
+label_sample_sep = '+'
+sample_bp_sep = '@'
+
 
 # defining a function to print to stderr more easily
 # idea from https://stackoverflow.com/questions/5574702/how-to-print-to-stderr-in-python
@@ -161,238 +165,281 @@ def clean_reads(infiles,
     #let's check if destination files exist, and skip them if we can
     
     #from now on we will manipulate files in a temporary folder that will be deleted at the end of this function
-    with tempfile.TemporaryDirectory(prefix='barcoding_clean_' + basename) as work_dir:
-    #work_dir = tempfile.mkdtemp(prefix='barcoding_clean_' + basename)
-        #if True:
+    #with tempfile.TemporaryDirectory(prefix='barcoding_clean_' + basename) as work_dir:
+    work_dir = tempfile.mkdtemp(prefix='barcoding_clean_' + basename)
+    #if True:
 
-        # first, concatenate forward, reverse and unpaired reads
-        # we will also store the number of basepairs for statistics
-        initial_bp = {'unpaired':0, 'R1':0, 'R2':0}
-        lines_concat = {'unpaired':dict(), 'R1':dict(), 'R2':dict()}
-        write_out = True
-        for k in ['unpaired','R1','R2']:
-            readfiles = reads[k]
-            
-            if len(readfiles):
-                with open(Path(work_dir)/(basename + '_' + k +  '.fq'), 'wb+') as outfile:
-                    for i_f, readf in enumerate(sorted(readfiles)):
-                        lines_concat[k][i_f] = 0
-                        if readf.endswith('gz'):
-                            infile = gzip.open(readf, 'rb')
-                        else:
-                            infile = open(readf, 'rb')
+    # first, concatenate forward, reverse and unpaired reads
+    # we will also store the number of basepairs for statistics
+    initial_bp = {'unpaired':0, 'R1':0, 'R2':0}
+    lines_concat = {'unpaired':dict(), 'R1':dict(), 'R2':dict()}
+    
+    write_out = True
+    
+    for k in ['unpaired','R1','R2']:
+        readfiles = reads[k]
+        
+        if len(readfiles):
+            with open(Path(work_dir)/(basename + '_' + k +  '.fq'), 'wb') as outfile:
+                for i_f, readf in enumerate(sorted(readfiles)):
+                    #initializes count of number of lines written out for this file
+                    lines_concat[k][i_f] = 0
+                    
+                    #opens file
+                    if readf.endswith('gz'):
+                        infile = gzip.open(readf, 'rb')
+                    else:
+                        infile = open(readf, 'rb')
 
-                
-                        for line_n, line in enumerate(infile):
-                            if line_n % 4 == 1:
-                                initial_bp[k] += (len(line) - 1)
-                                
-                            #if we reach a bp count 5 times as large as max_bp,
-                            #this should be sufficient even after deduplication,
-                            #cleaning, etc
-                            #so we stop writing out to decrease processing time
-                            #in case this happens while reading R1, we will record how many lines we read 
-                            #and read the same number of lines in R1
 
-                            ### we will write out if we have not reached the limit yet
-                            ### in the case of R2, 
-                            if write_out is True:
-                                bp_read = initial_bp['unpaired'] + 2 * initial_bp['R1']
-                                if ((line_n % 4 == 0) and 
-                                    (max_bp is not None) and 
-                                    (bp_read > (5 * max_bp))):
-                                    write_out = False
-                                else:
-                                    outfile.write(line)
-                                    lines_concat[k][i_f] = line_n
-                                
-                            elif k == 'R2' and lines_concat[k][i_f] < lines_concat['R1'][i_f]:
-                                bp_read = sum([v for k,v in initial_bp.items()])
+                    #reads file
+                    for line_n, line in enumerate(infile):
+                        if line_n % 4 == 1:
+                            #counts number of lines in file originally
+                            initial_bp[k] += (len(line) - 1)
+
+                        #if we reach a bp count 5 times as large as max_bp,
+                        #this should be sufficient even after deduplication,
+                        #cleaning, etc
+                        #so we stop writing out to decrease processing time
+                        #in case this happens while reading R1, we will record how many lines we read 
+                        #and read the same number of lines in corresponding R2
+                        
+                        if write_out is True:
+                            bp_read = initial_bp['unpaired'] + 2 * initial_bp['R1']
+                            if ((line_n % 4 == 0) and 
+                                (max_bp is not None) and 
+                                (bp_read > (5 * max_bp))):
+                                write_out = False
+                            else:
                                 outfile.write(line)
                                 lines_concat[k][i_f] = line_n
-                                
 
-
-                        infile.close()
-        if write_out: #if we reach the end and are still writing out, count how many bp retained
-            bp_read = sum([v for k,v in initial_bp.items()])
+                        elif k == 'R2' and lines_concat[k][i_f] < lines_concat['R1'][i_f]:
+                            bp_read = sum([v for k,v in initial_bp.items()])
+                            outfile.write(line)
+                            lines_concat[k][i_f] = line_n
+                            
+                    infile.close()
             
-        retained_bp = bp_read
 
-        # now we will use bbtools to deduplicate reads
-        # here we will only deduplicate identical reads which is faster and should apply to most cases
-        #deduplicate paired reads:
-        if len(reads['R1']):
-            command = ['clumpify.sh',
-                       'in1=' + str(Path(work_dir)/(basename + '_R1.fq')),
-                       'in2=' + str(Path(work_dir)/(basename + '_R2.fq')),
-                       'out=' + str(Path(work_dir)/(basename + '_dedup_paired.fq')),
-                       'dedupe',
-                       'dupesubs=2',
-                       'shortname=t',
-                       'quantize=t',
-                       '-Xmx1g',
-                       'usetmpdir=t',
-                       'tmpdir=' + str(Path(work_dir))]
-            subprocess.run(command,
-                           stderr = subprocess.DEVNULL,
+    if write_out: #if we reach the end and are still writing out, count how many bp retained
+        bp_read = sum([v for k,v in initial_bp.items()])
+
+
+    retained_bp = bp_read
+
+    # now we will use bbtools to deduplicate reads
+    # here we will only deduplicate identical reads which is faster and should apply to most cases
+    #deduplicate paired reads:
+    if len(reads['R1']):
+        command = ['clumpify.sh',
+                   'in1=' + str(Path(work_dir)/(basename + '_R1.fq')),
+                   'in2=' + str(Path(work_dir)/(basename + '_R2.fq')),
+                   'out=' + str(Path(work_dir)/(basename + '_dedup_paired.fq')),
+                   'dedupe',
+                   'dupesubs=2',
+                   'shortname=t',
+                   'quantize=t',
+                   '-Xmx1g',
+                   'usetmpdir=t',
+                   'tmpdir=' + str(Path(work_dir))]
+        
+        try:
+            p = subprocess.run(command,
+                           stderr = subprocess.PIPE,
                            stdout = subprocess.DEVNULL,
                            check = True)
-            (Path(work_dir)/(basename + '_R1.fq')).unlink(missing_ok = True)
-            (Path(work_dir)/(basename + '_R2.fq')).unlink(missing_ok = True)
-
-        #deduplicate unpaired reads:
-        if len(reads['unpaired']):
-            command = ['clumpify.sh',
-                       'interleaved=f',
-                       'in=' + str(Path(work_dir)/(basename + '_unpaired.fq')),
-                       'out=' + str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
-                       'dedupe',
-                       'dupesubs=2',
-                       'shortname=t',
-                       'quantize=t',
-                       '-Xmx1g',
-                       'usetmpdir=t',
-                       'tmpdir=' + str(Path(work_dir))]
-            subprocess.run(command,
-                           stderr = subprocess.DEVNULL,
-                           stdout = subprocess.DEVNULL, 
+            eprint(p.stderr.decode())
+        except subprocess.CalledProcessError as e:
+            eprint('clumpify.sh returned an error:')
+            eprint(e.stderr.decode())
+            eprint('we will now try to fix the input files with repair.sh')
+            command = ['repair.sh',
+                   'in1=' + str(Path(work_dir)/(basename + '_R1.fq')),
+                   'in2=' + str(Path(work_dir)/(basename + '_R2.fq')),
+                   'out=' + str(Path(work_dir)/(basename + '_fixed_paired.fq'))]
+            eprint('input files fixed, resuming')
+            p = subprocess.run(command,
+                           stderr = subprocess.PIPE,
+                           stdout = subprocess.DEVNULL,
                            check = True)
-            (Path(work_dir)/(basename + '_unpaired.fq')).unlink(missing_ok = True)
-        
-        #record statistics
-        deduplicated = Path(work_dir).glob('*_dedup_*.fq')
-        dedup_bp = 0
-        for dedup in deduplicated:
-            with open(dedup, 'rb') as infile:
+            eprint(p.stderr.decode())
+            command = ['clumpify.sh',
+                   'in=' + str(Path(work_dir)/(basename + '_fixed_paired.fq')),
+                   'out=' + str(Path(work_dir)/(basename + '_dedup_paired.fq')),
+                   'dedupe',
+                   'dupesubs=2',
+                   'shortname=t',
+                   'quantize=t',
+                   '-Xmx1g',
+                   'usetmpdir=t',
+                   'tmpdir=' + str(Path(work_dir))]
+            
+        (Path(work_dir)/(basename + '_R1.fq')).unlink(missing_ok = True)
+        (Path(work_dir)/(basename + '_R2.fq')).unlink(missing_ok = True)
+        (Path(work_dir)/(basename + '_fixed_paired.fq')).unlink(missing_ok = True)
+
+    #deduplicate unpaired reads:
+    if len(reads['unpaired']):
+        command = ['clumpify.sh',
+                   'interleaved=f',
+                   'in=' + str(Path(work_dir)/(basename + '_unpaired.fq')),
+                   'out=' + str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
+                   'dedupe',
+                   'dupesubs=2',
+                   'shortname=t',
+                   'quantize=t',
+                   '-Xmx1g',
+                   'usetmpdir=t',
+                   'tmpdir=' + str(Path(work_dir))]
+        p = subprocess.run(command,
+                       stderr = subprocess.PIPE,
+                       stdout = subprocess.DEVNULL, 
+                       check = True)
+        eprint(p.stderr.decode())
+        (Path(work_dir)/(basename + '_unpaired.fq')).unlink(missing_ok = True)
+
+    #record statistics
+    deduplicated = Path(work_dir).glob('*_dedup_*.fq')
+    dedup_bp = 0
+    for dedup in deduplicated:
+        with open(dedup, 'rb') as infile:
+            BUF_SIZE = 100000000
+            tmp_lines = infile.readlines(BUF_SIZE)
+            line_n = 0        
+            while tmp_lines:
+                for line in tmp_lines:
+                    if line_n % 4 == 1:
+                        dedup_bp += (len(line) - 1)
+                    line_n += 1
+                tmp_lines = infile.readlines(BUF_SIZE)
+
+
+
+    # now we can run fastp to remove adapters and merge paired reads
+    if (Path(work_dir)/(basename + '_dedup_paired.fq')).is_file():
+        # let's build the call to the subprocess. This is the common part
+        # for some reason, fastp fails with interleaved input unless it is provided from stdin
+        # for this reason, we will make a pipe
+        command = ['fastp',
+                   '--stdin',
+                   '--interleaved_in',
+                   '--disable_quality_filtering',
+                   '--disable_length_filtering',
+                   '--trim_poly_g',
+                   '--thread', str(threads),
+                   '--html', str(Path(work_dir)/(basename + '_fastp_paired.html')),
+                   '--json', str(Path(work_dir)/(basename + '_fastp_paired.json')),
+                   '--stdout'
+                   ]
+
+        # add arguments depending on adapter option
+        if cut_adapters:
+            command.extend(['--detect_adapter_for_pe'])
+        else:
+            command.extend(['--disable_adapter_trimming'])
+
+        # add arguments depending on merge option
+        if merge_reads:
+            command.extend(['--merge',
+                            '--include_unmerged'])
+        else:
+            command.extend(['--stdout'])
+
+        with open(Path(work_dir)/(basename + '_clean_paired.fq'), 'wb') as outf:
+            cat = subprocess.Popen(['cat', str(Path(work_dir)/(basename + '_dedup_paired.fq'))],
+                                  stdout = subprocess.PIPE)
+            p = subprocess.run(command,
+                           check= True,
+                           stdin = cat.stdout,
+                           stderr = subprocess.PIPE,
+                           stdout= outf)
+            eprint(p.stderr.decode())
+            (Path(work_dir)/(basename + '_dedup_paired.fq')).unlink(missing_ok = True)
+
+
+
+        # and remove adapters from unpaired reads, if any
+        if (Path(work_dir)/(basename + '_dedup_unpaired.fq')).is_file():
+            command = ['fastp',
+                       '-i', str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
+                       '-o', str(Path(work_dir)/(basename + '_clean_unpaired.fq')),
+                       '--html', str(Path(work_dir)/(basename + '_fastp_unpaired.html')),
+                       '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
+                       '--disable_quality_filtering',
+                       '--disable_length_filtering',
+                       '--trim_poly_g',
+                       '--thread', str(threads)]
+
+            if not cut_adapters:
+                command.extend(['--disable_adapter_trimming'])
+
+            p = subprocess.run(command,
+                           stdout = subprocess.DEVNULL,
+                           stderr = subprocess.PIPE,
+                           check = True)
+            eprint(p.stderr.decode())
+            (Path(work_dir)/(basename + '_dedup_unpaired.fq')).unlink(missing_ok = True)
+
+
+    # now that we finished cleaning, let's compress and move the final file to their destination folder
+    # and assemble statistics
+    # move files
+
+    # create output folders if they do not exist
+
+    try:
+        outpath.parent.mkdir(parents = True)
+    except OSError:
+        pass
+
+    command = ['cat']
+    command.extend([str(x) for x in Path(work_dir).glob('*_clean_*.fq')])
+
+    with open(outpath, 'wb') as outf:
+        cat = subprocess.Popen(command, stdout = subprocess.PIPE)
+        p = subprocess.run(['pigz', '-p', str(threads)], 
+                       stdin = cat.stdout, 
+                       stdout = outf,
+                       stderr = subprocess.PIPE,
+                       check = True)
+        eprint(p.stderr.decode())
+
+    #copy fastp reports
+    for fastp_f in Path(work_dir).glob('*fastp*'):
+        shutil.copy(fastp_f,outpath.parent/str(fastp_f.name))
+
+
+    # stats: numbers of basepairs in each step (we recorded initial bp already when concatenating)
+    clean = Path(work_dir).glob('*_clean_*.fq')
+    if cut_adapters or merge_reads:
+        clean_bp = 0
+        for cl in clean:
+            with open(cl, 'rb') as infile:
                 BUF_SIZE = 100000000
                 tmp_lines = infile.readlines(BUF_SIZE)
                 line_n = 0        
                 while tmp_lines:
                     for line in tmp_lines:
                         if line_n % 4 == 1:
-                            dedup_bp += (len(line) - 1)
+                            clean_bp += (len(line) - 1)
                         line_n += 1
                     tmp_lines = infile.readlines(BUF_SIZE)
+    else:
+        clean_bp = np.nan
 
 
-        
-        # now we can run fastp to remove adapters and merge paired reads
-        if (Path(work_dir)/(basename + '_dedup_paired.fq')).is_file():
-            # let's build the call to the subprocess. This is the common part
-            # for some reason, fastp fails with interleaved input unless it is provided from stdin
-            # for this reason, we will make a pipe
-            command = ['fastp',
-                       '--stdin',
-                       '--interleaved_in',
-                       '--disable_quality_filtering',
-                       '--disable_length_filtering',
-                       '--trim_poly_g',
-                       '--thread', str(threads),
-                       '--html', str(Path(work_dir)/(basename + '_fastp_paired.html')),
-                       '--json', str(Path(work_dir)/(basename + '_fastp_paired.json')),
-                       '--stdout'
-                       ]
-
-            # add arguments depending on adapter option
-            if cut_adapters:
-                command.extend(['--detect_adapter_for_pe'])
-            else:
-                command.extend(['--disable_adapter_trimming'])
-
-            # add arguments depending on merge option
-            if merge_reads:
-                command.extend(['--merge',
-                                '--include_unmerged'])
-            else:
-                command.extend(['--stdout'])
-
-            with open(Path(work_dir)/(basename + '_clean_paired.fq'), 'wb') as outf:
-                cat = subprocess.Popen(['cat', str(Path(work_dir)/(basename + '_dedup_paired.fq'))],
-                                      stdout = subprocess.PIPE)
-                subprocess.run(command,
-                               check= True,
-                               stdin = cat.stdout,
-                               stderr = subprocess.DEVNULL,
-                               stdout= outf)
-                (Path(work_dir)/(basename + '_dedup_paired.fq')).unlink(missing_ok = True)
-                    
-
-
-            # and remove adapters from unpaired reads, if any
-            if (Path(work_dir)/(basename + '_dedup_unpaired.fq')).is_file():
-                command = ['fastp',
-                           '-i', str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
-                           '-o', str(Path(work_dir)/(basename + '_clean_unpaired.fq')),
-                           '--html', str(Path(work_dir)/(basename + '_fastp_unpaired.html')),
-                           '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
-                           '--disable_quality_filtering',
-                           '--disable_length_filtering',
-                           '--trim_poly_g',
-                           '--thread', str(threads)]
-
-                if not cut_adapters:
-                    command.extend(['--disable_adapter_trimming'])
-
-                subprocess.run(command,
-                               stdout = subprocess.DEVNULL,
-                               stderr = subprocess.DEVNULL,
-                               check = True)
-                (Path(work_dir)/(basename + '_dedup_unpaired.fq')).unlink(missing_ok = True)
-
-
-        # now that we finished cleaning, let's compress and move the final file to their destination folder
-        # and assemble statistics
-        # move files
-
-        # create output folders if they do not exist
-
-        try:
-            outpath.parent.mkdir(parents = True)
-        except OSError:
-            pass
-
-        command = ['cat']
-        command.extend([str(x) for x in Path(work_dir).glob('*_clean_*.fq')])
-
-        with open(outpath, 'wb') as outf:
-            cat = subprocess.Popen(command, stdout = subprocess.PIPE)
-            subprocess.run(['pigz', '-p', str(threads)], 
-                           stdin = cat.stdout, 
-                           stdout = outf,
-                           stderr = subprocess.DEVNULL,
-                           check = True)
-            
-        #copy fastp reports
-        for fastp_f in Path(work_dir).glob('*fastp*'):
-            shutil.copy(fastp_f,outpath.parent/str(fastp_f.name))
-
-
-        # stats: numbers of basepairs in each step (we recorded initial bp already when concatenating)
-        clean = Path(work_dir).glob('*_clean_*.fq')
-        if cut_adapters or merge_reads:
-            clean_bp = 0
-            for cl in clean:
-                with open(cl, 'rb') as infile:
-                    BUF_SIZE = 100000000
-                    tmp_lines = infile.readlines(BUF_SIZE)
-                    line_n = 0        
-                    while tmp_lines:
-                        for line in tmp_lines:
-                            if line_n % 4 == 1:
-                                clean_bp += (len(line) - 1)
-                            line_n += 1
-                        tmp_lines = infile.readlines(BUF_SIZE)
-        else:
-            clean_bp = np.nan
+    stats = OrderedDict()        
+    done_time = time.time()
+    stats['start_basepairs'] = initial_bp
+    stats['deduplicated_basepairs'] = dedup_bp
+    stats['clean_basepairs'] = clean_bp
+    stats['cleaning_time'] = done_time - start_time
         
         
-        stats = OrderedDict()        
-        done_time = time.time()
-        stats['start_basepairs'] = initial_bp
-        stats['deduplicated_basepairs'] = dedup_bp
-        stats['clean_basepairs'] = clean_bp
-        stats['cleaning_time'] = done_time - start_time
+    shutil.rmtree(work_dir)
+    ####END OF TEMPDIR BLOCK    
 
     return(stats)
 
@@ -452,7 +499,7 @@ def split_fastq(infile,
             del sites_per_file[-1]
         
     # now we will use bbtools reformat.sh to subsample
-    outfs = [Path(outfolder)/(outprefix + '_' + str(int(bp/1000)).rjust(8, '0') + 'K' + '.fq.gz') for bp in sites_per_file]
+    outfs = [Path(outfolder)/(outprefix + sample_bp_sep + str(int(bp/1000)).rjust(8, '0') + 'K' + '.fq.gz') for bp in sites_per_file]
     
     if all([f.is_file() for f in outfs]):
         if not overwrite:
@@ -460,7 +507,7 @@ def split_fastq(infile,
             return(OrderedDict())
     
     for i, bp in enumerate(sites_per_file):
-        outfile = Path(outfolder)/(outprefix + '_' + str(int(bp/1000)).rjust(8, '0') + 'K' + '.fq.gz')
+        outfile = Path(outfolder)/(outprefix + sample_bp_sep + str(int(bp/1000)).rjust(8, '0') + 'K' + '.fq.gz')
         
         subprocess.run(['reformat.sh',
                         'samplebasestarget=' + str(bp),
@@ -595,9 +642,9 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
 #minbp_filter will only consider samples that have yielded at least that amount of data
 def get_train_val_sets():
     file_path = [x.absolute() for x in (Path('images_' + str(kmer_size))).ls() if x.suffix == '.png']
-    taxon = [x.name.split('+')[0] for x in file_path]
-    sample = [x.name.split('+')[-1].split('_')[0] for x in file_path]
-    n_bp = [int(x.name.split('_')[-1].split('.')[0].replace('K','000')) for x in file_path]
+    taxon = [x.name.split(label_sample_sep)[0] for x in file_path]
+    sample = [x.name.split(label_sample_sep)[-1].split('_')[0] for x in file_path]
+    n_bp = [int(x.name.split(sample_bp_sep)[-1].split('.')[0].replace('K','000')) for x in file_path]
 
     df = pd.DataFrame({'taxon': taxon,
                   'sample': sample,
