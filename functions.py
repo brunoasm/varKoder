@@ -124,7 +124,8 @@ def clean_reads(infiles,
                 merge_reads = True, 
                 max_bp = None, 
                 threads = 1,
-                overwrite = False):
+                overwrite = False,
+                verbose = False):
     
     start_time = time.time()
     
@@ -250,7 +251,7 @@ def clean_reads(infiles,
                            stderr = subprocess.PIPE,
                            stdout = subprocess.DEVNULL,
                            check = True)
-            eprint(p.stderr.decode())
+            if verbose: eprint(p.stderr.decode())
         except subprocess.CalledProcessError as e:
             eprint('clumpify.sh returned an error:')
             eprint(e.stderr.decode())
@@ -264,7 +265,7 @@ def clean_reads(infiles,
                            stderr = subprocess.PIPE,
                            stdout = subprocess.DEVNULL,
                            check = True)
-            eprint(p.stderr.decode())
+            if verbose: eprint(p.stderr.decode())
             command = ['clumpify.sh',
                    'in=' + str(Path(work_dir)/(basename + '_fixed_paired.fq')),
                    'out=' + str(Path(work_dir)/(basename + '_dedup_paired.fq')),
@@ -297,7 +298,7 @@ def clean_reads(infiles,
                        stderr = subprocess.PIPE,
                        stdout = subprocess.DEVNULL, 
                        check = True)
-        eprint(p.stderr.decode())
+        if verbose: eprint(p.stderr.decode())
         (Path(work_dir)/(basename + '_unpaired.fq')).unlink(missing_ok = True)
 
     #record statistics
@@ -355,7 +356,7 @@ def clean_reads(infiles,
                            stdin = cat.stdout,
                            stderr = subprocess.PIPE,
                            stdout= outf)
-            eprint(p.stderr.decode())
+            if verbose: eprint(p.stderr.decode())
             (Path(work_dir)/(basename + '_dedup_paired.fq')).unlink(missing_ok = True)
 
 
@@ -379,7 +380,7 @@ def clean_reads(infiles,
                            stdout = subprocess.DEVNULL,
                            stderr = subprocess.PIPE,
                            check = True)
-            eprint(p.stderr.decode())
+            if verbose: eprint(p.stderr.decode())
             (Path(work_dir)/(basename + '_dedup_unpaired.fq')).unlink(missing_ok = True)
 
 
@@ -404,7 +405,7 @@ def clean_reads(infiles,
                        stdout = outf,
                        stderr = subprocess.PIPE,
                        check = True)
-        eprint(p.stderr.decode())
+        if verbose: eprint(p.stderr.decode())
 
     #copy fastp reports
     for fastp_f in Path(work_dir).glob('*fastp*'):
@@ -460,7 +461,9 @@ def split_fastq(infile,
                 max_bp = None,
                 is_query = False,
                 seed = None,
-                overwrite = False):
+                overwrite = False,
+                verbose = False
+               ):
     start_time = time.time()
         
     # let's start by counting the number of sites in reads of the input file
@@ -509,16 +512,17 @@ def split_fastq(infile,
     for i, bp in enumerate(sites_per_file):
         outfile = Path(outfolder)/(outprefix + sample_bp_sep + str(int(bp/1000)).rjust(8, '0') + 'K' + '.fq.gz')
         
-        subprocess.run(['reformat.sh',
+        p = subprocess.run(['reformat.sh',
                         'samplebasestarget=' + str(bp),
                         'sampleseed='+str(int(seed) + i),
                         'in=' + str(infile),
                         'out=' + str(outfile),
                         'overwrite=true'
                        ],
-                      stderr = subprocess.DEVNULL,
+                      stderr = subprocess.PIPE,
                       stdout = subprocess.DEVNULL,
                       check = True)
+        if verbose: eprint(p.stderr.decode())
             
     done_time = time.time()
     
@@ -535,8 +539,8 @@ def count_kmers(infile,
                 outfolder, 
                 threads = 1, 
                 k = 7,
-                overwrite = False
-               ):
+                overwrite = False,
+                verbose = False):
     start_time = time.time()
     
     Path(outfolder).mkdir(exist_ok = True)
@@ -550,7 +554,7 @@ def count_kmers(infile,
     with tempfile.TemporaryDirectory(prefix='dsk') as tempdir:
         for attempt in Retrying(stop = stop_after_attempt(5), wait = wait_random_exponential(multiplier=1, max=60)):
             with attempt:
-                subprocess.run(['dsk',
+                p = subprocess.run(['dsk',
                                 '-nb-cores', str(threads),
                                 '-kmer-size', str(k),
                                 '-abundance-min', '1',
@@ -560,9 +564,11 @@ def count_kmers(infile,
                                 '-out-tmp', str(tempdir),
                                 '-out-dir', str(outfolder)
                                ],
-                               stderr = subprocess.DEVNULL,
+                               stderr = subprocess.PIPE,
                                stdout = subprocess.DEVNULL,
                                check = True)
+                if verbose: eprint(p.stderr.decode())
+                
     
     done_time = time.time()
     
@@ -576,7 +582,12 @@ def count_kmers(infile,
 #mapping is the path to the table in parquet format that relates kmers to their positions in the image
 #we do not need to save the ascii dsk kmer counts to disk, but the program requires a file
 #so we will create a temporary file and delete it
-def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
+def make_image(infile, 
+               outfolder, 
+               kmers, 
+               threads = 1, 
+               overwrite = False,
+               verbose = False):
     Path(outfolder).mkdir(exist_ok = True)
     outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.png'    
     
@@ -597,17 +608,21 @@ def make_image(infile, outfolder, kmers, threads = 1, overwrite = False):
         # first, dump dsk results as ascii, save in a pandas df and merge with mapping
         # mapping has kmers and their reverse complements, so we need to aggregate
         # to get only canonical kmers
+        # when running in parallel, sometimes dsk fails, hard to know the reason
+        # so we retry a few times before admitting defeat
         for attempt in Retrying(stop = stop_after_attempt(5), wait = wait_random_exponential(multiplier=1, max=60)):
             with attempt:
-                dsk_out = subprocess.check_output(['dsk2ascii',
+                dsk_out = subprocess.run(['dsk2ascii',
                                                    '-c',
                                                    '-file', str(infile),
                                                    '-nb-cores', str(threads),
                                                    '-out', str(Path(outdir)/'dsk.txt'),
                                                    '-verbose', '0'
                                                   ],
-                                                 stderr = subprocess.DEVNULL)
-        dsk_out = dsk_out.decode('UTF-8')
+                                        stdout = subprocess.PIPE,
+                                        stderr = subprocess.PIPE)
+        if verbose: eprint(dsk_out.stderr.decode())
+        dsk_out = dsk_out.stdout.decode('UTF-8')
         counts = pd.read_csv(StringIO(dsk_out), sep=" ",names=['sequence','count'],index_col=0)
         counts = kmers.join(counts).groupby(['x','y']).agg(sum).reset_index()
         counts.loc[:,'count'] = counts['count'].fillna(0)

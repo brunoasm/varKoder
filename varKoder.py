@@ -21,6 +21,10 @@ parent_parser.add_argument('-b', '--max_batch_size',
                            help = 'maximum batch size to use for training or querying.',
                            type = int,
                            default=64 )
+parent_parser.add_argument('-v', '--verbose', 
+                           help = 'show output for fastp, dsk and bbtools.',
+                           action = 'store_true'
+                          )
 
 
 
@@ -74,7 +78,7 @@ parser_train.add_argument('input',
                           help = 'path to the folder with input images.')
 parser_train.add_argument('outdir', 
                           help = 'path to the folder where trained model will be stored.')
-parser_train.add_argument('-v','--validation-set',
+parser_train.add_argument('-V','--validation-set',
                           help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created.'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
@@ -263,7 +267,8 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                   merge_reads = args.no_merge is False,
                                   max_bp = maxbp,
                                   threads = cores_per_process,
-                                  overwrite = args.overwrite
+                                  overwrite = args.overwrite,
+                                  verbose = args.verbose
                    )
 
         stats[(x['taxon'],x['sample'])].update(clean_stats)
@@ -279,6 +284,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                       min_bp = humanfriendly.parse_size(args.min_bp), 
                                       max_bp = maxbp, 
                                       overwrite = args.overwrite,
+                                      verbose = args.verbose,
                                       seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
         elif args.command == 'query':
              split_stats = split_fastq(infile = clean_reads_f,
@@ -289,6 +295,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                       is_query = True,
                                       max_bp = maxbp, 
                                       overwrite = args.overwrite,
+                                      verbose = args.verbose,
                                       seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))           
 
         stats[(x['taxon'],x['sample'])].update(split_stats)
@@ -308,7 +315,9 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                           outfolder = kmer_counts_d, 
                                           threads = cores_per_process,
                                           k = args.kmer_size,
-                                          overwrite = args.overwrite)
+                                          overwrite = args.overwrite,
+                                          verbose = args.verbose
+                                         )
 
                 try:
                     stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
@@ -331,7 +340,9 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                        outfolder = images_d, 
                                        kmers = kmer_mapping,
                                        overwrite = args.overwrite,
-                                       threads = cores_per_process)
+                                       threads = cores_per_process,
+                                       verbose = args.verbose
+                                      )
                 try:
                     stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
                 except KeyError as e:
