@@ -1,0 +1,18 @@
+name: varKoder_test
+channels:
+  - pytorch
+  - fastai
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9.14
+  - pyarrow=8.0.0
+  - pigz=2.6
+  - tenacity=8.1.0
+  - pytorch=1.13.1
+  - humanfriendly=10.0
+  - torchvision
+  - torchaudio
+  - fastai=2.7.10
+  - timm=0.6.7
