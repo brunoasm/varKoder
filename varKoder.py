@@ -298,7 +298,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
 
 
         #### STEP D - count kmers
-        if not args.no_image:
+        if args.command == 'query' or not args.no_image:
             eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
             stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
 
