@@ -366,18 +366,20 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
 
 In addition to this output table, varKodes produced from a raw reads input can be saved to the same folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
 
-## Authors
+## Example workflow
 
-* **Your Name** - *Initial work* - [YourGitHubUsername](https://github.com/YourGitHubUsername)
+Include here an example of the full workflow, including image, train and query. Maybe we could include a small dataset to run the example?
 
-See also the list of [contributors](https://github.com/YourGitHubUsername/project-name/contributors) who participated in this project.
+## Author
+
+B. de Medeiros ...
+
+## Contributors
+
+...
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
-## Acknowledgments
 
-* Hat tip to anyone whose code was used
-* Inspiration
-* etc.
