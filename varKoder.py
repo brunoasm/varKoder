@@ -86,7 +86,7 @@ parser_train.add_argument('-f','--validation-set-fraction',
 parser_train.add_argument('-m','--pretrained-model', 
                           help = 'pickle file with optional pretrained model to update with new images.'
                          )
-parser_train.add_argument('-b', '--max_batch_size', 
+parser_train.add_argument('-b', '--max-batch-size', 
                            help = 'maximum batch size when using GPU for training.',
                            type = int,
                            default=64 )
@@ -148,7 +148,7 @@ parser_query.add_argument('input',
                           help = 'path to folder with fastq files to be queried.')
 parser_query.add_argument('outdir', 
                           help = 'path to the folder where results will be saved.')
-parent_parser.add_argument('-v', '--verbose', 
+parser_query.add_argument('-v', '--verbose', 
                            help = 'show output for fastp, dsk and bbtools.',
                            action = 'store_true',
                            default = False
@@ -186,7 +186,7 @@ parser_query.add_argument('-r', '--no-merge',
 parser_query.add_argument('-M', '--max-bp' ,  
                           help = 'number of post-cleaning basepairs to use for making image. If not provided, all data will be used.'
                          )
-parser_query.add_argument('-b', '--max_batch_size', 
+parser_query.add_argument('-b', '--max-batch-size', 
                            help = 'maximum batch size when using GPU for predictions.',
                            type = int,
                            default=64 )
