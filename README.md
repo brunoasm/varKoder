@@ -191,7 +191,7 @@ Note:
 
 ##### Required arguments
 
-  | `input` | path to either the folder with fastq files or csv file relating file paths to samples. See input formats above. |
+| `input` | path to either the folder with fastq files or csv file relating file paths to samples. See input formats above. |
 
 ##### Optional arguments
 
