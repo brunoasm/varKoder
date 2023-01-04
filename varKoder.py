@@ -16,10 +16,6 @@ subparsers = main_parser.add_subparsers(required = True, dest = 'command')
 parent_parser = argparse.ArgumentParser(add_help = False, 
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parent_parser.add_argument('-d', '--seed', help = 'random seed.')
-parent_parser.add_argument('-v', '--verbose', 
-                           help = 'show output for fastp, dsk and bbtools.',
-                           action = 'store_true'
-                          )
 
 
 
@@ -28,6 +24,11 @@ parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Preprocess reads and prepare images for CNN training.')
 parser_img.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
+parser_img.add_argument('-v', '--verbose', 
+                           help = 'show output for fastp, dsk and bbtools.',
+                           action = 'store_true',
+                           default = False
+                          )
 parser_img.add_argument('input', 
                         help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
 parser_img.add_argument('-k', '--kmer-size',
@@ -89,6 +90,10 @@ parser_train.add_argument('-b', '--max_batch_size',
                            help = 'maximum batch size when using GPU for training.',
                            type = int,
                            default=64 )
+parser_train.add_argument('-r', '--base_learning_rate', 
+                           help = 'base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates.',
+                           type = float,
+                           default = 1e-3)
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
@@ -99,7 +104,7 @@ parser_train.add_argument('-z','--freeze-epochs',
                           type = int,
                           default = 0
                          )
-parser_train.add_argument('-r','--architecture', 
+parser_train.add_argument('-c','--architecture', 
                           help = 'model architecture. See https://github.com/rwightman/pytorch-image-models for possible options.',
                           default = 'ig_resnext101_32x8d'
                          )
@@ -123,6 +128,11 @@ parser_train.add_argument('-l','--max-lighting',
                           type=float, 
                           default = 0.5
                          )
+parser_train.add_argument('-g', '--no-logging', 
+                           help = 'hide fastai progress bar and logging during training.',
+                           action = 'store_true',
+                           default = False
+                          )
 
 
 
@@ -138,6 +148,11 @@ parser_query.add_argument('input',
                           help = 'path to folder with fastq files to be queried.')
 parser_query.add_argument('outdir', 
                           help = 'path to the folder where results will be saved.')
+parent_parser.add_argument('-v', '--verbose', 
+                           help = 'show output for fastp, dsk and bbtools.',
+                           action = 'store_true',
+                           default = False
+                          )
 parser_query.add_argument('-I', '--images', 
                           help = 'input folder contains processed images instead of raw reads.', 
                           action = 'store_true')
@@ -455,6 +470,9 @@ if args.command == 'query':
 
 
 if args.command == 'train':
+
+
+    eprint('Starting train command.')
     
     #1 let's create a data table for all images.
     image_files = list()
@@ -469,8 +487,10 @@ if args.command == 'train':
     
     #2 let's add a column to mark images in the validation set according to input options
     if args.validation_set: #if a specific validation set was defined, let's use it
+        eprint('Spliting validation set as defined by user.')
         validation_samples = args.validation_set.split(',')
     else:
+        eprint('Splitting validation set randomly. Fraction of samples per taxon held as validation:', str(args.validation_set_fraction))
         validation_samples = (image_files[['taxon','sample']].
                               drop_duplicates().
                               groupby('taxon').
@@ -480,8 +500,8 @@ if args.command == 'train':
         
     image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples))
     
-        
     #3 prepare input to training function based on options
+    eprint('setting up CNN model for training.')
     callback = {'MixUp': MixUp,
                 'CutMix': CutMix,
                 'None': None}[args.mix_augmentation]
@@ -521,16 +541,21 @@ if args.command == 'train':
         load_on_cpu = False
     
     if args.pretrained_model:
+        eprint("Loading pretrained model:", str(args.pretrained_model))
         past_learn = load_learner(args.pretrained_model, cpu = load_on_cpu)
         model_state_dict = past_learn.model.state_dict()
         del past_learn
+   
+    else:
+        eprint("Starting model with random weigths.")
     
     
-    
+    eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
     #5 call training function
     learn = train_cnn(image_files, 
                       args.architecture, 
                       max_bs = args.max_batch_size,
+                      base_lr = args.base_learning_rate,
                       epochs = args.epochs,
                       freeze_epochs = args.freeze_epochs,
                       normalize = True, 
@@ -538,7 +563,8 @@ if args.command == 'train':
                       callbacks = callback, 
                       transforms = trans,
                       loss_fn = loss,
-                      model_state_dict = model_state_dict
+                      model_state_dict = model_state_dict,
+                      verbose = not args.no_logging
                      )
     
     # save results

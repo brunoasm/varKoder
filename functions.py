@@ -738,6 +738,7 @@ def timm_learner(dls, arch:str, loss_func=None, pretrained=True, cut=None, split
 def train_cnn(df, 
               architecture,
               max_bs = 64,
+              base_lr = 1e-3,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
@@ -745,7 +746,8 @@ def train_cnn(df,
               callbacks = CutMix, 
               transforms = None,
               pretrained = False,
-              loss_fn = LabelSmoothingCrossEntropyFlat()):
+              loss_fn = LabelSmoothingCrossEntropyFlat(),
+              verbose = True):
     
     
     #find a batch size that is a power of 2 and splits the dataset in about 10 batches
@@ -792,7 +794,11 @@ def train_cnn(df,
         learn.model.load_state_dict(new_state_dict, strict = False)
     
     #train
-    learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = 1e-3)
+    if verbose:
+        learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+    else:
+        with learn.no_bar(), learn.no_logging():
+            learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
         
     
     return(learn)
