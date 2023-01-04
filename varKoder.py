@@ -16,11 +16,6 @@ subparsers = main_parser.add_subparsers(required = True, dest = 'command')
 parent_parser = argparse.ArgumentParser(add_help = False, 
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parent_parser.add_argument('-d', '--seed', help = 'random seed.')
-parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
-parent_parser.add_argument('-b', '--max_batch_size', 
-                           help = 'maximum batch size to use for training or querying.',
-                           type = int,
-                           default=64 )
 parent_parser.add_argument('-v', '--verbose', 
                            help = 'show output for fastp, dsk and bbtools.',
                            action = 'store_true'
@@ -32,10 +27,11 @@ parent_parser.add_argument('-v', '--verbose',
 parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Preprocess reads and prepare images for CNN training.')
+parser_img.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
 parser_img.add_argument('input', 
                         help = 'path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.')
 parser_img.add_argument('-k', '--kmer-size',
-                        help = 'size of kmers to count (5–8)',
+                        help = 'size of kmers to count (5–9)',
                         type = int, 
                         default = 7)
 parser_img.add_argument('-n', '--n-threads', 
@@ -89,6 +85,10 @@ parser_train.add_argument('-f','--validation-set-fraction',
 parser_train.add_argument('-m','--pretrained-model', 
                           help = 'pickle file with optional pretrained model to update with new images.'
                          )
+parser_train.add_argument('-b', '--max_batch_size', 
+                           help = 'maximum batch size when using GPU for training.',
+                           type = int,
+                           default=64 )
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
@@ -142,7 +142,7 @@ parser_query.add_argument('-I', '--images',
                           help = 'input folder contains processed images instead of raw reads.', 
                           action = 'store_true')
 parser_query.add_argument('-k', '--kmer-size', 
-                          help = 'size of kmers to count (5–8)', 
+                          help = 'size of kmers to count (5–9)', 
                           type = int, 
                           default = 7)
 parser_query.add_argument('-n', '--n-threads', 
@@ -169,8 +169,12 @@ parser_query.add_argument('-r', '--no-merge',
                           help = 'do not attempt to merge paired reads.', 
                           action='store_true')
 parser_query.add_argument('-M', '--max-bp' ,  
-                          help = 'Number of post-cleaning basepairs to use for making image. If not provided, all data will be used.'
+                          help = 'number of post-cleaning basepairs to use for making image. If not provided, all data will be used.'
                          )
+parser_query.add_argument('-b', '--max_batch_size', 
+                           help = 'maximum batch size when using GPU for predictions.',
+                           type = int,
+                           default=64 )
 
 # execution
 args = main_parser.parse_args()
