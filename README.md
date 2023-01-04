@@ -191,25 +191,25 @@ Note:
 
 ##### Required arguments
 
-  |`input`|path to either the folder with fastq files or csv file relating file paths to samples. See input formats above|
+  | `input` | path to either the folder with fastq files or csv file relating file paths to samples. See input formats above. |
 
 ##### Optional arguments
 
-  |`-h`, `--help`| show help message and exit.|
-  |`-d SEED`, `--seed SEED`|  optional random seed to make sample preprocessing reproducible.|
-  |`-x`, `--overwrite`| overwrite existing results. By default samples are skipped if files exist.|
-  |`-v`, `--verbose`|  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors.|
-  |`-k KMER_SIZE`, `--kmer-size KMER_SIZE`| size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7)|
-  |`-n N_THREADS`, `--n-threads N_THREADS`| number of samples to preprocess in parallel. See notes below on usage. (default: 1)|
-  |`-c CPUS_PER_THREAD`, `--cpus-per-thread CPUS_PER_THREAD`| number of cpus to use for preprocessing each sample. See notes below on usage (default: 1) |
-  |`-o OUTDIR`, `--outdir OUTDIR`| path to folder where to write final images. (default: images)|
-  |`-f STATS_FILE`, `--stats-file STATS_FILE`}| path to file where sample statistics will be saved. See *Output* below for details (default: stats.csv)|
-  |`-i INT_FOLDER`, `--int-folder INT_FOLDER`| folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details.|
-  |`-m MIN_BP`, `--min-bp MIN_BP`| minimum number of post-cleaning basepairs to make an image. Samples below this threshold will be discarded (default: 10M)|
-  |`-M MAX_BP`, `--max-bp MAX_BP`| maximum number of post-cleaning basepairs to make an image. By default this is all the data available for each sample.|
-  |`-a`, `--no-adapter`|      do not attempt to remove adapters from raw reads. See notes below for details. |
-  |`-r`, `--no-merge`|        do not attempt to merge paired reads. See notes below for details. |
-  |`-X`, `--no-image`|       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
+  | `-h`, `--help` | show help message and exit. |
+  | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
+  | `-x`, `--overwrite` | overwrite existing results. By default samples are skipped if files exist. |
+  | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
+  | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
+  | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See notes below on usage. (default: 1) |
+  | `-c CPUS_PER_THREAD`, `--cpus-per-thread CPUS_PER_THREAD` | number of cpus to use for preprocessing each sample. See notes below on usage (default: 1) |
+  | `-o OUTDIR`, `--outdir OUTDIR` | path to folder where to write final images. (default: images) |
+  | `-f STATS_FILE`, `--stats-file STATS_FILE`} | path to file where sample statistics will be saved. See *Output* below for details (default: stats.csv) |
+  | `-i INT_FOLDER`, `--int-folder INT_FOLDER` | folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details. |
+  | `-m MIN_BP`, `--min-bp MIN_BP` | minimum number of post-cleaning basepairs to make an image. Samples below this threshold will be discarded (default: 10M) |
+  | `-M MAX_BP`, `--max-bp MAX_BP` | maximum number of post-cleaning basepairs to make an image. By default this is all the data available for each sample. |
+  | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See notes below for details. |
+  | `-r`, `--no-merge` |        do not attempt to merge paired reads. See notes below for details. |
+  | `-X`, `--no-image` |       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
 
 Notes:
 
