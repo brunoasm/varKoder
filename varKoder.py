@@ -552,8 +552,9 @@ if args.command == 'train':
     
     eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
     #5 call training function
-    learn = train_cnn(image_files, 
-                      args.architecture, 
+    learn = train_cnn(df = image_files, 
+                      architecture = args.architecture, 
+                      valid_pct = args.validation_set_fraction,
                       max_bs = args.max_batch_size,
                       base_lr = args.base_learning_rate,
                       epochs = args.epochs,

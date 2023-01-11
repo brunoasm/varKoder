@@ -101,7 +101,7 @@ def process_input(inpath, is_query = False):
 
         # if it isn't a folder, read csv table input
         else:
-            files_table = pd.read_csv(args.input)
+            files_table = pd.read_csv(inpath)
             for colname in ['taxon', 'sample', 'reads_file']:
                 if colname not in files_table.columns:
                     raise Exception('Input csv file missing column: ' + colname)
@@ -482,7 +482,7 @@ def split_fastq(infile,
         sites_per_file = [min(int(nsites), int(max_bp))]
     else:
         raise Exception('Input file ' + 
-                        infile + 
+                        str(infile) + 
                         ' has less than ' + 
                         str(min_bp) + 
                         'bp, remove sample or raise min_bp.') 
@@ -737,6 +737,7 @@ def timm_learner(dls, arch:str, loss_func=None, pretrained=True, cut=None, split
 #Function: create a learner and fit model, setting batch size according to number of training images
 def train_cnn(df, 
               architecture,
+              valid_pct = 0.2,
               max_bs = 64,
               base_lr = 1e-3,
               model_state_dict = None,
@@ -758,7 +759,7 @@ def train_cnn(df,
     if 'is_valid' in df.columns:
         sptr = ColSplitter()
     else:
-        sptr = RandomSplitter(valid_pct = args.validation_set_fraction)
+        sptr = RandomSplitter(valid_pct = valid_pct)
         
     dbl = DataBlock(blocks=(ImageBlock, CategoryBlock),
                        splitter = sptr,
