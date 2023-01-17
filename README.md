@@ -97,7 +97,7 @@ Below we provide detailed information for each command:
 
 ### varKoder.py image
 
-This command processes raw sequencing reads and produces *varKodes*, which are images representing the variation in K-mer frequencies for a given k-mer size.
+This command processes raw sequencing reads and produces *varKodes*, which are images representing the variation in K-mer frequencies for a given k-mer length.
 
 Processing includes the following steps:
 
@@ -203,7 +203,7 @@ Note:
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-x`, `--overwrite` | overwrite existing results. By default samples are skipped if files exist. |
-| `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
+| `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | length of kmers to count. Lengths from 5 to 9 are supported at the moment. (default: 7) |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips below on usage. (default: 1) |
 | `-c CPUS_PER_THREAD`, `--cpus-per-thread CPUS_PER_THREAD` | number of cpus to use for preprocessing each sample. See tips below on usage (default: 1) |
 | `-o OUTDIR`, `--outdir OUTDIR` | path to folder where to write final images. (default: images) |
@@ -219,13 +219,13 @@ Note:
 
 The defaults for optional arguments were chosen based on our sets. Here are some tips to help you choose values for optional arguments in case you want to change them:
 
- 1. `--min-bp` and `--max-bp`. These arguments define how many subsampled images will be generated for each sample. We use several varKodes per sample with different amounts of input data so that the neural network can be trained to ignore random fluctuations in kmer counts and focus on features that define taxa. The rule used by `varKoder.py` is to create images for subsampled sequence files with standardized input ampounts of data, between `--min-bp` amd `--max-bp` with bp amounts corresponding to 1, 2, or 5 in each order of magnitude. For example, if `--min-bp` is 1M (1 million) and `--max-bp` is 100M (100 million), you will get 7 varKode images for each sample, corresponding to randomly chosen reads for input amounts 1M, 2M, 5M, 10M, 20M, 50M and 100M of base pairs. If `--max-bp` is ommitted, we will follow this run until we reach the largest input amount possible for the number of raw reads in each sample, including a varKode based on all of the data available.
+ 1. `--min-bp` and `--max-bp`. These arguments define how many subsampled images will be generated for each sample. We use several varKodes per sample with different amounts of input data so that the neural network can be trained to ignore random fluctuations in kmer counts and focus on features that define taxa. The rule used by `varKoder.py` is to create images for subsampled sequence files with standardized input ampounts of data, between `--min-bp` amd `--max-bp` with bp amounts corresponding to 1, 2, or 5 in each order of magnitude. For example, if `--min-bp` is 1M (1 million) and `--max-bp` is 100M (100 million), you will get 7 varKode images for each sample, corresponding to randomly chosen reads for input amounts 1M, 2M, 5M, 10M, 20M, 50M and 100M of base pairs. If `--max-bp` is ommitted, we will follow this rule until we reach the largest input amount possible for the number of raw reads in each sample, including a varKode based on all of the data available.
  
- 2. If `--max-bp` is set, `varKoder` first trims raw read files to 5 times the value of `--max-bp`. This can speed up raw read cleaning and kmer counting, but it means that subsampled files are randomly chosen from the reads available in this trimmed raw read files, not the whole initial raw reads.
+ 2. If `--max-bp` is set, `varKoder` first truncates raw read files to 5 times the value of `--max-bp`. This can speed up raw read cleaning and kmer counting, but it means that subsampled files are randomly chosen from the reads available in this trimmed raw read files, not the whole initial raw reads.
 
- 3. `--no-merge` and `--no-adpater`. We have not extensively tested the effect of skipping adapter trimming and merging of overlapping reads. It may be the case that these preprocessing steps are unnecessary in your case and you can speed up computation by using these arguments and skipping these steps.
+ 3. `--no-merge` and `--no-adpater`. We have not extensively tested the effect of skipping adapter trimming and merging of overlapping reads. It may be the case that these preprocessing steps are unnecessary and you can speed up computation by using these arguments and skipping these steps.
 
- 4. If `--n-threads` is more than 1, `varKoder` will use Python `multiprocessing` library to do sample preprocessing in parallel (i. e. clean, split raw reads and generate images). If `-cpus-per-thread` is more than one, the number of CPUs will be passed to programs (i. e. `fastp`, `dsk`, `bbtools`) when processing a sample: this is the number of cores dedicated to each sample. So a user can select to parallelize computing for each sample, or to do more than one sample in parallel, or both. We have not extensively tested the potential speed ups of each method.
+ 4. If `--n-threads` is more than 1, `varKoder` will use Python `multiprocessing` library to do sample preprocessing in parallel (i. e. clean, split raw reads and generate images). If `-cpus-per-thread` is more than one, the number of CPUs will be passed to subprograms (i. e. `fastp`, `dsk`, `bbtools`) when processing a sample: this is the number of cores dedicated to each sample. So a user can select to parallelize computing for each sample, or to do more than one sample in parallel, or both. We have not extensively tested the potential speed ups of each method.
 
 
 #### Output
