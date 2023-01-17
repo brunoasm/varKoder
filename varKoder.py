@@ -53,7 +53,7 @@ parser_img.add_argument('-i', '--int-folder',
 parser_img.add_argument('-m', '--min-bp',  
                         type = str, 
                         help = 'minimum number of post-cleaning basepairs to make an image. Samples below this threshold will be discarded', 
-                        default = '10M')
+                        default = '500K')
 parser_img.add_argument('-M', '--max-bp' ,  
                         help = 'maximum number of post-cleaning basepairs to make an image.')
 parser_img.add_argument('-a', '--no-adapter', 

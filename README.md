@@ -209,7 +209,7 @@ Note:
 | `-o OUTDIR`, `--outdir OUTDIR` | path to folder where to write final images. (default: images) |
 | `-f STATS_FILE`, `--stats-file STATS_FILE`} | path to file where sample statistics will be saved. See *Output* below for details (default: stats.csv) |
 | `-i INT_FOLDER`, `--int-folder INT_FOLDER` | folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details. |
-| `-m MIN_BP`, `--min-bp MIN_BP` | minimum number of post-cleaning basepairs to make an image. If any sample has less data than this threshold, this will result in an error. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp) (default: 10M) |
+| `-m MIN_BP`, `--min-bp MIN_BP` | minimum number of post-cleaning basepairs to make an image. If any sample has less data than this threshold, this will result in an error. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp) (default: 500K) |
 | `-M MAX_BP`, `--max-bp MAX_BP` | maximum number of post-cleaning basepairs to make an image. By default this is all the data available for each sample. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp) |
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See notes below for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See notes below for details. |
