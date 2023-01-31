@@ -16,6 +16,7 @@ subparsers = main_parser.add_subparsers(required = True, dest = 'command')
 parent_parser = argparse.ArgumentParser(add_help = False, 
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 parent_parser.add_argument('-d', '--seed', help = 'random seed.')
+parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
 
 
 
@@ -23,7 +24,6 @@ parent_parser.add_argument('-d', '--seed', help = 'random seed.')
 parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
                                      help = 'Preprocess reads and prepare images for CNN training.')
-parser_img.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
 parser_img.add_argument('-v', '--verbose', 
                            help = 'show output for fastp, dsk and bbtools.',
                            action = 'store_true',
