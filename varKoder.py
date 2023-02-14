@@ -247,6 +247,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                        rename(columns = {'reads_file':'files'}).
                        reset_index()
                       )
+    condensed_files['sample'] = condensed_files['sample'].astype(str)
 
     ### We will save statistics in a dictionary and then output as a table
     ### If a table already exists, read it
