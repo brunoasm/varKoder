@@ -443,15 +443,20 @@ if args.command == 'query':
     predictions_df = pd.DataFrame(pp)
     predictions_df.columns = learn.dls.vocab
     
-    predictions_df = pd.concat([pd.DataFrame({'sample_id':[(img.with_suffix('').
-                                                           name.split(label_sample_sep)[-1].
-                                                           split(sample_bp_sep)[0]) 
+    predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
+                                              'sample_id':[(img.with_suffix('').
+                                                           name.split(sample_bp_sep)[0].
+                                                           split(label_sample_sep)[-1]) 
                                                           for img in img_paths],
-                                              'varKode_image_path': img_paths, 
-                                              'basepairs_used':[(img.with_suffix('').
+                                              'query_basepairs':[(img.with_suffix('').
                                                                  name.split(sample_bp_sep)[-1].
                                                                  split(bp_kmer_sep)[0]) 
                                                                 for img in img_paths],
+                                              'query_kmer_len':[(img.with_suffix('').
+                                                                 name.split(sample_bp_sep)[-1].
+                                                                 split(bp_kmer_sep)[-1]) 
+                                                                for img in img_paths],
+                                              'trained_model_path':str(args.model),
                                               'best_pred_label': best_labels,
                                               'best_pred_prob': best_ps
                                                        }),
