@@ -274,7 +274,7 @@ After *varKodes* are generated with `varKoder.py image`, they can be used to tra
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.001) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/ca llback.schedule.html#learner.fine_tune (default: 20) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -r ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://github.com/rwightman/pytorch-image-models for possible options. (default: ig_resnext101_32x8d) |
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://github.com/rwightman/pytorch-image-models for possible options. (default: ig_resnext101_32x8d) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: CutMix) |
 | -s, --label-smoothing | turn on Label Smoothing. See https://github.com/fastai /fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.a ugment.html#aug_transforms (default: 0.75) |
