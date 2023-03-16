@@ -268,7 +268,7 @@ dependencies:
   - tenacity=8.1.0=pyhd8ed1ab_0
   - thinc=8.1.5=py39h7c9e3ff_1
   - threadpoolctl=3.1.0=pyh8a188c0_0
-  - timm=0.6.7=py_0
+  - timm=0.6
   - tk=8.6.12=h27826a3_0
   - toml=0.10.2=pyhd8ed1ab_0
   - torchaudio=0.13.0=py39_cu117
