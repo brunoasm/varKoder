@@ -419,6 +419,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                 all_stats[k].update(stats[k])
             (pd.DataFrame.from_dict(all_stats, orient = 'index').
               rename_axis(index=['taxon', 'sample']).
+              loc[lambda x: ~x.index.duplicated()]. #for some reason pandas is saving this with a duplicated first row
               to_csv(stats_path)
             )
         
