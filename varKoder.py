@@ -292,10 +292,10 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                       verbose = args.verbose
                        )
         except Exception as e:
-            print('CLEAN FAIL:', x['files'])
+            eprint('CLEAN FAIL:', x['files'])
             if args.verbose:
-                print(e)
-            print('SKIPPING SAMPLE')
+                eprint(e)
+            eprint('SKIPPING SAMPLE')
             stats[(x['taxon'],x['sample'])].update({'failed_step':'clean'})
             return(stats)
 
@@ -316,10 +316,10 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                           verbose = args.verbose,
                                           seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
             except Exception as e:
-                print('SPLIT FAIL:', clean_reads_f)
+                eprint('SPLIT FAIL:', clean_reads_f)
                 if args.verbose:
-                    print(e)
-                print('SKIPPING SAMPLE')
+                    eprint(e)
+                eprint('SKIPPING SAMPLE')
                 stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
                 return(stats)
         elif args.command == 'query':
@@ -335,10 +335,10 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                           verbose = args.verbose,
                                           seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))   
              except Exception as e:
-                 print('SPLIT FAIL:', clean_reads_f)
+                 eprint('SPLIT FAIL:', clean_reads_f)
                  if args.verbose:
-                     print(e)
-                 print('SKIPPING SAMPLE')
+                     eprint(e)
+                 eprint('SKIPPING SAMPLE')
                  stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
                  return(stats)
 
@@ -389,10 +389,10 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                                            verbose = args.verbose
                                           )
                 except IndexError as e:
-                    print('IMAFE FAIL:', infile)
+                    eprint('IMAGE FAIL:', infile)
                     if args.verbose:
-                        print(e)
-                    print('SKIPPING IMAGE')
+                        eprint(e)
+                    eprint('SKIPPING IMAGE')
                     stats[(x['taxon'],x['sample'])].update({'failed_step':'image'})
                     continue
                 try:
