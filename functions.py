@@ -129,6 +129,7 @@ def clean_reads(infiles,
                 verbose = False):
     
     start_time = time.time()
+    timeout_limit = 10*60 #timeout parameter used for bbtools, which may hang. 5 minutes should be more than enough
     
     # let's print a message to the user
     basename = Path(outpath).name.removesuffix(''.join(Path(outpath).suffixes))
@@ -148,22 +149,24 @@ def clean_reads(infiles,
         
   
     #let's start separating forward, reverse and unpaired reads
-    re_pair = {'R1':re.compile(r'_R1_|_R1\.|\.R1\.|\.1\.|_1\.|_1_'),
-              'R2':re.compile(r'_R2_|_R2\.|\.R2\.|\.2\.|_2\.|_2_')}
+    re_pair = {'R1':re.compile(r'(?<=[_R\.])1(?=[_\.])'),
+              'R2':re.compile(r'(?<=[_R\.])2(?=[_\.])')}
     
     reads = {'R1': [str(x) for x in infiles if re_pair['R1'].search(str(x)) is not None],
              'R2': [str(x) for x in infiles if re_pair['R2'].search(str(x)) is not None]}
     reads['unpaired'] = [str(x) for x in infiles if str(x) not in reads['R1'] + reads['R2']]
-    
-    #if print_infiles:
-    #    eprint('Note: Input files identified as:')
-    #    eprint('Paired forward reads:')
-    #    eprint('\n'.join(reads['R1']))
-    #    eprint('Paired reverse reads:')
-    #    eprint('\n'.join(reads['R2']))
-    #    eprint('Unpaired reads:')
-    #    eprint('\n'.join(reads['unpaired']))
-    
+
+    #sometimes we will have sequences with names that look paired but they do not have a pair, so let's check for this:
+    for r in reads['R1']:
+        if re_pair['R1'].sub('2',r) not in reads['R2']:
+            reads['unpaired'].append(r)
+            del reads['R1'][reads['R1'].index(r)]
+    for r in reads['R2']:
+        if re_pair['R2'].sub('1',r) not in reads['R1']:
+            reads['unpaired'].append(r)
+            del reads['R2'][reads['R2'].index(r)]
+
+    eprint('Input files read:',reads)
     #let's check if destination files exist, and skip them if we can
     
     #from now on we will manipulate files in a temporary folder that will be deleted at the end of this function
@@ -234,6 +237,8 @@ def clean_reads(infiles,
     # now we will use bbtools to deduplicate reads
     # here we will only deduplicate identical reads which is faster and should apply to most cases
     #deduplicate paired reads:
+    dedup_pair_succesful = False
+    dedup_unpair_succesful = False
     if len(reads['R1']):
         command = ['clumpify.sh',
                    'in1=' + str(Path(work_dir)/(basename + '_R1.fq')),
@@ -251,9 +256,12 @@ def clean_reads(infiles,
             p = subprocess.run(command,
                            stderr = subprocess.PIPE,
                            stdout = subprocess.DEVNULL,
+                           timeout = timeout_limit , #clumpify.sh sometimes does not finish but also does not throw an Exception. 10 minutes should be more than enough
                            check = True)
             if verbose: eprint(p.stderr.decode())
-        except subprocess.CalledProcessError as e:
+            dedup_pair_succesful = True
+
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
             eprint('clumpify.sh returned an error:')
             eprint(e.stderr.decode())
             eprint('we will now try to fix the input files with repair.sh')
@@ -261,12 +269,12 @@ def clean_reads(infiles,
                    'in1=' + str(Path(work_dir)/(basename + '_R1.fq')),
                    'in2=' + str(Path(work_dir)/(basename + '_R2.fq')),
                    'out=' + str(Path(work_dir)/(basename + '_fixed_paired.fq'))]
-            eprint('input files fixed, resuming')
             p = subprocess.run(command,
                            stderr = subprocess.PIPE,
                            stdout = subprocess.DEVNULL,
                            check = True)
             if verbose: eprint(p.stderr.decode())
+            eprint('input files fixed, resuming')
             command = ['clumpify.sh',
                    'in=' + str(Path(work_dir)/(basename + '_fixed_paired.fq')),
                    'out=' + str(Path(work_dir)/(basename + '_dedup_paired.fq')),
@@ -277,6 +285,20 @@ def clean_reads(infiles,
                    '-Xmx1g',
                    'usetmpdir=t',
                    'tmpdir=' + str(Path(work_dir))]
+            try:
+                p = subprocess.run(command,
+                               stderr = subprocess.PIPE,
+                               stdout = subprocess.DEVNULL,
+                               timeout = timeout_limit, 
+                               check = True)
+                if verbose: eprint(p.stderr.decode())
+                dedup_pair_succesful = True
+
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+                #if still does not work, skip deduplication
+                new_name=str(Path(work_dir)/(basename + '_dedup_paired.fq'))
+                (Path(work_dir)/(basename + '_fixed_paired.fq')).rename(new_name)
+                eprint(basename + ':','DEDUPLICATION FAILED, KEEPING DUPLICATES')
             
         (Path(work_dir)/(basename + '_R1.fq')).unlink(missing_ok = True)
         (Path(work_dir)/(basename + '_R2.fq')).unlink(missing_ok = True)
@@ -295,27 +317,39 @@ def clean_reads(infiles,
                    '-Xmx1g',
                    'usetmpdir=t',
                    'tmpdir=' + str(Path(work_dir))]
-        p = subprocess.run(command,
-                       stderr = subprocess.PIPE,
-                       stdout = subprocess.DEVNULL, 
-                       check = True)
-        if verbose: eprint(p.stderr.decode())
+        try:
+            p = subprocess.run(command,
+                           stderr = subprocess.PIPE,
+                           stdout = subprocess.DEVNULL,
+                           timeout = timeout_limit,
+                           check = True)
+            if verbose: eprint(p.stderr.decode())
+            dedup_unpair_succesful = True
+
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
+                #if still does not work, skip deduplication
+            new_name=str(Path(work_dir)/(basename + '_dedup_unpaired.fq'))
+            (Path(work_dir)/(basename + '_unpaired.fq')).rename(new_name)
+            eprint(basename + ':','DEDUPLICATION FAILED, KEEPING DUPLICATES')
         (Path(work_dir)/(basename + '_unpaired.fq')).unlink(missing_ok = True)
 
     #record statistics
-    deduplicated = Path(work_dir).glob('*_dedup_*.fq')
-    dedup_bp = 0
-    for dedup in deduplicated:
-        with open(dedup, 'rb') as infile:
-            BUF_SIZE = 100000000
-            tmp_lines = infile.readlines(BUF_SIZE)
-            line_n = 0        
-            while tmp_lines:
-                for line in tmp_lines:
-                    if line_n % 4 == 1:
-                        dedup_bp += (len(line) - 1)
-                    line_n += 1
+    if dedup_unpair_succesful or dedup_pair_succesful:
+        deduplicated = Path(work_dir).glob('*_dedup_*.fq')
+        dedup_bp = 0
+        for dedup in deduplicated:
+            with open(dedup, 'rb') as infile:
+                BUF_SIZE = 100000000
                 tmp_lines = infile.readlines(BUF_SIZE)
+                line_n = 0        
+                while tmp_lines:
+                    for line in tmp_lines:
+                        if line_n % 4 == 1:
+                            dedup_bp += (len(line) - 1)
+                        line_n += 1
+                    tmp_lines = infile.readlines(BUF_SIZE)
+    else:
+        dedup_bp = initial_bp
 
 
 
@@ -362,27 +396,27 @@ def clean_reads(infiles,
 
 
 
-        # and remove adapters from unpaired reads, if any
-        if (Path(work_dir)/(basename + '_dedup_unpaired.fq')).is_file():
-            command = ['fastp',
-                       '-i', str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
-                       '-o', str(Path(work_dir)/(basename + '_clean_unpaired.fq')),
-                       '--html', str(Path(work_dir)/(basename + '_fastp_unpaired.html')),
-                       '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
-                       '--disable_quality_filtering',
-                       '--disable_length_filtering',
-                       '--trim_poly_g',
-                       '--thread', str(threads)]
+    # and remove adapters from unpaired reads, if any
+    if (Path(work_dir)/(basename + '_dedup_unpaired.fq')).is_file():
+        command = ['fastp',
+                   '-i', str(Path(work_dir)/(basename + '_dedup_unpaired.fq')),
+                   '-o', str(Path(work_dir)/(basename + '_clean_unpaired.fq')),
+                   '--html', str(Path(work_dir)/(basename + '_fastp_unpaired.html')),
+                   '--json', str(Path(work_dir)/(basename + '_fastp_unpaired.json')),
+                   '--disable_quality_filtering',
+                   '--disable_length_filtering',
+                   '--trim_poly_g',
+                   '--thread', str(threads)]
 
-            if not cut_adapters:
-                command.extend(['--disable_adapter_trimming'])
+        if not cut_adapters:
+            command.extend(['--disable_adapter_trimming'])
 
-            p = subprocess.run(command,
-                           stdout = subprocess.DEVNULL,
-                           stderr = subprocess.PIPE,
-                           check = True)
-            if verbose: eprint(p.stderr.decode())
-            (Path(work_dir)/(basename + '_dedup_unpaired.fq')).unlink(missing_ok = True)
+        p = subprocess.run(command,
+                       stdout = subprocess.DEVNULL,
+                       stderr = subprocess.PIPE,
+                       check = True)
+        if verbose: eprint(p.stderr.decode())
+        (Path(work_dir)/(basename + '_dedup_unpaired.fq')).unlink(missing_ok = True)
 
 
     # now that we finished cleaning, let's compress and move the final file to their destination folder
