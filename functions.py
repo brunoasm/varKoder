@@ -786,7 +786,7 @@ def train_cnn(df,
     
     
     #find a batch size that is a power of 2 and splits the dataset in about 10 batches
-    batch_size = min(2**round(log(df[~df['is_valid']].shape[0]/10,2)), 64)
+    batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
     batch_size = min(batch_size, max_bs)
     
     #start data block
