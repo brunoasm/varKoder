@@ -266,179 +266,192 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
     ### this will take as input:
     ### one row of the condensed_files dataframe, the all_stats dict and number of cores per process
 
-    def run_clean2img(it_row, cores_per_process = args.cpus_per_thread):
-        x = it_row[1]
-        stats = defaultdict(OrderedDict)
+#    def run_clean2img(it_row, cores_per_process = args.cpus_per_thread):
+#        x = it_row[1]
+#        stats = defaultdict(OrderedDict)
+#
+#        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + label_sample_sep + x['sample'] + '.fq.gz')
+#        split_reads_d = inter_dir/'split_fastqs'
+#        kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
+#
+#
+#        #### STEP B - clean reads and merge all files for each sample
+#        try:
+#            maxbp = int(humanfriendly.parse_size(args.max_bp))
+#        except:
+#            maxbp = None
+#
+#        try:
+#            clean_stats = clean_reads(infiles = x['files'],
+#                                      outpath = clean_reads_f,
+#                                      cut_adapters = args.no_adapter is False,
+#                                      merge_reads = args.no_merge is False,
+#                                      max_bp = maxbp,
+#                                      threads = cores_per_process,
+#                                      overwrite = args.overwrite,
+#                                      verbose = args.verbose
+#                       )
+#        except Exception as e:
+#            eprint('CLEAN FAIL:', x['files'])
+#            if args.verbose:
+#                eprint(e)
+#            eprint('SKIPPING SAMPLE')
+#            stats[(x['taxon'],x['sample'])].update({'failed_step':'clean'})
+#            return(stats)
+#
+#        stats[(x['taxon'],x['sample'])].update(clean_stats)
+#
+#        #### STEP C - split clean reads into files with different number of reads
+#        eprint('Splitting fastqs for', x['taxon'] + label_sample_sep + x['sample'])
+#        if args.command == 'image':
+#            try:
+#                split_stats = split_fastq(infile = clean_reads_f,
+#                                          outprefix = (x['taxon'] + 
+#                                                       label_sample_sep + 
+#                                                       x['sample']),
+#                                          outfolder = split_reads_d,
+#                                          min_bp = humanfriendly.parse_size(args.min_bp), 
+#                                          max_bp = maxbp, 
+#                                          overwrite = args.overwrite,
+#                                          verbose = args.verbose,
+#                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
+#            except Exception as e:
+#                eprint('SPLIT FAIL:', clean_reads_f)
+#                if args.verbose:
+#                    eprint(e)
+#                eprint('SKIPPING SAMPLE')
+#                stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
+#                return(stats)
+#        elif args.command == 'query':
+#             try:
+#                 split_stats = split_fastq(infile = clean_reads_f,
+#                                          outprefix = (x['taxon'] + 
+#                                                       label_sample_sep + 
+#                                                       x['sample']),
+#                                          outfolder = split_reads_d,
+#                                          is_query = True,
+#                                          max_bp = maxbp, 
+#                                          overwrite = args.overwrite,
+#                                          verbose = args.verbose,
+#                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))   
+#             except Exception as e:
+#                 eprint('SPLIT FAIL:', clean_reads_f)
+#                 if args.verbose:
+#                     eprint(e)
+#                 eprint('SKIPPING SAMPLE')
+#                 stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
+#                 return(stats)
+#
+#        stats[(x['taxon'],x['sample'])].update(split_stats)
+#        
+#        eprint('Cleaning and splitting reads done for', x['taxon'] + label_sample_sep + x['sample'])
+#
+#
+#
+#        #### STEP D - count kmers
+#        if args.command == 'query' or not args.no_image:
+#            eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
+#            stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
+#
+#            kmer_key = str(args.kmer_size) + 'mer_counting_time'
+#            for infile in split_reads_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+#                count_stats = count_kmers(infile = infile,
+#                                          outfolder = kmer_counts_d, 
+#                                          threads = cores_per_process,
+#                                          k = args.kmer_size,
+#                                          overwrite = args.overwrite,
+#                                          verbose = args.verbose
+#                                         )
+#
+#                try:
+#                    stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
+#                except KeyError as e:
+#                    if e.args[0] == kmer_key:
+#                        pass
+#                    else: 
+#                        raise(e)
+#
+#
+#            #### STEP E - create images
+#            # the table mapping canonical kmers to pixels is stored as a feather file in
+#            # the same folder as this script
+#
+#            img_key = 'k' + str(args.kmer_size) + '_img_time'
+#
+#            stats[(x['taxon'],x['sample'])][img_key] = 0
+#            for infile in kmer_counts_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+#                try:
+#                    img_stats = make_image(infile = infile, 
+#                                           outfolder = images_d, 
+#                                           kmers = kmer_mapping,
+#                                           overwrite = args.overwrite,
+#                                           threads = cores_per_process,
+#                                           verbose = args.verbose
+#                                          )
+#                except IndexError as e:
+#                    eprint('IMAGE FAIL:', infile)
+#                    if args.verbose:
+#                        eprint(e)
+#                    eprint('SKIPPING IMAGE')
+#                    stats[(x['taxon'],x['sample'])].update({'failed_step':'image'})
+#                    continue
+#                try:
+#                    stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
+#                except KeyError as e:
+#                    if e.args[0] == img_key:
+#                        pass
+#                    else: 
+#                        raise(e)
+#
+#            eprint('Images done for', x['taxon'] + label_sample_sep + x['sample'])
+#        return(stats)
 
-        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + label_sample_sep + x['sample'] + '.fq.gz')
-        split_reads_d = inter_dir/'split_fastqs'
-        kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
-
-
-        #### STEP B - clean reads and merge all files for each sample
-        try:
-            maxbp = int(humanfriendly.parse_size(args.max_bp))
-        except:
-            maxbp = None
-
-        try:
-            clean_stats = clean_reads(infiles = x['files'],
-                                      outpath = clean_reads_f,
-                                      cut_adapters = args.no_adapter is False,
-                                      merge_reads = args.no_merge is False,
-                                      max_bp = maxbp,
-                                      threads = cores_per_process,
-                                      overwrite = args.overwrite,
-                                      verbose = args.verbose
-                       )
-        except Exception as e:
-            eprint('CLEAN FAIL:', x['files'])
-            if args.verbose:
-                eprint(e)
-            eprint('SKIPPING SAMPLE')
-            stats[(x['taxon'],x['sample'])].update({'failed_step':'clean'})
-            return(stats)
-
-        stats[(x['taxon'],x['sample'])].update(clean_stats)
-
-        #### STEP C - split clean reads into files with different number of reads
-        eprint('Splitting fastqs for', x['taxon'] + label_sample_sep + x['sample'])
-        if args.command == 'image':
-            try:
-                split_stats = split_fastq(infile = clean_reads_f,
-                                          outprefix = (x['taxon'] + 
-                                                       label_sample_sep + 
-                                                       x['sample']),
-                                          outfolder = split_reads_d,
-                                          min_bp = humanfriendly.parse_size(args.min_bp), 
-                                          max_bp = maxbp, 
-                                          overwrite = args.overwrite,
-                                          verbose = args.verbose,
-                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
-            except Exception as e:
-                eprint('SPLIT FAIL:', clean_reads_f)
-                if args.verbose:
-                    eprint(e)
-                eprint('SKIPPING SAMPLE')
-                stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
-                return(stats)
-        elif args.command == 'query':
-             try:
-                 split_stats = split_fastq(infile = clean_reads_f,
-                                          outprefix = (x['taxon'] + 
-                                                       label_sample_sep + 
-                                                       x['sample']),
-                                          outfolder = split_reads_d,
-                                          is_query = True,
-                                          max_bp = maxbp, 
-                                          overwrite = args.overwrite,
-                                          verbose = args.verbose,
-                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))   
-             except Exception as e:
-                 eprint('SPLIT FAIL:', clean_reads_f)
-                 if args.verbose:
-                     eprint(e)
-                 eprint('SKIPPING SAMPLE')
-                 stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
-                 return(stats)
-
-        stats[(x['taxon'],x['sample'])].update(split_stats)
-        
-        eprint('Cleaning and splitting reads done for', x['taxon'] + label_sample_sep + x['sample'])
-
-
-
-        #### STEP D - count kmers
-        if args.command == 'query' or not args.no_image:
-            eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
-            stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
-
-            kmer_key = str(args.kmer_size) + 'mer_counting_time'
-            for infile in split_reads_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
-                count_stats = count_kmers(infile = infile,
-                                          outfolder = kmer_counts_d, 
-                                          threads = cores_per_process,
-                                          k = args.kmer_size,
-                                          overwrite = args.overwrite,
-                                          verbose = args.verbose
-                                         )
-
-                try:
-                    stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
-                except KeyError as e:
-                    if e.args[0] == kmer_key:
-                        pass
-                    else: 
-                        raise(e)
-
-
-            #### STEP E - create images
-            # the table mapping canonical kmers to pixels is stored as a feather file in
-            # the same folder as this script
-
-            img_key = 'k' + str(args.kmer_size) + '_img_time'
-
-            stats[(x['taxon'],x['sample'])][img_key] = 0
-            for infile in kmer_counts_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
-                try:
-                    img_stats = make_image(infile = infile, 
-                                           outfolder = images_d, 
-                                           kmers = kmer_mapping,
-                                           overwrite = args.overwrite,
-                                           threads = cores_per_process,
-                                           verbose = args.verbose
-                                          )
-                except IndexError as e:
-                    eprint('IMAGE FAIL:', infile)
-                    if args.verbose:
-                        eprint(e)
-                    eprint('SKIPPING IMAGE')
-                    stats[(x['taxon'],x['sample'])].update({'failed_step':'image'})
-                    continue
-                try:
-                    stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
-                except KeyError as e:
-                    if e.args[0] == img_key:
-                        pass
-                    else: 
-                        raise(e)
-
-            eprint('Images done for', x['taxon'] + label_sample_sep + x['sample'])
-        return(stats)
+    # to use multiprocessing, we need to define the loop as a function, and avoid global variables
+    # the partial function in functools does not work, so we do this by defining a new function:
+    def partial_run_clean2img(it_row):
+        return run_clean2img(it_row, 
+                  kmer_mapping=kmer_mapping, 
+                  args=args,
+                  np_rng=np_rng,
+                  inter_dir=inter_dir, 
+                  all_stats=all_stats, 
+                  stats_path=stats_path,
+                  images_d=images_d,
+                  label_sample_sep=label_sample_sep,
+                  humanfriendly=humanfriendly,
+                  defaultdict=defaultdict,
+                  eprint=eprint,
+                  make_image=make_image,
+                  count_kmers=count_kmers
+                 )
     
     
     #if only one sample processed at a time, we do a for loop
     if args.n_threads == 1:  
         for x in condensed_files.iterrows():
-            stats = run_clean2img(x)
+            stats = partial_run_clean2img(x)
             try:
-                all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
+                all_stats.update(read_stats(stats_path))
             except:
                 pass
             for k in stats.keys():
                 all_stats[k].update(stats[k])
-            (pd.DataFrame.from_dict(all_stats, orient = 'index').
-              rename_axis(index=['taxon', 'sample']).
-              loc[lambda x: ~x.index.duplicated()]. #for some reason pandas is saving this with a duplicated first row
-              to_csv(stats_path)
-            )
+            stats_to_csv(all_stats, stats_path)
         
     #if more than one sample processed at a time, use multiprocessing
     else:
         pool = multiprocessing.Pool(processes=int(args.n_threads))
     
-        for stats in pool.imap_unordered(run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
+        for stats in pool.imap_unordered(partial_run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
+        #for stats in pool.imap_unordered(partial_run_clean2img, condensed_files.iterrows(), chunksize = 2):
             try:
-                all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
+                all_stats.update(read_stats(stats_path))
             except:
                 pass
             
             for k in stats.keys():
                 all_stats[k].update(stats[k])
-            (pd.DataFrame.from_dict(all_stats, orient = 'index').
-              rename_axis(index=['taxon', 'sample']).
-              to_csv(stats_path)
-            )
+            stats_to_csv(all_stats, stats_path)
         pool.close()
     
     
