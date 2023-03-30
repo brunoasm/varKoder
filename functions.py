@@ -5,9 +5,10 @@ from pathlib import Path
 from collections import OrderedDict, defaultdict
 from io import StringIO
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
-import re, sys, gzip, time, humanfriendly, random, multiprocessing, math
+import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json
 
 from fastai.data.all import DataBlock, ColSplitter, ColReader, get_c
 from fastai.vision.all import ImageBlock, CategoryBlock, create_head, apply_init, default_split
@@ -29,8 +30,10 @@ from fastai.torch_core import set_seed
 
 #define filename separators
 label_sample_sep = '+'
+labels_sep = ';'
 bp_kmer_sep = '+'
 sample_bp_sep = '@'
+qual_thresh = 0.005
 
 
 # defining a function to print to stderr more easily
@@ -43,7 +46,7 @@ def eprint(*args, **kwargs):
 def process_input(inpath, is_query = False):
    # first, check if input is a folder
     # if it is, make input table from the folder
-    try:
+    #try:
         if inpath.is_dir() and not is_query:
             files_records = list()
 
@@ -52,12 +55,12 @@ def process_input(inpath, is_query = False):
                     for sample in taxon.iterdir():
                         if sample.is_dir():
                             for fl in sample.iterdir():
-                                files_records.append({'taxon':taxon.name,
+                                files_records.append({'labels':[taxon.name],
                                                       'sample':sample.name,
-                                                      'reads_file': taxon/sample.name/fl.name
+                                                      'files': taxon/sample.name/fl.name
                                                      })
 
-            files_table = pd.DataFrame(files_records)
+            files_table = pd.DataFrame(files_records).groupy(['labels','sample']).agg(list).reset_index()
 
             if not files_table.shape[0]:
                 raise Exception('Folder detected, but no records read. Check format.')
@@ -75,22 +78,22 @@ def process_input(inpath, is_query = False):
             if not contains_dir:
                 for fl in inpath.iterdir():
                     if fl.name.endswith('fq') or fl.name.endswith('fastq') or fl.name.endswith('fq.gz') or fl.name.endswith('fastq.gz'):
-                        files_records.append({'taxon':'query',
+                        files_records.append({'labels':'query',
                                              'sample':inpath.name,
-                                             'reads_file':fl})
+                                             'files':fl})
                         
             else:
                 for sample in inpath.iterdir():
                     if sample.is_dir():
                         for fl in sample.iterdir():
                             if fl.name.endswith('fq') or fl.name.endswith('fastq') or fl.name.endswith('fq.gz') or fl.name.endswith('fastq.gz'):
-                                files_records.append({'taxon':'query',
+                                files_records.append({'labels':'query',
                                                      'sample': sample.name,
-                                                     'reads_file':sample/fl.name})
+                                                     'files':sample/fl.name})
 
             
 
-            files_table = pd.DataFrame(files_records)
+            files_table = pd.DataFrame(files_records).groupy(['labels','sample']).agg(list).reset_index()
 
             if not files_table.shape[0]:
                 raise Exception('Folder detected, but no records read. Check format.')
@@ -98,16 +101,44 @@ def process_input(inpath, is_query = False):
         # if it isn't a folder, read csv table input
         else:
             files_table = pd.read_csv(inpath)
-            for colname in ['taxon', 'sample', 'reads_file']:
+            for colname in ['labels', 'sample', 'files']:
                 if colname not in files_table.columns:
                     raise Exception('Input csv file missing column: ' + colname)
             else:
-                files_table = files_table.assign(reads_file = lambda x: str(inpath.parent) + '/' + x['reads_file'])
+                files_table = (files_table.
+                               assign(labels = lambda x: x['labels'].str.split(';')).
+                               assign(files = lambda x: x['files'].apply(lambda y: [str(Path(inpath.parent,z)) for z in y.split(';')]))
+                              )
 
-    except:
-        raise Exception('Could not parse input csv file or folder structure, double check.')
+    #except:
+    #    raise Exception('Could not parse input csv file or folder structure, double check.')
         
-    return(files_table)
+        files_table['sample'] = (files_table['sample'].astype(str))
+        files_table = files_table.groupby('sample').agg(sum).applymap(lambda x: sorted(set(x))).reset_index()
+        
+        return(files_table)
+    
+# this function reads the json file produced by fastp within the clean_reads function
+# and returns the standard deviation in base frequencies from positions 20-50 in forward reads.
+# This is expected to be 0 for high-quality samples but increases in low-quality ones
+def get_basefrequency_sd(file_list):
+    base_sd = []
+    
+    for f in file_list:
+        js = json.load(open(f,'r'))
+        try:
+            content = np.array([x for k,x in js['merged_and_filtered']['content_curves'].items() if k in ['A','T','C','G']])
+            base_sd.append(np.std(content[:,20:50], axis = 1).mean())
+        except KeyError:
+            pass
+        try:
+            content = np.array([x for k,x in js['read1_after_filtering']['content_curves'].items() if k in ['A','T','C','G']])
+            base_sd.append(np.std(content[:,20:50], axis = 1).mean())
+        except KeyError:
+            pass
+        
+        return(np.mean(base_sd))
+                
 
 
 #cleans illumina reads and saves results as a single merged fastq file to outpath
@@ -468,6 +499,8 @@ def clean_reads(infiles,
     stats['deduplicated_basepairs'] = dedup_bp
     stats['clean_basepairs'] = clean_bp
     stats['cleaning_time'] = done_time - start_time
+    eprint([x for x in Path(work_dir).glob(basename + '_fastp_*.json')])
+    stats['base_frequencies_sd'] = get_basefrequency_sd(Path(work_dir).glob(basename + '_fastp_*.json'))
         
         
     shutil.rmtree(work_dir)
@@ -620,7 +653,10 @@ def make_image(infile,
                kmers, 
                threads = 1, 
                overwrite = False,
-               verbose = False):
+               verbose = False,
+               labels = []
+              ):
+    
     Path(outfolder).mkdir(exist_ok = True)
     outfile = Path(infile).name.removesuffix(''.join(Path(infile).suffixes)) + '.png'    
     
@@ -673,9 +709,13 @@ def make_image(infile,
         kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode = 'L')
         
+        #Now let's add the labels:
+        metadata = PngInfo()
+        metadata.add_text("varkoderKeywords", labels_sep.join(labels))
+        
       
         #finally, save the image
-        img.save(Path(outfolder)/outfile, optimize=True)
+        img.save(Path(outfolder)/outfile, optimize=True, pnginfo=metadata)
         
     done_time = time.time()
     stats = OrderedDict()
@@ -686,16 +726,14 @@ def make_image(infile,
 #Function: read stats file:
 def read_stats(stats_path):
     return (pd.read_csv(stats_path,
-                index_col = [0,1],
-                dtype={0: str, 1: str}).to_dict(orient = 'index'))
+                index_col = [0],
+                dtype={0: str}).to_dict(orient = 'index'))
 
 #Function: save stats dict as a csv file:
 def stats_to_csv(all_stats, stats_path):
-    (pd.DataFrame.from_dict(all_stats, orient = 'index').
-              rename_axis(index=['taxon', 'sample']).
-              loc[lambda x: ~x.index.duplicated()]. #for some reason pandas is saving this with a duplicated first row
-              to_csv(stats_path)
-            )
+    df = pd.DataFrame.from_dict(all_stats, orient = 'index').rename_axis(index=['sample'])
+    df.to_csv(stats_path)
+    return(df.reset_index())
 
 
 ### To be able to run samples in parallel using python, the image pipeline has to be encoded
@@ -724,7 +762,7 @@ def run_clean2img(it_row,
     x = it_row[1]
     stats = defaultdict(OrderedDict)
 
-    clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + label_sample_sep + x['sample'] + '.fq.gz')
+    clean_reads_f = inter_dir/'clean_reads'/(x['sample'] + '.fq.gz')
     split_reads_d = inter_dir/'split_fastqs'
     kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
 
@@ -750,19 +788,17 @@ def run_clean2img(it_row,
         if args.verbose:
             eprint(e)
         eprint('SKIPPING SAMPLE')
-        stats[(str(x['taxon']),str(x['sample']))].update({'failed_step':'clean'})
+        stats[str(x['sample'])].update({'failed_step':'clean'})
         return(stats)
 
-    stats[(str(x['taxon']),str(x['sample']))].update(clean_stats)
+    stats[str(x['sample'])].update(clean_stats)
 
     #### STEP C - split clean reads into files with different number of reads
-    eprint('Splitting fastqs for', x['taxon'] + label_sample_sep + x['sample'])
+    eprint('Splitting fastqs for', x['sample'])
     if args.command == 'image':
         try:
             split_stats = split_fastq(infile = clean_reads_f,
-                                      outprefix = (x['taxon'] + 
-                                                   label_sample_sep + 
-                                                   x['sample']),
+                                      outprefix = x['sample'],
                                       outfolder = split_reads_d,
                                       min_bp = humanfriendly.parse_size(args.min_bp), 
                                       max_bp = maxbp, 
@@ -774,14 +810,12 @@ def run_clean2img(it_row,
             if args.verbose:
                 eprint(e)
             eprint('SKIPPING SAMPLE')
-            stats[(str(x['taxon']),str(x['sample']))].update({'failed_step':'split'})
+            stats[str(x['sample'])].update({'failed_step':'split'})
             return(stats)
     elif args.command == 'query':
          try:
              split_stats = split_fastq(infile = clean_reads_f,
-                                      outprefix = (x['taxon'] + 
-                                                   label_sample_sep + 
-                                                   x['sample']),
+                                      outprefix = x['sample'],
                                       outfolder = split_reads_d,
                                       is_query = True,
                                       max_bp = maxbp, 
@@ -793,22 +827,22 @@ def run_clean2img(it_row,
              if args.verbose:
                  eprint(e)
              eprint('SKIPPING SAMPLE')
-             stats[(str(x['taxon']),str(x['sample']))].update({'failed_step':'split'})
+             stats[str(x['sample'])].update({'failed_step':'split'})
              return(stats)
 
-    stats[(str(x['taxon']),str(x['sample']))].update(split_stats)
+    stats[str(x['sample'])].update(split_stats)
     
-    eprint('Cleaning and splitting reads done for', x['taxon'] + label_sample_sep + x['sample'])
+    eprint('Cleaning and splitting reads done for', x['sample'])
 
 
 
     #### STEP D - count kmers
     if args.command == 'query' or not args.no_image:
-        eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
-        stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
+        eprint('Counting kmers and creating images for', x['sample'])
+        stats[str(x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
 
         kmer_key = str(args.kmer_size) + 'mer_counting_time'
-        for infile in split_reads_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+        for infile in split_reads_d.glob(x['sample'] + sample_bp_sep + '*'):
             count_stats = count_kmers(infile = infile,
                                       outfolder = kmer_counts_d, 
                                       threads = cores_per_process,
@@ -818,7 +852,7 @@ def run_clean2img(it_row,
                                      )
 
             try:
-                stats[(str(x['taxon']),str(x['sample']))][kmer_key] += count_stats[kmer_key]
+                stats[str(x['sample'])][kmer_key] += count_stats[kmer_key]
             except KeyError as e:
                 if e.args[0] == kmer_key:
                     pass
@@ -829,35 +863,42 @@ def run_clean2img(it_row,
         #### STEP E - create images
         # the table mapping canonical kmers to pixels is stored as a feather file in
         # the same folder as this script
+        
+        
 
         img_key = 'k' + str(args.kmer_size) + '_img_time'
 
-        stats[(str(x['taxon']),str(x['sample']))][img_key] = 0
-        for infile in kmer_counts_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
+        stats[str(x['sample'])][img_key] = 0
+        for infile in kmer_counts_d.glob(x['sample'] + sample_bp_sep + '*'):
+            try:
+                base_sd = stats[str(x['sample'])]['base_frequencies_sd']
+            except KeyError:
+                base_sd = all_stats[str(x['sample'])]['base_frequencies_sd']
             try:
                 img_stats = make_image(infile = infile, 
                                        outfolder = images_d, 
                                        kmers = kmer_mapping,
                                        overwrite = args.overwrite,
                                        threads = cores_per_process,
-                                       verbose = args.verbose
+                                       verbose = args.verbose,
+                                       labels = x['labels'] + ['low_quality:' + str(base_sd > qual_thresh)]
                                       )
             except IndexError as e:
                 eprint('IMAGE FAIL:', infile)
                 if args.verbose:
                     eprint(e)
                 eprint('SKIPPING IMAGE')
-                stats[(str(x['taxon']),str(x['sample']))].update({'failed_step':'image'})
+                stats[str(x['sample'])].update({'failed_step':'image'})
                 continue
             try:
-                stats[(str(x['taxon']),str(x['sample']))][img_key] += img_stats[img_key]
+                stats[str(x['sample'])][img_key] += img_stats[img_key]
             except KeyError as e:
                 if e.args[0] == img_key:
                     pass
                 else: 
                     raise(e)
 
-        eprint('Images done for', x['taxon'] + label_sample_sep + x['sample'])
+        eprint('Images done for', x['sample'])
     return(stats)
     
     

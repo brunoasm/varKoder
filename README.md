@@ -101,16 +101,18 @@ This command processes raw sequencing reads and produces *varKodes*, which are i
 
 Processing includes the following steps:
 
- - Raw read cleaning: adapter removal, overlapping pair merging, exact duplicate removal.
+ - Raw read cleaning: adapter removal, overlapping pair merging, exact duplicate removal, poly-G tail trimming.
  - Raw read subsampling: random subsampling of raw read files into files with fewer number of reads. This is useful in machine learning training as a data augmentation technique to make sure inferences are robust to random variations in sequencing and amount of input data.
  - Kmer counting: count of kmers from subsampled files.
- - VarKode geenration: generation of images from kmer counts, our *varKodes* that represent the genome composition of a taxon.
+ - VarKode generation: generation of images from kmer counts, our *varKodes* that represent the genome composition of a taxon.
 
 Optionally, the command can be used to preprocess sequences without creating images. 
 
 #### Input format
 
-`varKoder.py image` accepts two input formats: folder-based or table-based
+`varKoder.py image` accepts two input formats: folder-based or table-based.
+
+Only the table-based format supports multiple labels per sample (for example, you could label the family, genus and species for a sample at the same time). With folder-based programs, varKoder will infer the label from the folder structure.
 
 ##### folder input format
 
@@ -156,36 +158,59 @@ For example, let's assume that you have data for 2 species, and for each species
        
 In the above example we show some possibilities for formatting the input. Ideally you would want to make it more organized, but we want to show that the input is robust to variation as long as the folder structure is respected:
  
-- The first folder level indicates species name. It can contain special characters but not `@` or `+`.
-- The second folder level groups all `fastq` files for a given sample. It can contain special characters but not `@` or `+`.
+- The first folder level indicates taxon name, or any label that will be used to train the neural newtork. It can contain special characters but not `@`, `~` or `+`.
+- The second folder level groups all `fastq` files for a given sample. Sample names can contain special characters but not `@`, `~` or `+`.
 - Both compressed and uncompressed `fastq` files are accepted. Compressed files must end with the extension `.gz`. 
 - Read pairs must have corresponding root file names and contain an indication of whether they are read 1 or 2. All examples above work for that end.
 - Read files without `.1.`, `_1_`, `R1`, etc. will be considered unpaired.
 
 ##### table input format
 
-In this case, you must provide a table in `csv` format linking each `fastq` file to its sample information.
-The required column names are `taxon`,`sample` and `reads_file`. Just like with folder input format, taxon and sample names cannot use characters `@` or `+`.
+In this case, you must provide a table in `csv` format linking a sample to its `fastq` files to sample metadata.
+The required column names are `labels`,`sample` and `files`. Just like with folder input format, sample names and labels cannot use characters `@`, `~` or `+`. 
 
-This is an example of a csv file with the necessary information:
+If you want to provide multiple labels or multiple files for a sample, you can use multiple lines per sample or a single line with `;` as a separator. For example, these 3 csv files would provide the same data to varKoder:
+
+**multiple files and labels listed in a single row**
+```csv
+labels,sample,files
+genus:Acridocarpus;species:ugandensis,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz;12_GGGAGCTAGTGG.R2.fastq.gz
+genus:Acridocarpus;species:smeathmanii,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz;68_TATGTCACATGG.R2.fastq.gz
+genus:Acridocarpus;species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz;176_GGACATGACCGG.R2.fastq.gz
+```
+**multiple labels listed in a single line, one file per row**
+```csv
+labels,sample,files
+genus:Acridocarpus;species:ugandensis,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz
+genus:Acridocarpus;species:smeathmanii,smeathmannii_168,68_TATGTCACATGG.R2.fastq.gz
+genus:Acridocarpus;species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
+genus:Acridocarpus;species:ugandensis,ugandensis_12,12_GGGAGCTAGTGG.R2.fastq.gz
+genus:Acridocarpus;species:smeathmanii,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz
+genus:Acridocarpus;species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R2.fastq.gz
+```
+
+**multiple labels and files per sample, listed in separate rows**
+```csv
+labels,sample,files
+genus:Acridocarpus,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz
+species:smeathmanii,smeathmannii_168,68_TATGTCACATGG.R2.fastq.gz
+genus:Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
+species:ugandensis,ugandensis_12,12_GGGAGCTAGTGG.R2.fastq.gz
+genus:Acridocarpus,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz
+species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R2.fastq.gz
+```
+
+In this case, the model will try to predict both the genus and the species for each sample. You do not need to provide multiple labels per sample, or explicitly include taxonomic level. If you only wants to predict genera, for example, this would work:
 
 ```csv
-taxon,sample,reads_file
-Acridocarpus,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz
-Acridocarpus,ugandensis_12,12_GGGAGCTAGTGG.R2.fastq.gz
-Acridocarpus,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz
-Acridocarpus,smeathmannii_168,168_TATGTCACATGG.R2.fastq.gz
-Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
-Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R2.fastq.gz
-Acridocarpus,spectabilis_181,181_CTGTGATTTATT.R1.fastq.gz
-Acridocarpus,spectabilis_181,181_CTGTGATTTATT.R2.fastq.gz
-Acridocarpus,obovatus_3317,3317.R1.fq
-Acridocarpus,obovatus_3317,3317.R2.fq
+labels,sample,files
+Acridocarpus,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz;12_GGGAGCTAGTGG.R2.fastq.gz
+Acridocarpus,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz;68_TATGTCACATGG.R2.fastq.gz
+Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz;176_GGACATGACCGG.R2.fastq.gz
 ```
 
 Note:
  - file paths must be given relative to the folder where the `csv` file is located (in the example above, they are all in the same folder).
- - each line represents one `fastq` file. Taxon and sample names can be repeated as needed.
  
 #### Arguments
 
@@ -339,6 +364,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips in `image` command on usage. (default: 1) |
 | `-c CPUS_PER_THREAD`, `--cpus-per-thread CPUS_PER_THREAD` | number of cpus to use for preprocessing each sample. See tips in `image` command on usage (default: 1) |
 | `-f STATS_FILE`, `--stats-file STATS_FILE`} | path to file where sample statistics will be saved. See *Output* below for details (default: stats.csv) |
+| `-t THRESHOLD`, `--threshold THRESHOLD`} | Threshold to make a prediction. This is the minimum confidence necessary (one a scale 0-1) for varKoder to predict a taxon or other label for a given sample. (default: 0.5) |
 | `-i INT_FOLDER`, `--int-folder INT_FOLDER` | folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details. |
 | `-m`, `--keep-images` |       save varKode image files. By default only predictions are saved and images are discarded. |
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See tips in `image` command  for details. |

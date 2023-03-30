@@ -7,7 +7,7 @@ from functions import *
 import argparse
 
 # create top-level parser with common arguments
-main_parser = argparse.ArgumentParser(description = 'varKode: using neural networks for molecular barcoding based on variation in whole-genome kmer frequencies',
+main_parser = argparse.ArgumentParser(description = 'varKoder: using neural networks for DNA barcoding based on variation in whole-genome kmer frequencies',
                                       add_help = True,
                                       formatter_class = argparse.ArgumentDefaultsHelpFormatter
                                      )
@@ -56,6 +56,9 @@ parser_img.add_argument('-m', '--min-bp',
                         default = '500K')
 parser_img.add_argument('-M', '--max-bp' ,  
                         help = 'maximum number of post-cleaning basepairs to make an image.')
+parser_img.add_argument('-t', '--label-table', 
+                        help = 'output a table with labels associated with each image, in addition to including them in the EXIF data.', 
+                        action='store_true')
 parser_img.add_argument('-a', '--no-adapter', 
                         help = 'do not attempt to remove adapters from raw reads.', 
                         action='store_true')
@@ -65,6 +68,7 @@ parser_img.add_argument('-r', '--no-merge',
 parser_img.add_argument('-X', '--no-image', 
                         help = 'clean and split raw reads, but do not generate image.', 
                         action='store_true')
+
 
 
 # create parser for train command
@@ -171,6 +175,11 @@ parser_query.add_argument('-c', '--cpus-per-thread',
 parser_query.add_argument('-f', '--stats-file', 
                           help = 'path to file where sample statistics will be saved.', 
                           default ='stats.csv')
+parser_train.add_argument('-t','--threshold', 
+                          help = 'confidence threshold to make a prediction.',
+                          type=float, 
+                          default = 0.5
+                         )
 parser_query.add_argument('-i', '--int-folder', 
                           help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used and deleted when done.')
 parser_query.add_argument('-m','--keep-images', 
@@ -239,15 +248,7 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
 
     ##### STEP A - parse input and create a table relating reads files to samples and taxa
     inpath = Path(args.input)
-    files_table = process_input(inpath, is_query = args.command == 'query')
- 
-    condensed_files = (files_table.
-                       groupby(['taxon','sample']).
-                       agg({'reads_file': lambda x: list(x)}).
-                       rename(columns = {'reads_file':'files'}).
-                       reset_index()
-                      )
-    condensed_files['sample'] = condensed_files['sample'].astype(str)
+    condensed_files = process_input(inpath, is_query = args.command == 'query')
 
     ### We will save statistics in a dictionary and then output as a table
     ### If a table already exists, read it
@@ -255,156 +256,11 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
     all_stats = defaultdict(OrderedDict)
     stats_path = Path(args.stats_file)
     if stats_path.exists():
-        all_stats.update(pd.read_csv(stats_path, index_col = [0,1]).to_dict(orient = 'index'))
+        all_stats.update(pd.read_csv(stats_path, index_col = [0]).to_dict(orient = 'index'))
         
     ### the same kmer mapping will be used for all files, so we will use it as a global variable
     map_path= Path(__file__).resolve().parent/'kmer_mapping'/(str(args.kmer_size) + 'mer_mapping.parquet')
     kmer_mapping = pd.read_parquet(map_path).set_index('kmer')
-
-    ### To be able to run samples in parallel using python, we will transform all the following code
-    ### into a function
-    ### this will take as input:
-    ### one row of the condensed_files dataframe, the all_stats dict and number of cores per process
-
-#    def run_clean2img(it_row, cores_per_process = args.cpus_per_thread):
-#        x = it_row[1]
-#        stats = defaultdict(OrderedDict)
-#
-#        clean_reads_f = inter_dir/'clean_reads'/(x['taxon'] + label_sample_sep + x['sample'] + '.fq.gz')
-#        split_reads_d = inter_dir/'split_fastqs'
-#        kmer_counts_d = inter_dir/(str(args.kmer_size) + 'mer_counts')
-#
-#
-#        #### STEP B - clean reads and merge all files for each sample
-#        try:
-#            maxbp = int(humanfriendly.parse_size(args.max_bp))
-#        except:
-#            maxbp = None
-#
-#        try:
-#            clean_stats = clean_reads(infiles = x['files'],
-#                                      outpath = clean_reads_f,
-#                                      cut_adapters = args.no_adapter is False,
-#                                      merge_reads = args.no_merge is False,
-#                                      max_bp = maxbp,
-#                                      threads = cores_per_process,
-#                                      overwrite = args.overwrite,
-#                                      verbose = args.verbose
-#                       )
-#        except Exception as e:
-#            eprint('CLEAN FAIL:', x['files'])
-#            if args.verbose:
-#                eprint(e)
-#            eprint('SKIPPING SAMPLE')
-#            stats[(x['taxon'],x['sample'])].update({'failed_step':'clean'})
-#            return(stats)
-#
-#        stats[(x['taxon'],x['sample'])].update(clean_stats)
-#
-#        #### STEP C - split clean reads into files with different number of reads
-#        eprint('Splitting fastqs for', x['taxon'] + label_sample_sep + x['sample'])
-#        if args.command == 'image':
-#            try:
-#                split_stats = split_fastq(infile = clean_reads_f,
-#                                          outprefix = (x['taxon'] + 
-#                                                       label_sample_sep + 
-#                                                       x['sample']),
-#                                          outfolder = split_reads_d,
-#                                          min_bp = humanfriendly.parse_size(args.min_bp), 
-#                                          max_bp = maxbp, 
-#                                          overwrite = args.overwrite,
-#                                          verbose = args.verbose,
-#                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))
-#            except Exception as e:
-#                eprint('SPLIT FAIL:', clean_reads_f)
-#                if args.verbose:
-#                    eprint(e)
-#                eprint('SKIPPING SAMPLE')
-#                stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
-#                return(stats)
-#        elif args.command == 'query':
-#             try:
-#                 split_stats = split_fastq(infile = clean_reads_f,
-#                                          outprefix = (x['taxon'] + 
-#                                                       label_sample_sep + 
-#                                                       x['sample']),
-#                                          outfolder = split_reads_d,
-#                                          is_query = True,
-#                                          max_bp = maxbp, 
-#                                          overwrite = args.overwrite,
-#                                          verbose = args.verbose,
-#                                          seed = str(it_row[0]) + str(np_rng.integers(low = 0, high = 2**32)))   
-#             except Exception as e:
-#                 eprint('SPLIT FAIL:', clean_reads_f)
-#                 if args.verbose:
-#                     eprint(e)
-#                 eprint('SKIPPING SAMPLE')
-#                 stats[(x['taxon'],x['sample'])].update({'failed_step':'split'})
-#                 return(stats)
-#
-#        stats[(x['taxon'],x['sample'])].update(split_stats)
-#        
-#        eprint('Cleaning and splitting reads done for', x['taxon'] + label_sample_sep + x['sample'])
-#
-#
-#
-#        #### STEP D - count kmers
-#        if args.command == 'query' or not args.no_image:
-#            eprint('Counting kmers and creating images for', x['taxon'] + label_sample_sep + x['sample'])
-#            stats[(x['taxon'],x['sample'])][str(args.kmer_size) + 'mer_counting_time'] = 0
-#
-#            kmer_key = str(args.kmer_size) + 'mer_counting_time'
-#            for infile in split_reads_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
-#                count_stats = count_kmers(infile = infile,
-#                                          outfolder = kmer_counts_d, 
-#                                          threads = cores_per_process,
-#                                          k = args.kmer_size,
-#                                          overwrite = args.overwrite,
-#                                          verbose = args.verbose
-#                                         )
-#
-#                try:
-#                    stats[(x['taxon'],x['sample'])][kmer_key] += count_stats[kmer_key]
-#                except KeyError as e:
-#                    if e.args[0] == kmer_key:
-#                        pass
-#                    else: 
-#                        raise(e)
-#
-#
-#            #### STEP E - create images
-#            # the table mapping canonical kmers to pixels is stored as a feather file in
-#            # the same folder as this script
-#
-#            img_key = 'k' + str(args.kmer_size) + '_img_time'
-#
-#            stats[(x['taxon'],x['sample'])][img_key] = 0
-#            for infile in kmer_counts_d.glob(x['taxon'] + label_sample_sep + x['sample'] + '*'):
-#                try:
-#                    img_stats = make_image(infile = infile, 
-#                                           outfolder = images_d, 
-#                                           kmers = kmer_mapping,
-#                                           overwrite = args.overwrite,
-#                                           threads = cores_per_process,
-#                                           verbose = args.verbose
-#                                          )
-#                except IndexError as e:
-#                    eprint('IMAGE FAIL:', infile)
-#                    if args.verbose:
-#                        eprint(e)
-#                    eprint('SKIPPING IMAGE')
-#                    stats[(x['taxon'],x['sample'])].update({'failed_step':'image'})
-#                    continue
-#                try:
-#                    stats[(x['taxon'],x['sample'])][img_key] += img_stats[img_key]
-#                except KeyError as e:
-#                    if e.args[0] == img_key:
-#                        pass
-#                    else: 
-#                        raise(e)
-#
-#            eprint('Images done for', x['taxon'] + label_sample_sep + x['sample'])
-#        return(stats)
 
     # to use multiprocessing, we need to define the loop as a function, and avoid global variables
     # the partial function in functools does not work, so we do this by defining a new function:
@@ -436,14 +292,24 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                 pass
             for k in stats.keys():
                 all_stats[k].update(stats[k])
-            stats_to_csv(all_stats, stats_path)
+            stats_df = stats_to_csv(all_stats, stats_path)
+            
+            if args.label_table:
+                (condensed_files.
+                 merge(stats_df[['sample','base_frequencies_sd']].assign(low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
+                 loc[:,['sample', 'labels', 'low_quality']].
+                 assign(labels = lambda x: x.apply(lambda y: y['labels'] + ['low_quality:' + str(y['low_quality'])], axis = 1)).
+                 assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
+                 loc[:,['sample','labels']].
+                 to_csv(images_d/'labels.csv')
+                )
         
     #if more than one sample processed at a time, use multiprocessing
     else:
         pool = multiprocessing.Pool(processes=int(args.n_threads))
     
         for stats in pool.imap_unordered(partial_run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
-        #for stats in pool.imap_unordered(partial_run_clean2img, condensed_files.iterrows(), chunksize = 2):
+        
             try:
                 all_stats.update(read_stats(stats_path))
             except:
@@ -451,7 +317,19 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
             
             for k in stats.keys():
                 all_stats[k].update(stats[k])
-            stats_to_csv(all_stats, stats_path)
+                
+            stats_df = stats_to_csv(all_stats, stats_path)
+            
+            if args.label_table:
+                (condensed_files.
+                 merge(stats_df[['sample','base_frequencies_sd']].assign(low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
+                 loc[:,['sample', 'labels', 'low_quality']].
+                 assign(labels = lambda x: x.apply(lambda y: y['labels'] + ['low_quality:' + str(y['low_quality'])], axis = 1)).
+                 assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
+                 loc[:,['sample','labels']].
+                 to_csv(images_d/'labels.csv')
+                )
+        
         pool.close()
     
     
