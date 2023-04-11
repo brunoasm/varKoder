@@ -8,22 +8,26 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
-import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json
+import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
+from sklearn.exceptions import UndefinedMetricWarning
 
 from fastai.data.all import DataBlock, ColSplitter, ColReader, get_c
-from fastai.vision.all import ImageBlock, CategoryBlock, create_head, apply_init, default_split
+from fastai.vision.all import ImageBlock, MultiCategoryBlock, create_head, apply_init, default_split, partial
 from fastai.vision.learner import _update_first_layer, has_pool_type
 from fastai.vision.all import aug_transforms
-from fastai.metrics import accuracy
+from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed
 from fastai.callback.mixup import CutMix, MixUp
 from fastai.callback.hook import num_features_model
-from fastai.losses import LabelSmoothingCrossEntropyFlat, CrossEntropyLossFlat, LabelSmoothingCrossEntropy
-from torch.nn import CrossEntropyLoss
+from fastai.losses import CrossEntropyLossFlat, BCEWithLogitsLossFlat
+
 from torch import nn
 import torch
+
 from timm import create_model
+from timm.loss import AsymmetricLossMultiLabel
+
 from math import log
 
 from fastai.torch_core import set_seed
@@ -33,7 +37,7 @@ label_sample_sep = '+'
 labels_sep = ';'
 bp_kmer_sep = '+'
 sample_bp_sep = '@'
-qual_thresh = 0.005
+qual_thresh = 0.01
 
 
 # defining a function to print to stderr more easily
@@ -60,7 +64,7 @@ def process_input(inpath, is_query = False):
                                                       'files': taxon/sample.name/fl.name
                                                      })
 
-            files_table = pd.DataFrame(files_records).groupy(['labels','sample']).agg(list).reset_index()
+            files_table = pd.DataFrame(files_records).groupby(['labels','sample']).agg(list).reset_index()
 
             if not files_table.shape[0]:
                 raise Exception('Folder detected, but no records read. Check format.')
@@ -93,7 +97,7 @@ def process_input(inpath, is_query = False):
 
             
 
-            files_table = pd.DataFrame(files_records).groupy(['labels','sample']).agg(list).reset_index()
+            files_table = pd.DataFrame(files_records).groupby(['labels','sample']).agg(list).reset_index()
 
             if not files_table.shape[0]:
                 raise Exception('Folder detected, but no records read. Check format.')
@@ -119,7 +123,7 @@ def process_input(inpath, is_query = False):
         return(files_table)
     
 # this function reads the json file produced by fastp within the clean_reads function
-# and returns the standard deviation in base frequencies from positions 20-50 in forward reads.
+# and returns the standard deviation in base frequencies from positions 1-40 in forward reads.
 # This is expected to be 0 for high-quality samples but increases in low-quality ones
 def get_basefrequency_sd(file_list):
     base_sd = []
@@ -128,12 +132,12 @@ def get_basefrequency_sd(file_list):
         js = json.load(open(f,'r'))
         try:
             content = np.array([x for k,x in js['merged_and_filtered']['content_curves'].items() if k in ['A','T','C','G']])
-            base_sd.append(np.std(content[:,20:50], axis = 1).mean())
+            base_sd.append(np.std(content[:,5:40], axis = 1).mean())
         except KeyError:
             pass
         try:
             content = np.array([x for k,x in js['read1_after_filtering']['content_curves'].items() if k in ['A','T','C','G']])
-            base_sd.append(np.std(content[:,20:50], axis = 1).mean())
+            base_sd.append(np.std(content[:,5:40], axis = 1).mean())
         except KeyError:
             pass
         
@@ -499,8 +503,8 @@ def clean_reads(infiles,
     stats['deduplicated_basepairs'] = dedup_bp
     stats['clean_basepairs'] = clean_bp
     stats['cleaning_time'] = done_time - start_time
-    eprint([x for x in Path(work_dir).glob(basename + '_fastp_*.json')])
-    stats['base_frequencies_sd'] = get_basefrequency_sd(Path(work_dir).glob(basename + '_fastp_*.json'))
+    #eprint([x for x in Path(work_dir).glob(basename + '_fastp_*.json')])
+    #stats['base_frequencies_sd'] = get_basefrequency_sd(Path(work_dir).glob(basename + '_fastp_*.json'))
         
         
     shutil.rmtree(work_dir)
@@ -869,11 +873,9 @@ def run_clean2img(it_row,
         img_key = 'k' + str(args.kmer_size) + '_img_time'
 
         stats[str(x['sample'])][img_key] = 0
-        for infile in kmer_counts_d.glob(x['sample'] + sample_bp_sep + '*'):
-            try:
-                base_sd = stats[str(x['sample'])]['base_frequencies_sd']
-            except KeyError:
-                base_sd = all_stats[str(x['sample'])]['base_frequencies_sd']
+        for infile in kmer_counts_d.glob(x['sample'] + sample_bp_sep + '*'):          
+            base_sd = get_basefrequency_sd(Path(inter_dir,'clean_reads').glob(str(x['sample']) + '_fastp_*.json'))
+            stats[str(x['sample'])]['base_frequencies_sd'] = base_sd
             try:
                 img_stats = make_image(infile = infile, 
                                        outfolder = images_d, 
@@ -996,7 +998,7 @@ def train_cnn(df,
               callbacks = CutMix, 
               transforms = None,
               pretrained = False,
-              loss_fn = LabelSmoothingCrossEntropyFlat(),
+              loss_fn = CrossEntropyLossFlat(),
               verbose = True):
     
     
@@ -1013,7 +1015,7 @@ def train_cnn(df,
     dbl = DataBlock(blocks=(ImageBlock, CategoryBlock),
                        splitter = sptr,
                        get_x = ColReader('path'),
-                       get_y = ColReader('taxon'),
+                       get_y = ColReader('labels'),
                        item_tfms = None,
                        batch_tfms = transforms
                       )
@@ -1049,6 +1051,88 @@ def train_cnn(df,
     else:
         with learn.no_bar(), learn.no_logging():
             learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+        
+    
+    return(learn)
+
+
+#Function: create a learner and fit model, setting batch size according to number of training images
+def train_multilabel_cnn(df, 
+              architecture,
+              valid_pct = 0.2,
+              max_bs = 64,
+              base_lr = 1e-3,
+              model_state_dict = None,
+              epochs = 30, 
+              freeze_epochs = 0,
+              normalize = True,  
+              callbacks = CutMix, 
+              transforms = None,
+              pretrained = False,
+              loss_fn = AsymmetricLossMultiLabel(),
+              metrics_threshold = 0.7,
+              verbose = True):
+    
+    
+    #find a batch size that is a power of 2 and splits the dataset in about 10 batches
+    batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
+    batch_size = min(batch_size, max_bs)
+    
+    #start data block
+    if 'is_valid' in df.columns:
+        sptr = ColSplitter()
+    else:
+        sptr = RandomSplitter(valid_pct = valid_pct)
+        
+    dbl = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
+                       splitter = sptr,
+                       get_x = ColReader('path'),
+                       get_y = ColReader('labels', label_delim=';'),
+                       item_tfms = None,
+                       batch_tfms = transforms
+                      )
+    
+    #create data loaders with calculated batch size
+    dls = dbl.dataloaders(df, bs = batch_size)
+    
+    #find all labels that are not 'low_quality:True'
+    labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
+    
+    #now define metrics
+    precision = PrecisionMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
+    recall = RecallMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
+    metrics = [precision, recall]
+    
+
+    #create learner
+    learn = timm_learner(dls, 
+                    architecture, 
+                    metrics = metrics, 
+                    normalize = normalize,
+                    pretrained = pretrained,
+                    cbs = callbacks,
+                    loss_func = loss_fn
+                   ).to_fp16()
+    
+    #if there a pretrained model body weights, replace them
+    #first, filter state dict to only keys that match and values that have the same size
+    #this will allow incomptibilities (e. g. if training on a different number of classes)
+    #solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
+    if model_state_dict:
+        old_state_dict = learn.state_dict()
+        new_state_dict = {k:v for k,v in model_state_dict.items() 
+                          if k in old_state_dict and
+                             old_state_dict[k].size() == v.size()}
+        learn.model.load_state_dict(new_state_dict, strict = False)
+    
+    #train
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=UndefinedMetricWarning)
+        if verbose:
+            learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+        else:
+            with learn.no_bar(), learn.no_logging():
+                learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
         
     
     return(learn)

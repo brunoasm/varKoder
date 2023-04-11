@@ -15,7 +15,7 @@ subparsers = main_parser.add_subparsers(required = True, dest = 'command')
 
 parent_parser = argparse.ArgumentParser(add_help = False, 
                                         formatter_class = argparse.ArgumentDefaultsHelpFormatter)
-parent_parser.add_argument('-d', '--seed', help = 'random seed.')
+parent_parser.add_argument('-R', '--seed', help = 'random seed.', type = int)
 parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing results.', action='store_true')
 
 
@@ -79,6 +79,21 @@ parser_train.add_argument('input',
                           help = 'path to the folder with input images.')
 parser_train.add_argument('outdir', 
                           help = 'path to the folder where trained model will be stored.')
+parser_train.add_argument('-t','--label-table', 
+                          help = 'path to csv table with labels for each sample. If not provided, varKoder will attemp to read labels from the image file metadata.')
+parser_train.add_argument('-i','--ignore-quality', 
+                          help = 'ignore sequence quality when training.',
+                          action = 'store_true'
+                         )
+parser_train.add_argument('-n','--single-label', 
+                          help = 'Train as a single-label image classification model. It must be combined with --ignore-quality.',
+                          action = 'store_true'
+                         )
+parser_train.add_argument('-d','--threshold', 
+                          help = 'Threshold to calculate precision and recall during for the validation set. Ignored if using --single-label',
+                          type = float,
+                          default = 0.7
+                         )
 parser_train.add_argument('-V','--validation-set',
                           help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created.'
                          ) 
@@ -97,7 +112,7 @@ parser_train.add_argument('-b', '--max-batch-size',
 parser_train.add_argument('-r', '--base_learning_rate', 
                            help = 'base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates.',
                            type = float,
-                           default = 1e-3)
+                           default = 5e-3)
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
@@ -115,7 +130,7 @@ parser_train.add_argument('-c','--architecture',
 parser_train.add_argument('-X','--mix-augmentation', 
                           help = 'apply MixUp or CutMix augmentation. See https://docs.fast.ai/callback.mixup.html',
                           choices=['CutMix', 'MixUp', 'None'],
-                          default = 'CutMix'
+                          default = 'MixUp'
                          )
 parser_train.add_argument('-s','--label-smoothing', 
                           help = 'turn on Label Smoothing. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
@@ -130,7 +145,7 @@ parser_train.add_argument('-p','--p-lighting',
 parser_train.add_argument('-l','--max-lighting', 
                           help = 'maximum scale of lighting transform. See https://docs.fast.ai/vision.augment.html#aug_transforms',
                           type=float, 
-                          default = 0.5
+                          default = 0.25
                          )
 parser_train.add_argument('-g', '--no-logging', 
                            help = 'hide fastai progress bar and logging during training.',
@@ -175,10 +190,10 @@ parser_query.add_argument('-c', '--cpus-per-thread',
 parser_query.add_argument('-f', '--stats-file', 
                           help = 'path to file where sample statistics will be saved.', 
                           default ='stats.csv')
-parser_train.add_argument('-t','--threshold', 
+parser_query.add_argument('-d','--threshold', 
                           help = 'confidence threshold to make a prediction.',
                           type=float, 
-                          default = 0.5
+                          default = 0.7
                          )
 parser_query.add_argument('-i', '--int-folder', 
                           help = 'folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used and deleted when done.')
@@ -207,7 +222,7 @@ args = main_parser.parse_args()
 # set random seed
 try:
     set_seed(args.seed)
-    np_rng = np.random.default_rng(seed)
+    np_rng = np.random.default_rng(args.seed)
 except TypeError:
     np_rng = np.random.default_rng()
 
@@ -358,7 +373,7 @@ if args.command == 'query':
     else:
         eprint(n_images,'images in the input, will use CPU for prediction.')
         learn = load_learner(args.model, cpu = True)
-    
+        
     df = pd.DataFrame({'path':img_paths})
     query_dl = learn.dls.test_dl(df,bs=args.max_batch_size)
     pp, _ = learn.get_preds(dl = query_dl)
@@ -366,25 +381,50 @@ if args.command == 'query':
     best_labels = learn.dls.vocab[best_idx]
     predictions_df = pd.DataFrame(pp)
     predictions_df.columns = learn.dls.vocab
-    
-    predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
-                                              'sample_id':[(img.with_suffix('').
-                                                           name.split(sample_bp_sep)[0].
-                                                           split(label_sample_sep)[-1]) 
-                                                          for img in img_paths],
-                                              'query_basepairs':[(img.with_suffix('').
-                                                                 name.split(sample_bp_sep)[-1].
-                                                                 split(bp_kmer_sep)[0]) 
-                                                                for img in img_paths],
-                                              'query_kmer_len':[(img.with_suffix('').
-                                                                 name.split(sample_bp_sep)[-1].
-                                                                 split(bp_kmer_sep)[-1]) 
-                                                                for img in img_paths],
-                                              'trained_model_path':str(args.model),
-                                              'best_pred_label': best_labels,
-                                              'best_pred_prob': best_ps
-                                                       }),
-                               predictions_df], axis = 1)
+
+        
+    if 'MultiLabel' in str(learn.loss_func):
+        eprint('This is a multilabel classification model, each input may have 0 or more predictions.')
+        predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
+                                          'sample_id':[(img.with_suffix('').
+                                                       name.split(sample_bp_sep)[0].
+                                                       split(label_sample_sep)[-1]) 
+                                                      for img in img_paths],
+                                          'query_basepairs':[(img.with_suffix('').
+                                                             name.split(sample_bp_sep)[-1].
+                                                             split(bp_kmer_sep)[0]) 
+                                                            for img in img_paths],
+                                          'query_kmer_len':[(img.with_suffix('').
+                                                             name.split(sample_bp_sep)[-1].
+                                                             split(bp_kmer_sep)[-1]) 
+                                                            for img in img_paths],
+                                          'trained_model_path':str(args.model),
+                                          'prediction_type':'Multilabel',
+                                          'labels': best_labels,
+                                          'best_pred_prob': best_ps
+                                                   }),
+                           predictions_df], axis = 1)
+    else:
+        eprint('This is a single label classification model, each input may will have only one prediction.')
+        predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
+                                                  'sample_id':[(img.with_suffix('').
+                                                               name.split(sample_bp_sep)[0].
+                                                               split(label_sample_sep)[-1]) 
+                                                              for img in img_paths],
+                                                  'query_basepairs':[(img.with_suffix('').
+                                                                     name.split(sample_bp_sep)[-1].
+                                                                     split(bp_kmer_sep)[0]) 
+                                                                    for img in img_paths],
+                                                  'query_kmer_len':[(img.with_suffix('').
+                                                                     name.split(sample_bp_sep)[-1].
+                                                                     split(bp_kmer_sep)[-1]) 
+                                                                    for img in img_paths],
+                                                  'trained_model_path':str(args.model),
+                                                  'prediction_type':'Single label',
+                                                  'best_pred_label': best_labels,
+                                                  'best_pred_prob': best_ps
+                                                           }),
+                                   predictions_df], axis = 1)
     outdir = Path(args.outdir)
     outdir.mkdir(parents = True, exist_ok = True)
     predictions_df.to_csv(outdir/'predictions.csv')
@@ -403,40 +443,59 @@ if args.command == 'train':
 
 
     eprint('Starting train command.')
+    if not args.overwrite:
+        if Path(args.outdir).exists():
+            raise Exception('Output directory exists, use --overwrite if you want to overwrite it.')
+        
     
     #1 let's create a data table for all images.
     image_files = list()
     for f in Path(args.input).rglob('*'):
-        if str(f).endswith('png'):
-            image_files.append({'taxon':f.name.split(label_sample_sep)[0],
-                                'sample':f.name.split(label_sample_sep)[1].split(sample_bp_sep)[0],
-                                'bp':int(f.name.split(label_sample_sep)[1].split(sample_bp_sep)[1].split('K')[0])*1000,
+        if f.name.endswith('png'):
+            image_files.append({'sample':f.name.split(sample_bp_sep)[0],
+                                'bp':int(f.name.split(sample_bp_sep)[1].split(bp_kmer_sep)[0].split('K')[0])*1000,
                                 'path':f
                                })
-    image_files = pd.DataFrame(image_files)
+    if args.label_table:
+        image_files = (pd.DataFrame(image_files).
+                       merge(pd.read_csv(args.label_table)[['sample','labels']], on = 'sample', how = 'left')
+                      )
+    else:
+        image_files = (pd.DataFrame(image_files).
+                       assign(labels = lambda x: x['path'].apply(lambda y: Image.open(y).info.get('varkoderKeywords')))
+                      )
+    image_files['labels'] = image_files['labels'].apply(lambda x: ';'.join([y for y in x.split(';') if y != 'low_quality:False']))
+
+
     
     #2 let's add a column to mark images in the validation set according to input options
     if args.validation_set: #if a specific validation set was defined, let's use it
         eprint('Spliting validation set as defined by user.')
         validation_samples = args.validation_set.split(',')
     else:
-        eprint('Splitting validation set randomly. Fraction of samples per taxon held as validation:', str(args.validation_set_fraction))
-        validation_samples = (image_files[['taxon','sample']].
+        eprint('Splitting validation set randomly. Fraction of samples per label combination held as validation:', str(args.validation_set_fraction))
+        validation_samples = (image_files[['sample','labels']].
+                              assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')])))).
                               drop_duplicates().
-                              groupby('taxon').
+                              groupby('labels').
                               sample(frac = args.validation_set_fraction).
                               loc[:,'sample']
                              )
         
     image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples))
     
+    if args.ignore_quality:
+        image_files = image_files.assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')]))))
+    
+    
     #3 prepare input to training function based on options
-    eprint('setting up CNN model for training.')
+    eprint('Setting up CNN model for training.')
+    
     callback = {'MixUp': MixUp,
                 'CutMix': CutMix,
                 'None': None}[args.mix_augmentation]
-    
-    
+
+
     trans = aug_transforms(do_flip = False,
                           max_rotate = 0,
                           max_zoom = 1,
@@ -445,59 +504,85 @@ if args.command == 'train':
                           p_affine = 0,
                           p_lighting = args.p_lighting
                           )
-    
-    if args.label_smoothing:
-        if args.mix_augmentation == 'None':
-            loss = LabelSmoothingCrossEntropy()
-        else:
-            loss = LabelSmoothingCrossEntropyFlat()
-    else:
-        if args.mix_augmentation == 'None':
-            loss = CrossEntropyLoss()
-        else:
-            loss = CrossEntropyLossFlat()
-    
+
+
     #4 if a pretrained model has been provided, load model state
     load_on_cpu = True
     model_state_dict = None
-    
+
     try: #within a try-except statement since currently only nightly build has this function
         if torch.has_mps:
             load_on_cpu = False
     except AttributeError:
         pass
-    
+
     if torch.has_cuda and torch.cuda.device_count():
         load_on_cpu = False
-    
+
     if args.pretrained_model:
         eprint("Loading pretrained model:", str(args.pretrained_model))
         past_learn = load_learner(args.pretrained_model, cpu = load_on_cpu)
         model_state_dict = past_learn.model.state_dict()
         del past_learn
-   
+
     else:
         eprint("Starting model with random weigths.")
-    
-    
-    eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
-    #5 call training function
-    learn = train_cnn(df = image_files, 
-                      architecture = args.architecture, 
-                      valid_pct = args.validation_set_fraction,
-                      max_bs = args.max_batch_size,
-                      base_lr = args.base_learning_rate,
-                      epochs = args.epochs,
-                      freeze_epochs = args.freeze_epochs,
-                      normalize = True, 
-                      pretrained = False, 
-                      callbacks = callback, 
-                      transforms = trans,
-                      loss_fn = loss,
-                      model_state_dict = model_state_dict,
-                      verbose = not args.no_logging
-                     )
-    
+        
+    if args.single_label:
+        eprint('Single label model requested.')
+        if (image_files['labels'].str.contains(';') == True).any():
+            raise Exception('Some samples contain more than one label. Maybe you want a multilabel model?')
+            
+        if args.mix_augmentation == 'None':
+            loss = CrossEntropyLoss()
+        else:
+            loss = CrossEntropyLossFlat()
+
+        eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
+        #5 call training function
+        learn = train_cnn(df = image_files, 
+                          architecture = args.architecture, 
+                          valid_pct = args.validation_set_fraction,
+                          max_bs = args.max_batch_size,
+                          base_lr = args.base_learning_rate,
+                          epochs = args.epochs,
+                          freeze_epochs = args.freeze_epochs,
+                          normalize = True, 
+                          pretrained = False, 
+                          callbacks = callback, 
+                          transforms = trans,
+                          loss_fn = loss,
+                          model_state_dict = model_state_dict,
+                          verbose = not args.no_logging
+                         )
+    else:
+        eprint('Multilabel model requested.')
+        if not (image_files['labels'].str.contains(';') == True).any():
+            warnings.warn('No sample contains more than one label. Maybe you want a single label model?')
+            
+            
+            
+        eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
+        #5 call training function
+        learn = train_multilabel_cnn(df = image_files, 
+                          architecture = args.architecture, 
+                          valid_pct = args.validation_set_fraction,
+                          max_bs = args.max_batch_size,
+                          base_lr = args.base_learning_rate,
+                          epochs = args.epochs,
+                          freeze_epochs = args.freeze_epochs,
+                          normalize = True, 
+                          pretrained = False, 
+                          callbacks = callback, 
+                          transforms = trans,
+                          #loss_fn = BCEWithLogitsLossFlat(),
+                          loss_fn = AsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1),
+                          model_state_dict = model_state_dict,
+                          metrics_threshold = args.threshold,
+                          verbose = not args.no_logging
+                         )
+        
+
     # save results
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
