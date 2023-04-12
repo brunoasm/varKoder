@@ -1137,3 +1137,6 @@ def train_multilabel_cnn(df,
     
     return(learn)
     
+#Function: retrieve varKoder labels as a list, removing the negative label for low quality
+def get_varKoder_labels(img_path):
+    return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';') if x != 'low_quality:False']

@@ -359,11 +359,27 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
 ###################
 
 if args.command == 'query':
+    if not args.overwrite:
+        if Path(args.outdir,'predictions.csv').is_file():
+            raise Exception('Output predictions file exists, use --overwrite if you want to overwrite it.')
+            
+        
+    
     if args.images:
         images_d = Path(args.input)
     #if we provided sequences rather than images, they were processed in the command above
-        
+    
+
     img_paths = [img for img in images_d.iterdir() if img.name.endswith('png')]
+    
+    
+    actual_labels = []
+    for p in img_paths:
+        try:
+            labs = ';'.join(get_varKoder_labels(p))
+        except AttributeError:
+            labs = np.nan
+        actual_labels.append(labs)
         
     n_images = len(img_paths)
     
@@ -376,15 +392,22 @@ if args.command == 'query':
         
     df = pd.DataFrame({'path':img_paths})
     query_dl = learn.dls.test_dl(df,bs=args.max_batch_size)
-    pp, _ = learn.get_preds(dl = query_dl)
-    best_ps, best_idx = torch.max(pp, dim = 1)
-    best_labels = learn.dls.vocab[best_idx]
-    predictions_df = pd.DataFrame(pp)
-    predictions_df.columns = learn.dls.vocab
+    
 
         
     if 'MultiLabel' in str(learn.loss_func):
         eprint('This is a multilabel classification model, each input may have 0 or more predictions.')
+        pp, _ = learn.get_preds(dl = query_dl, act = nn.Sigmoid())
+        predictions_df = pd.DataFrame(pp)
+        predictions_df.columns = learn.dls.vocab
+        
+        
+        predicted_labels = predictions_df.apply(lambda row: ';'.join([col 
+                                                                      for col in row.index
+                                                                      if row[col] >= args.threshold]), 
+                                                axis=1)
+        
+        
         predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
                                           'sample_id':[(img.with_suffix('').
                                                        name.split(sample_bp_sep)[0].
@@ -400,12 +423,23 @@ if args.command == 'query':
                                                             for img in img_paths],
                                           'trained_model_path':str(args.model),
                                           'prediction_type':'Multilabel',
-                                          'labels': best_labels,
-                                          'best_pred_prob': best_ps
+                                          'prediction_threshold':args.threshold,
+                                          'predicted_labels': predicted_labels,
+                                          'actual_labels': actual_labels
+                                                  
                                                    }),
                            predictions_df], axis = 1)
     else:
         eprint('This is a single label classification model, each input may will have only one prediction.')
+        pp, _ = learn.get_preds(dl = query_dl)
+        predictions_df = pd.DataFrame(pp)
+        predictions_df.columns = learn.dls.vocab
+        
+        best_ps, best_idx = torch.max(pp, dim = 1)
+        best_labels = learn.dls.vocab[best_idx]
+
+        
+        
         predictions_df = pd.concat([pd.DataFrame({'varKode_image_path': img_paths,
                                                   'sample_id':[(img.with_suffix('').
                                                                name.split(sample_bp_sep)[0].
@@ -422,6 +456,7 @@ if args.command == 'query':
                                                   'trained_model_path':str(args.model),
                                                   'prediction_type':'Single label',
                                                   'best_pred_label': best_labels,
+                                                  'actual_labels': actual_labels,
                                                   'best_pred_prob': best_ps
                                                            }),
                                    predictions_df], axis = 1)
@@ -462,9 +497,8 @@ if args.command == 'train':
                       )
     else:
         image_files = (pd.DataFrame(image_files).
-                       assign(labels = lambda x: x['path'].apply(lambda y: Image.open(y).info.get('varkoderKeywords')))
+                       assign(labels = lambda x: x['path'].apply(get_varKoder_labels))
                       )
-    image_files['labels'] = image_files['labels'].apply(lambda x: ';'.join([y for y in x.split(';') if y != 'low_quality:False']))
 
 
     
