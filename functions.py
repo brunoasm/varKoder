@@ -118,7 +118,12 @@ def process_input(inpath, is_query = False):
     #    raise Exception('Could not parse input csv file or folder structure, double check.')
         
         files_table['sample'] = (files_table['sample'].astype(str))
-        files_table = files_table.groupby('sample').agg(sum).applymap(lambda x: sorted(set(x))).reset_index()
+
+        files_table = (files_table.
+                       loc[:,['labels', 'sample', 'files']].
+                       groupby('sample').
+                       agg(sum).
+                       applymap(lambda x: sorted(set(x))).reset_index())
         
         return(files_table)
     
