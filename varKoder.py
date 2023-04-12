@@ -98,7 +98,7 @@ parser_train.add_argument('-V','--validation-set',
                           help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created.'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
-                          help = 'fraction of samples within each species to be held as a random validation set.',
+                          help = 'fraction of samples to be held as a random validation set.',
                           type = float,
                           default = 0.2
                          ) 
@@ -133,7 +133,7 @@ parser_train.add_argument('-X','--mix-augmentation',
                           default = 'MixUp'
                          )
 parser_train.add_argument('-s','--label-smoothing', 
-                          help = 'turn on Label Smoothing. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
+                          help = 'turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
                           action='store_true',
                           default = False
                          )
