@@ -127,6 +127,10 @@ parser_train.add_argument('-c','--architecture',
                           help = 'model architecture. See https://github.com/rwightman/pytorch-image-models for possible options.',
                           default = 'ig_resnext101_32x8d'
                          )
+parser_train.add_argument('-P','--pretrained', 
+                          help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
+                          action='store_true'
+                         )
 parser_train.add_argument('-X','--mix-augmentation', 
                           help = 'apply MixUp or CutMix augmentation. See https://docs.fast.ai/callback.mixup.html',
                           choices=['CutMix', 'MixUp', 'None'],
@@ -497,7 +501,7 @@ if args.command == 'train':
                       )
     else:
         image_files = (pd.DataFrame(image_files).
-                       assign(labels = lambda x: x['path'].apply(get_varKoder_labels))
+                       assign(labels = lambda x: x['path'].apply(lambda y: ';'.join(get_varKoder_labels(y))))
                       )
 
 
@@ -582,7 +586,7 @@ if args.command == 'train':
                           epochs = args.epochs,
                           freeze_epochs = args.freeze_epochs,
                           normalize = True, 
-                          pretrained = False, 
+                          pretrained = args.pretrained, 
                           callbacks = callback, 
                           transforms = trans,
                           loss_fn = loss,
@@ -606,7 +610,7 @@ if args.command == 'train':
                           epochs = args.epochs,
                           freeze_epochs = args.freeze_epochs,
                           normalize = True, 
-                          pretrained = False, 
+                          pretrained = args.pretrained, 
                           callbacks = callback, 
                           transforms = trans,
                           #loss_fn = BCEWithLogitsLossFlat(),
@@ -629,24 +633,6 @@ if args.command == 'train':
     eprint('Model, labels, and data table saved to directory', str(outdir))
         
     
-
-
-
-
-# if intermediate results were saved to a temporary folder, delete them
-#try:
-#    if not args.int_folder:
-#        shutil.rmtree(inter_dir)
-#except AttributeError:
-#    pass
-#
-#try:
-#    if args.command == 'query' and not args.images and not args.keep_images:
-#        shutil.rmtree(images_d)
-#except AttributeError:
-#    pass
-#        
-
 eprint('DONE')    
     
     

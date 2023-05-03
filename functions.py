@@ -4,7 +4,7 @@
 from pathlib import Path
 from collections import OrderedDict, defaultdict
 from io import StringIO
-from PIL import Image
+from PIL import Image 
 from PIL.PngImagePlugin import PngInfo
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
@@ -12,9 +12,9 @@ import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, 
 from sklearn.exceptions import UndefinedMetricWarning
 
 from fastai.data.all import DataBlock, ColSplitter, ColReader, get_c
-from fastai.vision.all import ImageBlock, MultiCategoryBlock, create_head, apply_init, default_split, partial
+from fastai.vision.all import ImageBlock, MultiCategoryBlock, create_head, apply_init, default_split, partial, vision_learner
 from fastai.vision.learner import _update_first_layer, has_pool_type
-from fastai.vision.all import aug_transforms
+from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed
@@ -123,7 +123,8 @@ def process_input(inpath, is_query = False):
                        loc[:,['labels', 'sample', 'files']].
                        groupby('sample').
                        agg(sum).
-                       applymap(lambda x: sorted(set(x))).reset_index())
+                       applymap(lambda x: sorted(set(x))).
+                       reset_index())
         
         return(files_table)
     
@@ -951,45 +952,6 @@ def get_train_val_sets():
     return train_valid
 
 
-## These functions use timm to create a fastai model
-
-## Note: Functions using timm for choosing models have been adapted from this
-## source: https://walkwithfastai.com/vision.external.timm
-def create_timm_body(arch:str, pretrained=True, cut=None, n_in=3):
-    "Creates a body from any model in the `timm` library."
-    model = create_model(arch, pretrained=pretrained, num_classes=0, global_pool='')
-    _update_first_layer(model, n_in, pretrained)
-    if cut is None:
-        ll = list(enumerate(model.children()))
-        cut = next(i for i,o in reversed(ll) if has_pool_type(o))
-    if isinstance(cut, int): return nn.Sequential(*list(model.children())[:cut])
-    elif callable(cut): return cut(model)
-    else: raise NamedError("cut must be either integer or function")
-    
-def create_timm_model(arch:str, n_out, cut=None, pretrained=True, n_in=3, init=nn.init.kaiming_normal_, custom_head=None,
-                     concat_pool=True, **kwargs):
-    "Create custom architecture using `arch`, `n_in` and `n_out` from the `timm` library"
-    body = create_timm_body(arch, pretrained, None, n_in)
-    if custom_head is None:
-        nf = num_features_model(nn.Sequential(*body.children()))
-        head = create_head(nf, n_out, concat_pool=concat_pool, **kwargs)
-    else: head = custom_head
-    model = nn.Sequential(body, head)
-    if init is not None: apply_init(model[1], init)
-    return model
-
-def timm_learner(dls, arch:str, loss_func=None, pretrained=True, cut=None, splitter=None,
-                y_range=None, config=None, n_out=None, normalize=True, **kwargs):
-    "Build a convnet style learner from `dls` and `arch` using the `timm` library"
-    if config is None: config = {}
-    if n_out is None: n_out = get_c(dls)
-    assert n_out, "`n_out` is not defined, and could not be inferred from data, set `dls.c` or pass `n_out`"
-    if y_range is None and 'y_range' in config: y_range = config.pop('y_range')
-    model = create_timm_model(arch, n_out, default_split, pretrained, y_range=y_range, **config)
-    learn = Learner(dls, model, loss_func=loss_func, splitter=default_split, **kwargs)
-    if pretrained: learn.freeze()
-    return learn
-
 #Function: create a learner and fit model, setting batch size according to number of training images
 def train_cnn(df, 
               architecture,
@@ -1011,17 +973,32 @@ def train_cnn(df,
     batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
     batch_size = min(batch_size, max_bs)
     
-    #start data block
+    
+    
+    #set kind of splitter for DataBlock
     if 'is_valid' in df.columns:
         sptr = ColSplitter()
     else:
         sptr = RandomSplitter(valid_pct = valid_pct)
         
+    #check if item resizing is necessary
+    default_cfg = create_model(architecture, pretrained=False).default_cfg
+    if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
+        item_transforms = Resize(size = default_cfg['input_size'][1:], 
+                                 method = ResizeMethod.Squish,
+                                 resamples = (Image.NEAREST,Image.NEAREST)
+                                )
+        eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
+        eprint('This will be done automatically.')    
+    else:
+        item_transforms = None
+
+    #set DataBlock    
     dbl = DataBlock(blocks=(ImageBlock, CategoryBlock),
                        splitter = sptr,
                        get_x = ColReader('path'),
                        get_y = ColReader('labels'),
-                       item_tfms = None,
+                       item_tfms = item_transforms,
                        batch_tfms = transforms
                       )
     
@@ -1030,7 +1007,7 @@ def train_cnn(df,
     
 
     #create learner
-    learn = timm_learner(dls, 
+    learn = vision_learner(dls, 
                     architecture, 
                     metrics = accuracy, 
                     normalize = normalize,
@@ -1071,7 +1048,7 @@ def train_multilabel_cnn(df,
               epochs = 30, 
               freeze_epochs = 0,
               normalize = True,  
-              callbacks = CutMix, 
+              callbacks = MixUp, 
               transforms = None,
               pretrained = False,
               loss_fn = AsymmetricLossMultiLabel(),
@@ -1083,17 +1060,29 @@ def train_multilabel_cnn(df,
     batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
     batch_size = min(batch_size, max_bs)
     
-    #start data block
+    #check which kind of splitter to use
     if 'is_valid' in df.columns:
         sptr = ColSplitter()
     else:
         sptr = RandomSplitter(valid_pct = valid_pct)
         
+    #check if item resizing is necessary
+    default_cfg = create_model(architecture, pretrained=False).default_cfg
+    if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
+        item_transforms = Resize(size = default_cfg['input_size'][1:], 
+                                 method = ResizeMethod.Squish,
+                                 resamples = (Image.NEAREST,Image.NEAREST)
+                                )
+        eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
+        eprint('This will be done automatically.')    
+    else:
+        item_transforms = None
+        
     dbl = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
                        splitter = sptr,
                        get_x = ColReader('path'),
                        get_y = ColReader('labels', label_delim=';'),
-                       item_tfms = None,
+                       item_tfms = item_transforms,
                        batch_tfms = transforms
                       )
     
@@ -1110,7 +1099,7 @@ def train_multilabel_cnn(df,
     
 
     #create learner
-    learn = timm_learner(dls, 
+    learn = vision_learner(dls, 
                     architecture, 
                     metrics = metrics, 
                     normalize = normalize,
