@@ -307,7 +307,7 @@ Because this is fast and easy to calculate from files produced during sequencing
 
 ### varKoder.py train
 
-After *varKodes* are generated with `varKoder.py image`, they can be used to train a neural network to recognize taxa based on these images. The `varKoder.py train` command uses `fastai` and `pytorch` to do this training, with image models obtained with the `timm` library. 
+After *varKodes* are generated with `varKoder.py image`, they can be used to train a neural network to recognize taxa based on these images. The `varKoder.py train` command uses `fastai` and `pytorch` to do this training, with image models obtained with the `timm` library. If a model in the `timm` library requires a specific input image size (for example, [vision transformers](https://huggingface.co/google/vit-base-patch16-224-in21k)), **varKoder** will automatically resize input **varkodes** using the [nearest pixel method](https://pillow.readthedocs.io/en/stable/handbook/concepts.html#PIL.Image.Resampling.NEAREST).
 
 There are two modes of training:
 
