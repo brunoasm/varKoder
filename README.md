@@ -348,6 +348,7 @@ There are two modes of training:
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/ca llback.schedule.html#learner.fine_tune (default: 20) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
 | -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://github.com/rwightman/pytorch-image-models for possible options. (default: ig_resnext101_32x8d) |
+| -P, --pretrained | download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai /fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.a ugment.html#aug_transforms (default: 0.75) |
