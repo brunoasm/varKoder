@@ -436,7 +436,7 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
 ##### Multi-label:
 
  
- *  `varKode_image_path`: path to varKodes used in prediction (they are deleted if inputs as raw reads and the option `--keep-images` is not used).
+ *  `varKode_image_path`: path to varKodes used in prediction (use `--keep-images` if the input is raw reads and you want to keep these files).
  *  `sample_id`: An identifier for each sample, inferred from the input file paths.
  *  `query_basepairs`: amount of data used to produce varKodes for query.
  *  `query_kmer_len`: kmer length used to produce varKode.
@@ -450,12 +450,12 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
 
 ##### Single-label:
 
- *  `varKode_image_path`: path to varKodes used in prediction (they are deleted if inputs as raw reads and the option `--keep-images` is not used).
+ *  `varKode_image_path`: path to varKodes used in prediction (use `--keep-images` if the input is raw reads and you want to keep these files).
  *  `sample_id`: An identifier for each sample, inferred from the input file paths.
  *  `query_basepairs`: amount of data used to produce varKodes for query.
  *  `query_kmer_len`: kmer length used to produce varKode.
  *  `trained_model_path`: path to model used to make predictions.
- *  `prediction_type`: Multilabel
+ *  `prediction_type`: Single label
  *  `best_pred_label`: the best taxonomic prediction.
  *  `best_pred_prob`: the confidence of the best prediction.
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
