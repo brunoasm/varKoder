@@ -113,10 +113,9 @@ python varKoder/varKoder.py query -h
 
 Follow these links for detailed information for each command:
 
-
-[Creating varKodes with `varKoder.py image`](docs/image.md)
-[Training an image classification model `varKoder.py train`](docs/train.md)
-[Identifying and unknown sample with `varKoder.py query`](docs/query.md)
+1. [Creating varKodes with `varKoder.py image`](docs/image.md)
+2. [Training an image classification model `varKoder.py train`](docs/train.md)
+3. [Identifying and unknown sample with `varKoder.py query`](docs/query.md)
 
 
 ## Author
