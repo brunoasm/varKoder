@@ -1017,7 +1017,8 @@ def train_cnn(df,
         dev=torch.device('cuda')
     else:
         dev=torch.device('cpu')
-    dls = dbl.dataloaders(df, bs = batch_size, device = dev)
+    torch.set_default_device(dev)
+    dls = dbl.dataloaders(df, bs = batch_size)
     
 
     #create learner
@@ -1200,7 +1201,8 @@ def train_weighted_multilabel_cnn(df,
         dev=torch.device('cuda')
     else:
         dev=torch.device('cpu')
-    dls = dbl.dataloaders(df, bs = batch_size, device = dev)
+    torch.set_default_device(dev)
+    dls = dbl.dataloaders(df, bs = batch_size)
 
 
     #find all labels that are not 'low_quality:True'
@@ -1221,7 +1223,9 @@ def train_weighted_multilabel_cnn(df,
                     cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
                     loss_func = CustomWeightedAsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
                    ).to_fp16()
-    
+    #if torch.has_mps:
+    #    learn.model = learn.model.to("mps")
+
     #if there a pretrained model body weights, replace them
     #first, filter state dict to only keys that match and values that have the same size
     #this will allow incomptibilities (e. g. if training on a different number of classes)

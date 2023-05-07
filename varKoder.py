@@ -553,16 +553,21 @@ if args.command == 'train':
 
     #4 if a pretrained model has been provided, load model state
     load_on_cpu = True
+    dev = torch.device('cpu')
     model_state_dict = None
 
     try: #within a try-except statement since currently only nightly build has this function
         if torch.has_mps:
             load_on_cpu = False
+            dev = torch.device('mps')
     except AttributeError:
         pass
 
     if torch.has_cuda and torch.cuda.device_count():
         load_on_cpu = False
+        dev = torch.device('cuda')
+
+    torch.set_default_device(dev)
 
     if args.pretrained_model:
         eprint("Loading pretrained model:", str(args.pretrained_model))
