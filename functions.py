@@ -1010,8 +1010,14 @@ def train_cnn(df,
                        batch_tfms = transforms
                       )
     
-    #create data loaders with calculated batch size
-    dls = dbl.dataloaders(df, bs = batch_size)
+    #create data loaders with calculated batch size and appropriate device
+    if torch.has_mps:
+        dev=torch.device('mps')
+    elif torch.has_cuda and torch.cuda.device_count():
+        dev=torch.device('cuda')
+    else:
+        dev=torch.device('cpu')
+    dls = dbl.dataloaders(df, bs = batch_size, device = dev)
     
 
     #create learner
@@ -1187,9 +1193,16 @@ def train_weighted_multilabel_cnn(df,
                        batch_tfms = transforms
                       )
     
-    #create data loaders with calculated batch size
-    dls = dbl.dataloaders(df, bs = batch_size)
-    
+    #create data loaders with calculated batch size and appropriate device
+    if torch.has_mps:
+        dev=torch.device('mps')
+    elif torch.has_cuda and torch.cuda.device_count():
+        dev=torch.device('cuda')
+    else:
+        dev=torch.device('cpu')
+    dls = dbl.dataloaders(df, bs = batch_size, device = dev)
+
+
     #find all labels that are not 'low_quality:True'
     labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
     
