@@ -664,7 +664,8 @@ def make_image(infile,
                threads = 1, 
                overwrite = False,
                verbose = False,
-               labels = []
+               labels = [],
+               base_sd = 0
               ):
     
     Path(outfolder).mkdir(exist_ok = True)
@@ -679,10 +680,6 @@ def make_image(infile,
     kmer_size = len(kmers.index[0])
     
 
-    
-
-    
-    
     with tempfile.TemporaryDirectory(prefix='dsk') as outdir:
         # first, dump dsk results as ascii, save in a pandas df and merge with mapping
         # mapping has kmers and their reverse complements, so we need to aggregate
@@ -722,6 +719,7 @@ def make_image(infile,
         #Now let's add the labels:
         metadata = PngInfo()
         metadata.add_text("varkoderKeywords", labels_sep.join(labels))
+        metadata.add_text("varkoderBaseFreqSd", str(base_sd))
         
       
         #finally, save the image
@@ -889,7 +887,8 @@ def run_clean2img(it_row,
                                        overwrite = args.overwrite,
                                        threads = cores_per_process,
                                        verbose = args.verbose,
-                                       labels = x['labels'] + ['low_quality:' + str(base_sd > qual_thresh)]
+                                       labels = x['labels'] + ['low_quality:' + str(base_sd > qual_thresh)],
+                                       base_sd = base_sd
                                       )
             except IndexError as e:
                 eprint('IMAGE FAIL:', infile)
@@ -1130,7 +1129,212 @@ def train_multilabel_cnn(df,
         
     
     return(learn)
-    
+
+
 #Function: retrieve varKoder labels as a list, removing the negative label for low quality
 def get_varKoder_labels(img_path):
     return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';') if x != 'low_quality:False']
+
+
+
+
+
+
+
+
+
+######Testing if downweighting poor quality samples can work:
+
+def custom_weighted_training_loop(learn, sample_weights):
+    model, opt = learn.model, learn.opt
+    for xb, yb in learn.dls.train:
+        # Get the corresponding sample weights for the current batch
+        batch_sample_weights = [sample_weights[i] for i in learn.dls.train.get_idxs()]
+
+        # Convert the sample weights to a tensor
+        batch_sample_weights_tensor = torch.tensor(batch_sample_weights, device=xb.device, dtype=torch.float)
+
+        # Calculate the loss with the custom loss function
+        loss = learn.loss_func(model(xb), yb, batch_sample_weights_tensor)
+
+        # Backward pass
+        loss.backward()
+
+        # Optimization step
+        opt.step()
+
+        # Zero the gradients
+        opt.zero_grad()
+
+from fastai.callback.core import Callback
+
+class CustomWeightedTrainingCallback(Callback):
+    def __init__(self, sample_weights):
+        self.sample_weights = sample_weights
+
+    def before_fit(self):
+        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
+
+class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
+    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
+        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
+
+        self.gamma_neg = gamma_neg
+        self.gamma_pos = gamma_pos
+        self.clip = clip
+        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
+        self.eps = eps
+
+    def forward(self, x, y, sample_weights=None):
+        """
+        Parameters
+        ----------
+        x: input logits
+        y: targets (multi-label binarized vector) or tuple of targets for MixUp
+        sample_weights: per-sample weights, should have the same shape as y
+        """
+
+        if isinstance(y, tuple):
+            y1, y2, lam = y
+            y = lam * y1 + (1 - lam) * y2
+            if sample_weights is not None:
+                sample_weights = lam * sample_weights + (1 - lam) * sample_weights
+
+        # Calculating Probabilities
+        x_sigmoid = torch.sigmoid(x)
+        xs_pos = x_sigmoid
+        xs_neg = 1 - x_sigmoid
+
+        # Asymmetric Clipping
+        if self.clip is not None and self.clip > 0:
+            xs_neg = (xs_neg + self.clip).clamp(max=1)
+
+        # Basic CE calculation
+        los_pos = y * torch.log(xs_pos.clamp(min=self.eps))
+        los_neg = (1 - y) * torch.log(xs_neg.clamp(min=self.eps))
+        loss = los_pos + los_neg
+
+        # Asymmetric Focusing
+        if self.gamma_neg > 0 or self.gamma_pos > 0:
+            if self.disable_torch_grad_focal_loss:
+                torch._C.set_grad_enabled(False)
+            pt0 = xs_pos * y
+            pt1 = xs_neg * (1 - y)  # pt = p if t > 0 else 1-p
+            pt = pt0 + pt1
+            one_sided_gamma = self.gamma_pos * y + self.gamma_neg * (1 - y)
+            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
+            if self.disable_torch_grad_focal_loss:
+                torch._C.set_grad_enabled(True)
+            loss *= one_sided_w
+
+        # Apply sample weights
+        if sample_weights is not None:
+            loss *= sample_weights
+
+        return -loss.sum()
+
+
+#Function: create a learner and fit model, setting batch size according to number of training images
+def train_weighted_multilabel_cnn(df, 
+              architecture,
+              valid_pct = 0.2,
+              max_bs = 64,
+              base_lr = 1e-3,
+              model_state_dict = None,
+              epochs = 30, 
+              freeze_epochs = 0,
+              normalize = True,  
+              callbacks = MixUp, 
+              transforms = None,
+              pretrained = False,
+              metrics_threshold = 0.7,
+              verbose = True):
+    
+    
+    #find a batch size that is a power of 2 and splits the dataset in about 10 batches
+    batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
+    batch_size = min(batch_size, max_bs)
+    
+    #check which kind of splitter to use
+    if 'is_valid' in df.columns:
+        sptr = ColSplitter()
+    else:
+        sptr = RandomSplitter(valid_pct = valid_pct)
+        
+    #check if item resizing is necessary
+    default_cfg = create_model(architecture, pretrained=False).default_cfg
+    if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
+        item_transforms = Resize(size = default_cfg['input_size'][1:], 
+                                 method = ResizeMethod.Squish,
+                                 resamples = (Image.NEAREST,Image.NEAREST)
+                                )
+        eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
+        eprint('This will be done automatically.')    
+    else:
+        item_transforms = None
+        
+    dbl = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
+                       splitter = sptr,
+                       get_x = ColReader('path'),
+                       get_y = ColReader('labels', label_delim=';'),
+                       item_tfms = item_transforms,
+                       batch_tfms = transforms
+                      )
+    
+    #create data loaders with calculated batch size
+    dls = dbl.dataloaders(df, bs = batch_size)
+    
+    #find all labels that are not 'low_quality:True'
+    labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
+    
+    #now define metrics
+    precision = PrecisionMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
+    recall = RecallMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
+    metrics = [precision, recall]
+
+
+    #create learner
+    learn = vision_learner(dls, 
+                    architecture, 
+                    metrics = metrics, 
+                    normalize = normalize,
+                    pretrained = pretrained,
+                    cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
+                    loss_func = CustomWeightedAsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
+                   ).to_fp16()
+    
+    #if there a pretrained model body weights, replace them
+    #first, filter state dict to only keys that match and values that have the same size
+    #this will allow incomptibilities (e. g. if training on a different number of classes)
+    #solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
+    if model_state_dict:
+        old_state_dict = learn.state_dict()
+        new_state_dict = {k:v for k,v in model_state_dict.items() 
+                          if k in old_state_dict and
+                             old_state_dict[k].size() == v.size()}
+        learn.model.load_state_dict(new_state_dict, strict = False)
+    
+    #train
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=UndefinedMetricWarning)
+        if verbose:
+            learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+        else:
+            with learn.no_bar(), learn.no_logging():
+                learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+        
+    
+    return(learn)
+    
+
+
+
+
+#Function: retrieve varKoder base frequency sd as a float and apply a function to turn it into a loss function weight
+def get_varKoder_quality_weigths(img_path):
+    base_sd = float(Image.open(img_path).info.get('varkoderBaseFreqSd'))
+    weight =  2/(1+math.exp(20*base_sd))
+    return weight
+
+
+####TO DO: add option to control quality downweight

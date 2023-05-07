@@ -503,6 +503,17 @@ if args.command == 'train':
         image_files = (pd.DataFrame(image_files).
                        assign(labels = lambda x: x['path'].apply(lambda y: ';'.join(get_varKoder_labels(y))))
                       )
+        
+    #add quality-based sample weigths 
+    image_files = image_files.assign(
+            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+        )
+    #if not args.ignore_quality:
+    #    image_files = image_files.assign(
+    #        sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+    #    )
+    #else:
+    #    image_files['sample_weights'] = 1
 
 
     
@@ -619,6 +630,22 @@ if args.command == 'train':
                           metrics_threshold = args.threshold,
                           verbose = not args.no_logging
                          )
+        
+        learn = train_weighted_multilabel_cnn(df = image_files, 
+                  architecture = args.architecture, 
+                  valid_pct = args.validation_set_fraction,
+                  max_bs = args.max_batch_size,
+                  base_lr = args.base_learning_rate,
+                  epochs = args.epochs,
+                  freeze_epochs = args.freeze_epochs,
+                  normalize = True, 
+                  pretrained = args.pretrained, 
+                  callbacks = [callback], 
+                  transforms = trans,
+                  model_state_dict = model_state_dict,
+                  metrics_threshold = args.threshold,
+                  verbose = not args.no_logging
+                 )
         
 
     # save results
