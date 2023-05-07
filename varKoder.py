@@ -81,10 +81,6 @@ parser_train.add_argument('outdir',
                           help = 'path to the folder where trained model will be stored.')
 parser_train.add_argument('-t','--label-table', 
                           help = 'path to csv table with labels for each sample. If not provided, varKoder will attemp to read labels from the image file metadata.')
-parser_train.add_argument('-i','--ignore-quality', 
-                          help = 'ignore sequence quality when training.',
-                          action = 'store_true'
-                         )
 parser_train.add_argument('-n','--single-label', 
                           help = 'Train as a single-label image classification model. It must be combined with --ignore-quality.',
                           action = 'store_true'
@@ -130,6 +126,10 @@ parser_train.add_argument('-c','--architecture',
 parser_train.add_argument('-P','--pretrained', 
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
                           action='store_true'
+                         )
+parser_train.add_argument('-i','--ignore-quality', 
+                          help = 'turn off downweighting based on DNA quality.',
+                          action = 'store_true'
                          )
 parser_train.add_argument('-X','--mix-augmentation', 
                           help = 'apply MixUp or CutMix augmentation. See https://docs.fast.ai/callback.mixup.html',
@@ -504,17 +504,13 @@ if args.command == 'train':
                        assign(labels = lambda x: x['path'].apply(lambda y: ';'.join(get_varKoder_labels(y))))
                       )
         
-    #add quality-based sample weigths 
-    image_files = image_files.assign(
-            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
-        )
-    #if not args.ignore_quality:
-    #    image_files = image_files.assign(
-    #        sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
-    #    )
-    #else:
-    #    image_files['sample_weights'] = 1
-
+    #add quality-based sample weigths
+    if not args.ignore_quality:
+        image_files = image_files.assign(
+                sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+            )
+    else:
+        image_files['sample_weights'] = 1
 
     
     #2 let's add a column to mark images in the validation set according to input options
@@ -533,8 +529,8 @@ if args.command == 'train':
         
     image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples))
     
-    if args.ignore_quality:
-        image_files = image_files.assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')]))))
+    
+    image_files = image_files.assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')]))))
     
     
     #3 prepare input to training function based on options
@@ -612,25 +608,7 @@ if args.command == 'train':
             
             
         eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
-        #5 call training function
-        learn = train_multilabel_cnn(df = image_files, 
-                          architecture = args.architecture, 
-                          valid_pct = args.validation_set_fraction,
-                          max_bs = args.max_batch_size,
-                          base_lr = args.base_learning_rate,
-                          epochs = args.epochs,
-                          freeze_epochs = args.freeze_epochs,
-                          normalize = True, 
-                          pretrained = args.pretrained, 
-                          callbacks = callback, 
-                          transforms = trans,
-                          #loss_fn = BCEWithLogitsLossFlat(),
-                          loss_fn = AsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1),
-                          model_state_dict = model_state_dict,
-                          metrics_threshold = args.threshold,
-                          verbose = not args.no_logging
-                         )
-        
+        #5 call training function        
         learn = train_weighted_multilabel_cnn(df = image_files, 
                   architecture = args.architecture, 
                   valid_pct = args.validation_set_fraction,

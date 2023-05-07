@@ -1,26 +1,37 @@
 #!/usr/bin/env python 
 
+#todo:
+#add basefreq sd to predictions output
+#add basefreq sd and weight to training output
+#add basefreq sd to label-table
+#rewrite readme to add all above
+
 #imports used for all commands
 from pathlib import Path
 from collections import OrderedDict, defaultdict
+
 from io import StringIO
-from PIL import Image 
-from PIL.PngImagePlugin import PngInfo
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
-import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
-import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from sklearn.exceptions import UndefinedMetricWarning
 
-from fastai.data.all import DataBlock, ColSplitter, ColReader, get_c
-from fastai.vision.all import ImageBlock, MultiCategoryBlock, create_head, apply_init, default_split, partial, vision_learner
-from fastai.vision.learner import _update_first_layer, has_pool_type
+import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
+import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
+from math import log
+
+from PIL import Image 
+from PIL.PngImagePlugin import PngInfo
+from PIL.Image import Resampling
+
+from fastai.data.all import DataBlock, ColSplitter, ColReader
+from fastai.vision.all import ImageBlock, MultiCategoryBlock, vision_learner
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed
 from fastai.callback.mixup import CutMix, MixUp
-from fastai.callback.hook import num_features_model
-from fastai.losses import CrossEntropyLossFlat, BCEWithLogitsLossFlat
+from fastai.losses import CrossEntropyLossFlat #, BCEWithLogitsLossFlat
+from fastai.callback.core import Callback
+from fastai.torch_core import set_seed
 
 from torch import nn
 import torch
@@ -28,9 +39,7 @@ import torch
 from timm import create_model
 from timm.loss import AsymmetricLossMultiLabel
 
-from math import log
 
-from fastai.torch_core import set_seed
 
 #define filename separators
 label_sample_sep = '+'
@@ -985,7 +994,7 @@ def train_cnn(df,
     if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
         item_transforms = Resize(size = default_cfg['input_size'][1:], 
                                  method = ResizeMethod.Squish,
-                                 resamples = (Image.NEAREST,Image.NEAREST)
+                                 resamples = (Resampling.BOX,Resampling.BOX)
                                 )
         eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
         eprint('This will be done automatically.')    
@@ -1037,114 +1046,11 @@ def train_cnn(df,
     return(learn)
 
 
-#Function: create a learner and fit model, setting batch size according to number of training images
-def train_multilabel_cnn(df, 
-              architecture,
-              valid_pct = 0.2,
-              max_bs = 64,
-              base_lr = 1e-3,
-              model_state_dict = None,
-              epochs = 30, 
-              freeze_epochs = 0,
-              normalize = True,  
-              callbacks = MixUp, 
-              transforms = None,
-              pretrained = False,
-              loss_fn = AsymmetricLossMultiLabel(),
-              metrics_threshold = 0.7,
-              verbose = True):
-    
-    
-    #find a batch size that is a power of 2 and splits the dataset in about 10 batches
-    batch_size = 2**round(log(df[~df['is_valid']].shape[0]/10,2))
-    batch_size = min(batch_size, max_bs)
-    
-    #check which kind of splitter to use
-    if 'is_valid' in df.columns:
-        sptr = ColSplitter()
-    else:
-        sptr = RandomSplitter(valid_pct = valid_pct)
-        
-    #check if item resizing is necessary
-    default_cfg = create_model(architecture, pretrained=False).default_cfg
-    if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
-        item_transforms = Resize(size = default_cfg['input_size'][1:], 
-                                 method = ResizeMethod.Squish,
-                                 resamples = (Image.NEAREST,Image.NEAREST)
-                                )
-        eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
-        eprint('This will be done automatically.')    
-    else:
-        item_transforms = None
-        
-    dbl = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
-                       splitter = sptr,
-                       get_x = ColReader('path'),
-                       get_y = ColReader('labels', label_delim=';'),
-                       item_tfms = item_transforms,
-                       batch_tfms = transforms
-                      )
-    
-    #create data loaders with calculated batch size
-    dls = dbl.dataloaders(df, bs = batch_size)
-    
-    #find all labels that are not 'low_quality:True'
-    labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
-    
-    #now define metrics
-    precision = PrecisionMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
-    recall = RecallMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
-    metrics = [precision, recall]
-    
-
-    #create learner
-    learn = vision_learner(dls, 
-                    architecture, 
-                    metrics = metrics, 
-                    normalize = normalize,
-                    pretrained = pretrained,
-                    cbs = callbacks,
-                    loss_func = loss_fn
-                   ).to_fp16()
-    
-    #if there a pretrained model body weights, replace them
-    #first, filter state dict to only keys that match and values that have the same size
-    #this will allow incomptibilities (e. g. if training on a different number of classes)
-    #solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
-    if model_state_dict:
-        old_state_dict = learn.state_dict()
-        new_state_dict = {k:v for k,v in model_state_dict.items() 
-                          if k in old_state_dict and
-                             old_state_dict[k].size() == v.size()}
-        learn.model.load_state_dict(new_state_dict, strict = False)
-    
-    #train
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=UndefinedMetricWarning)
-        if verbose:
-            learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
-        else:
-            with learn.no_bar(), learn.no_logging():
-                learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
-        
-    
-    return(learn)
-
-
 #Function: retrieve varKoder labels as a list, removing the negative label for low quality
 def get_varKoder_labels(img_path):
     return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';') if x != 'low_quality:False']
 
-
-
-
-
-
-
-
-
-######Testing if downweighting poor quality samples can work:
-
+#Custom training loop for fastai to use sample weights
 def custom_weighted_training_loop(learn, sample_weights):
     model, opt = learn.model, learn.opt
     for xb, yb in learn.dls.train:
@@ -1166,8 +1072,7 @@ def custom_weighted_training_loop(learn, sample_weights):
         # Zero the gradients
         opt.zero_grad()
 
-from fastai.callback.core import Callback
-
+#Callback to add sample weigths
 class CustomWeightedTrainingCallback(Callback):
     def __init__(self, sample_weights):
         self.sample_weights = sample_weights
@@ -1175,6 +1080,7 @@ class CustomWeightedTrainingCallback(Callback):
     def before_fit(self):
         self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
 
+# Modified AsymmetricLossMultiLabel from timm library to include sample weigths
 class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
     def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
         super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
@@ -1266,7 +1172,7 @@ def train_weighted_multilabel_cnn(df,
     if 'fixed_input_size' in default_cfg.keys() and default_cfg['fixed_input_size']:
         item_transforms = Resize(size = default_cfg['input_size'][1:], 
                                  method = ResizeMethod.Squish,
-                                 resamples = (Image.NEAREST,Image.NEAREST)
+                                 resamples = (Resampling.BOX,Resampling.BOX)
                                 )
         eprint('Model architecture',architecture,'requires image resizing to',str(default_cfg['input_size'][1:]))
         eprint('This will be done automatically.')    
@@ -1327,14 +1233,8 @@ def train_weighted_multilabel_cnn(df,
     return(learn)
     
 
-
-
-
-#Function: retrieve varKoder base frequency sd as a float and apply a function to turn it into a loss function weight
+#Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
 def get_varKoder_quality_weigths(img_path):
     base_sd = float(Image.open(img_path).info.get('varkoderBaseFreqSd'))
     weight =  2/(1+math.exp(20*base_sd))
     return weight
-
-
-####TO DO: add option to control quality downweight
