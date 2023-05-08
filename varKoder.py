@@ -80,7 +80,7 @@ parser_train.add_argument('input',
 parser_train.add_argument('outdir', 
                           help = 'path to the folder where trained model will be stored.')
 parser_train.add_argument('-t','--label-table', 
-                          help = 'path to csv table with labels for each sample. If not provided, varKoder will attemp to read labels from the image file metadata.')
+                          help = 'path to csv table with labels for each sample. By default, varKoder will instead read labels from the image file metadata.')
 parser_train.add_argument('-n','--single-label', 
                           help = 'Train as a single-label image classification model. It must be combined with --ignore-quality.',
                           action = 'store_true'
@@ -91,15 +91,19 @@ parser_train.add_argument('-d','--threshold',
                           default = 0.7
                          )
 parser_train.add_argument('-V','--validation-set',
-                          help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created.'
+                          help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created. Turns off --validation-set-fraction'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
-                          help = 'fraction of samples to be held as a random validation set.',
+                          help = 'fraction of samples to be held as a random validation set. Will be ignored if --validation-set is provided.',
                           type = float,
                           default = 0.2
                          ) 
+parser_train.add_argument('-c','--architecture', 
+                          help = 'model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.',
+                          default = 'ig_resnext101_32x8d'
+                         )
 parser_train.add_argument('-m','--pretrained-model', 
-                          help = 'pickle file with optional pretrained model to update with new images.'
+                          help = 'optional pickle file with pretrained model to update with new images. Turns off --architecture if used.'
                          )
 parser_train.add_argument('-b', '--max-batch-size', 
                            help = 'maximum batch size when using GPU for training.',
@@ -119,10 +123,7 @@ parser_train.add_argument('-z','--freeze-epochs',
                           type = int,
                           default = 0
                          )
-parser_train.add_argument('-c','--architecture', 
-                          help = 'model architecture. See https://github.com/rwightman/pytorch-image-models for possible options.',
-                          default = 'ig_resnext101_32x8d'
-                         )
+
 parser_train.add_argument('-P','--pretrained', 
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
                           action='store_true'
