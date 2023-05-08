@@ -16,3 +16,4 @@ dependencies:
   - torchaudio
   - fastai=2.7.12
   - timm=0.6.13
+  - bbmap=39.01
