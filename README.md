@@ -64,10 +64,9 @@ cd varkoder
 conda env create --file conda_environments/mac.yml
 ```
 
-To install `bbtools` and `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
+To install `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
 ```bash
 brew tap brewsci/bio
-brew install bbtools
 brew install fastp
 ```
 
