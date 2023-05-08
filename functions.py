@@ -1042,6 +1042,11 @@ def train_cnn(df,
                              old_state_dict[k].size() == v.size()}
         learn.model.load_state_dict(new_state_dict, strict = False)
     
+    #compile with pytorch for faster training
+    #commented out because currently returning errors
+    #update when fastai has better documentation
+    #learn.model = torch.compile(learn.model)
+
     #train
     if verbose:
         learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
@@ -1223,8 +1228,6 @@ def train_weighted_multilabel_cnn(df,
                     cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
                     loss_func = CustomWeightedAsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
                    ).to_fp16()
-    #if torch.has_mps:
-    #    learn.model = learn.model.to("mps")
 
     #if there a pretrained model body weights, replace them
     #first, filter state dict to only keys that match and values that have the same size
@@ -1236,7 +1239,12 @@ def train_weighted_multilabel_cnn(df,
                           if k in old_state_dict and
                              old_state_dict[k].size() == v.size()}
         learn.model.load_state_dict(new_state_dict, strict = False)
-    
+   
+    #compile with pytorch for faster training
+    #commented out because currently returning errors
+    #update when fastai has better documentation
+    #learn.model = torch.compile(learn.model)
+
     #train
     with warnings.catch_warnings():
         warnings.filterwarnings('ignore', category=UndefinedMetricWarning)
