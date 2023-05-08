@@ -64,10 +64,9 @@ cd varkoder
 conda env create --file conda_environments/mac.yml
 ```
 
-To install `bbtools` and `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
+To install `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
 ```bash
 brew tap brewsci/bio
-brew install bbtools
 brew install fastp
 ```
 
@@ -84,17 +83,17 @@ arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebr
 arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
 ```
 
-Finally, `dsk` can be obtained as a binary executable and installed to your conda environment:
+Finally, `dsk` can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
 ```bash
 conda activate varKoder
 wget https://github.com/GATB/dsk/releases/download/v2.3.3/dsk-v2.3.3-bin-Darwin.tar.gz
 tar -xvzf dsk-v2.3.3-bin-Darwin.tar.gz
 cd dsk-v2.3.3-bin-Darwin
 cp bin/* $CONDA_PREFIX/bin/
+cd ..
+rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
+
 ```
-
-After doing this, you can safely delete the downloaded file and folder `dsk-v2.3.3-bin-Darwin` and you need to restart your terminal to be able to use `dsk`
-
 
 ## Usage
 
