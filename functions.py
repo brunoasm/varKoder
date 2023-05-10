@@ -27,7 +27,7 @@ from fastai.vision.all import ImageBlock, MultiCategoryBlock, vision_learner
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
 from fastai.learner import Learner, load_learner
-from fastai.torch_core import set_seed
+from fastai.torch_core import set_seed, default_device
 from fastai.callback.mixup import CutMix, MixUp
 from fastai.losses import CrossEntropyLossFlat #, BCEWithLogitsLossFlat
 from fastai.callback.core import Callback
@@ -1011,15 +1011,7 @@ def train_cnn(df,
                       )
     
     #create data loaders with calculated batch size and appropriate device
-    if torch.has_mps:
-        dev=torch.device('mps')
-    elif torch.has_cuda and torch.cuda.device_count():
-        dev=torch.device('cuda')
-    else:
-        dev=torch.device('cpu')
-    torch.set_default_device(dev)
-    dls = dbl.dataloaders(df, bs = batch_size)
-    
+    dls = dbl.dataloaders(df, bs = batch_size, device = default_device(), num_workers = 0)
 
     #create learner
     learn = vision_learner(dls, 
@@ -1200,15 +1192,7 @@ def train_weighted_multilabel_cnn(df,
                       )
     
     #create data loaders with calculated batch size and appropriate device
-    if torch.has_mps:
-        dev=torch.device('mps')
-    elif torch.has_cuda and torch.cuda.device_count():
-        dev=torch.device('cuda')
-    else:
-        dev=torch.device('cpu')
-    torch.set_default_device(dev)
-    dls = dbl.dataloaders(df, bs = batch_size)
-
+    dls = dbl.dataloaders(df, bs = batch_size, device = default_device(), num_workers = 0)
 
     #find all labels that are not 'low_quality:True'
     labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
