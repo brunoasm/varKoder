@@ -40,7 +40,7 @@ Here we provide installation instructions for Linux and OSX, the only systems in
 
 ### Linux
 
-All dependencies can be installed with [Anaconda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
+All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
 To install these dependencies as a new conda environment named `varKoder`, clone this github repository and use anaconda:
 
 ```bash
@@ -48,6 +48,10 @@ git clone https://github.com/brunoasm/varKoder
 cd varkoder
 conda env create --file conda_environments/linux.yml
 ```
+
+If this takes too long, you can try using [mamba](https://github.com/mamba-org/mamba) instead, which should be much faster than conda. Follow instructions to install mamba and use the same command as above, but replacing `conda` with `mamba`.
+
+
 After installing the environment, you will be able to activate the environment by using:
 ```bash
 conda activate varKoder
