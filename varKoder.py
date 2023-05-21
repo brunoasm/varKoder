@@ -598,7 +598,8 @@ if args.command == 'train':
                           normalize = True, 
                           pretrained = pretrained, 
                           callbacks = callback, 
-                          transforms = trans,
+                          max_lighting = args.max_lighting,
+                          p_lighting = args.p_lighting,
                           loss_fn = loss,
                           model_state_dict = model_state_dict,
                           verbose = not args.no_logging
@@ -612,7 +613,7 @@ if args.command == 'train':
             
         eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
         #5 call training function        
-        learn = train_weighted_multilabel_cnn(df = image_files, 
+        learn = train_multilabel_cnn(df = image_files, 
                   architecture = args.architecture, 
                   valid_pct = args.validation_set_fraction,
                   max_bs = args.max_batch_size,
@@ -622,10 +623,11 @@ if args.command == 'train':
                   normalize = True, 
                   pretrained = pretrained, 
                   callbacks = [callback], 
-                  transforms = trans,
                   model_state_dict = model_state_dict,
                   metrics_threshold = args.threshold,
-                  verbose = not args.no_logging
+                  verbose = not args.no_logging,
+                  max_lighting = args.max_lighting,
+                  p_lighting = args.p_lighting
                  )
         
 

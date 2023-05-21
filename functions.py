@@ -971,7 +971,8 @@ def train_cnn(df,
               freeze_epochs = 0,
               normalize = True,  
               callbacks = CutMix, 
-              transforms = None,
+              max_lighting = 0,
+              p_lighting = 0,
               pretrained = False,
               loss_fn = CrossEntropyLossFlat(),
               verbose = True):
@@ -1000,6 +1001,16 @@ def train_cnn(df,
         eprint('This will be done automatically.')    
     else:
         item_transforms = None
+        
+    #set batch transforms
+    transforms = aug_transforms(do_flip = False,
+                      max_rotate = 0,
+                      max_zoom = 1,
+                      max_lighting = max_lighting,
+                      max_warp = 0,
+                      p_affine = 0,
+                      p_lighting = p_lighting
+                      )
 
     #set DataBlock    
     dbl = DataBlock(blocks=(ImageBlock, CategoryBlock),
@@ -1055,97 +1066,97 @@ def get_varKoder_labels(img_path):
     return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';') if x != 'low_quality:False']
 
 #Custom training loop for fastai to use sample weights
-def custom_weighted_training_loop(learn, sample_weights):
-    model, opt = learn.model, learn.opt
-    for xb, yb in learn.dls.train:
-        # Get the corresponding sample weights for the current batch
-        batch_sample_weights = [sample_weights[i] for i in learn.dls.train.get_idxs()]
-
-        # Convert the sample weights to a tensor
-        batch_sample_weights_tensor = torch.tensor(batch_sample_weights, device=xb.device, dtype=torch.float)
-
-        # Calculate the loss with the custom loss function
-        loss = learn.loss_func(model(xb), yb, batch_sample_weights_tensor)
-
-        # Backward pass
-        loss.backward()
-
-        # Optimization step
-        opt.step()
-
-        # Zero the gradients
-        opt.zero_grad()
-
-#Callback to add sample weigths
-class CustomWeightedTrainingCallback(Callback):
-    def __init__(self, sample_weights):
-        self.sample_weights = sample_weights
-
-    def before_fit(self):
-        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
-
-# Modified AsymmetricLossMultiLabel from timm library to include sample weigths
-class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
-    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
-        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
-
-        self.gamma_neg = gamma_neg
-        self.gamma_pos = gamma_pos
-        self.clip = clip
-        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
-        self.eps = eps
-
-    def forward(self, x, y, sample_weights=None):
-        """
-        Parameters
-        ----------
-        x: input logits
-        y: targets (multi-label binarized vector) or tuple of targets for MixUp
-        sample_weights: per-sample weights, should have the same shape as y
-        """
-
-        if isinstance(y, tuple):
-            y1, y2, lam = y
-            y = lam * y1 + (1 - lam) * y2
-            if sample_weights is not None:
-                sample_weights = lam * sample_weights + (1 - lam) * sample_weights
-
-        # Calculating Probabilities
-        x_sigmoid = torch.sigmoid(x)
-        xs_pos = x_sigmoid
-        xs_neg = 1 - x_sigmoid
-
-        # Asymmetric Clipping
-        if self.clip is not None and self.clip > 0:
-            xs_neg = (xs_neg + self.clip).clamp(max=1)
-
-        # Basic CE calculation
-        los_pos = y * torch.log(xs_pos.clamp(min=self.eps))
-        los_neg = (1 - y) * torch.log(xs_neg.clamp(min=self.eps))
-        loss = los_pos + los_neg
-
-        # Asymmetric Focusing
-        if self.gamma_neg > 0 or self.gamma_pos > 0:
-            if self.disable_torch_grad_focal_loss:
-                torch._C.set_grad_enabled(False)
-            pt0 = xs_pos * y
-            pt1 = xs_neg * (1 - y)  # pt = p if t > 0 else 1-p
-            pt = pt0 + pt1
-            one_sided_gamma = self.gamma_pos * y + self.gamma_neg * (1 - y)
-            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
-            if self.disable_torch_grad_focal_loss:
-                torch._C.set_grad_enabled(True)
-            loss *= one_sided_w
-
-        # Apply sample weights
-        if sample_weights is not None:
-            loss *= sample_weights
-
-        return -loss.sum()
+#def custom_weighted_training_loop(learn, sample_weights):
+#    model, opt = learn.model, learn.opt
+#    for xb, yb in learn.dls.train:
+#        # Get the corresponding sample weights for the current batch
+#        batch_sample_weights = [sample_weights[i] for i in learn.dls.train.get_idxs()]
+#
+#        # Convert the sample weights to a tensor
+#        batch_sample_weights_tensor = torch.tensor(batch_sample_weights, device=xb.device, dtype=torch.float)
+#
+#        # Calculate the loss with the custom loss function
+#        loss = learn.loss_func(model(xb), yb, batch_sample_weights_tensor)
+#
+#        # Backward pass
+#        loss.backward()
+#
+#        # Optimization step
+#        opt.step()
+#
+#        # Zero the gradients
+#        opt.zero_grad()
+#
+##Callback to add sample weigths
+#class CustomWeightedTrainingCallback(Callback):
+#    def __init__(self, sample_weights):
+#        self.sample_weights = sample_weights
+#
+#    def before_fit(self):
+#        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
+#
+## Modified AsymmetricLossMultiLabel from timm library to include sample weigths
+#class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
+#    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
+#        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
+#
+#        self.gamma_neg = gamma_neg
+#        self.gamma_pos = gamma_pos
+#        self.clip = clip
+#        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
+#        self.eps = eps
+#
+#    def forward(self, x, y, sample_weights=None):
+#        """
+#        Parameters
+#        ----------
+#        x: input logits
+#        y: targets (multi-label binarized vector) or tuple of targets for MixUp
+#        sample_weights: per-sample weights, should have the same shape as y
+#        """
+#
+#        if isinstance(y, tuple):
+#            y1, y2, lam = y
+#            y = lam * y1 + (1 - lam) * y2
+#            if sample_weights is not None:
+#                sample_weights = lam * sample_weights + (1 - lam) * sample_weights
+#
+#        # Calculating Probabilities
+#        x_sigmoid = torch.sigmoid(x)
+#        xs_pos = x_sigmoid
+#        xs_neg = 1 - x_sigmoid
+#
+#        # Asymmetric Clipping
+#        if self.clip is not None and self.clip > 0:
+#            xs_neg = (xs_neg + self.clip).clamp(max=1)
+#
+#        # Basic CE calculation
+#        los_pos = y * torch.log(xs_pos.clamp(min=self.eps))
+#        los_neg = (1 - y) * torch.log(xs_neg.clamp(min=self.eps))
+#        loss = los_pos + los_neg
+#
+#        # Asymmetric Focusing
+#        if self.gamma_neg > 0 or self.gamma_pos > 0:
+#            if self.disable_torch_grad_focal_loss:
+#                torch._C.set_grad_enabled(False)
+#            pt0 = xs_pos * y
+#            pt1 = xs_neg * (1 - y)  # pt = p if t > 0 else 1-p
+#            pt = pt0 + pt1
+#            one_sided_gamma = self.gamma_pos * y + self.gamma_neg * (1 - y)
+#            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
+#            if self.disable_torch_grad_focal_loss:
+#                torch._C.set_grad_enabled(True)
+#            loss *= one_sided_w
+#
+#        # Apply sample weights
+#        if sample_weights is not None:
+#            loss *= sample_weights
+#
+#        return -loss.sum()
 
 
 #Function: create a learner and fit model, setting batch size according to number of training images
-def train_weighted_multilabel_cnn(df, 
+def train_multilabel_cnn(df, 
               architecture,
               valid_pct = 0.2,
               max_bs = 64,
@@ -1154,8 +1165,9 @@ def train_weighted_multilabel_cnn(df,
               epochs = 30, 
               freeze_epochs = 0,
               normalize = True,  
-              callbacks = MixUp, 
-              transforms = None,
+              callbacks = MixUp,
+              max_lighting = 0,
+              p_lighting = 0,
               pretrained = False,
               metrics_threshold = 0.7,
               verbose = True):
@@ -1183,6 +1195,16 @@ def train_weighted_multilabel_cnn(df,
     else:
         item_transforms = None
         
+    #set batch transforms
+    transforms = aug_transforms(do_flip = False,
+                      max_rotate = 0,
+                      max_zoom = 1,
+                      max_lighting = max_lighting,
+                      max_warp = 0,
+                      p_affine = 0,
+                      p_lighting = p_lighting
+                      )
+        
     dbl = DataBlock(blocks=(ImageBlock, MultiCategoryBlock),
                        splitter = sptr,
                        get_x = ColReader('path'),
@@ -1209,8 +1231,8 @@ def train_weighted_multilabel_cnn(df,
                     metrics = metrics, 
                     normalize = normalize,
                     pretrained = pretrained,
-                    cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
-                    loss_func = CustomWeightedAsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
+                    #cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
+                    loss_func = AsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
                    ).to_fp16()
 
     #if there a pretrained model body weights, replace them
