@@ -23,7 +23,7 @@ from PIL.PngImagePlugin import PngInfo
 from PIL.Image import Resampling
 
 from fastai.data.all import DataBlock, ColSplitter, ColReader
-from fastai.vision.all import ImageBlock, MultiCategoryBlock, vision_learner
+from fastai.vision.all import ImageBlock, MultiCategoryBlock, CategoryBlock, vision_learner
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
 from fastai.learner import Learner, load_learner
@@ -1225,7 +1225,7 @@ def train_weighted_multilabel_cnn(df,
         learn.model.load_state_dict(new_state_dict, strict = False)
    
     #compile with pytorch for faster training
-    #commented out because currently returning errors
+    #commented out because currently returning errors (May 21)
     #update when fastai has better documentation
     #learn.model = torch.compile(learn.model)
 

@@ -82,7 +82,7 @@ parser_train.add_argument('outdir',
 parser_train.add_argument('-t','--label-table', 
                           help = 'path to csv table with labels for each sample. By default, varKoder will instead read labels from the image file metadata.')
 parser_train.add_argument('-n','--single-label', 
-                          help = 'Train as a single-label image classification model. It must be combined with --ignore-quality.',
+                          help = 'Train as a single-label image classification model instead of multilabel. If multiple labels are provided, they will be concatenated to a single label.',
                           action = 'store_true'
                          )
 parser_train.add_argument('-d','--threshold', 
@@ -100,7 +100,7 @@ parser_train.add_argument('-f','--validation-set-fraction',
                          ) 
 parser_train.add_argument('-c','--architecture', 
                           help = 'model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.',
-                          default = 'ig_resnext101_32x8d'
+                          default = 'vit_large_patch32_224'
                          )
 parser_train.add_argument('-m','--pretrained-model', 
                           help = 'optional pickle file with pretrained model to update with new images. Turns off --architecture if used.'
@@ -116,20 +116,19 @@ parser_train.add_argument('-r', '--base_learning_rate',
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
-                          default = 20
+                          default = 17
                          )
 parser_train.add_argument('-z','--freeze-epochs', 
                           help = 'number of freeze epochs to train. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
-                          default = 0
+                          default = 3
                          )
-
 parser_train.add_argument('-P','--pretrained', 
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
                           action='store_true'
                          )
-parser_train.add_argument('-i','--ignore-quality', 
-                          help = 'turn off downweighting based on DNA quality.',
+parser_train.add_argument('-i','--downweight-quality', 
+                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
                           action = 'store_true'
                          )
 parser_train.add_argument('-X','--mix-augmentation', 
@@ -138,7 +137,7 @@ parser_train.add_argument('-X','--mix-augmentation',
                           default = 'MixUp'
                          )
 parser_train.add_argument('-s','--label-smoothing', 
-                          help = 'turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
+                          help = 'turn on Label Smoothing. Only used with --single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb',
                           action='store_true',
                           default = False
                          )
@@ -506,7 +505,7 @@ if args.command == 'train':
                       )
         
     #add quality-based sample weigths
-    if not args.ignore_quality:
+    if args.downweight_quality:
         image_files = image_files.assign(
                 sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
             )
@@ -536,6 +535,7 @@ if args.command == 'train':
     
     #3 prepare input to training function based on options
     eprint('Setting up CNN model for training.')
+    eprint('Model architecture:',args.architecture)
     
     callback = {'MixUp': MixUp,
                 'CutMix': CutMix,
@@ -564,15 +564,22 @@ if args.command == 'train':
         eprint("Loading pretrained model:", str(args.pretrained_model))
         past_learn = load_learner(args.pretrained_model, cpu = load_on_cpu)
         model_state_dict = past_learn.model.state_dict()
+        pretrained = True
         del past_learn
-
-    else:
+    
+    elif args.pretrained:
+        pretrained = True
+        eprint("Starting model with pretrained weights from timm library.")
+        
+    else: 
+        pretrained = False
         eprint("Starting model with random weigths.")
+        
         
     if args.single_label:
         eprint('Single label model requested.')
         if (image_files['labels'].str.contains(';') == True).any():
-            raise Exception('Some samples contain more than one label. Maybe you want a multilabel model?')
+            warnings.warn('Some samples contain more than one label. These will be concatenated. Maybe you want a multilabel model instead?', stacklevel=2)
             
         if args.mix_augmentation == 'None':
             loss = CrossEntropyLoss()
@@ -589,7 +596,7 @@ if args.command == 'train':
                           epochs = args.epochs,
                           freeze_epochs = args.freeze_epochs,
                           normalize = True, 
-                          pretrained = args.pretrained, 
+                          pretrained = pretrained, 
                           callbacks = callback, 
                           transforms = trans,
                           loss_fn = loss,
@@ -599,7 +606,7 @@ if args.command == 'train':
     else:
         eprint('Multilabel model requested.')
         if not (image_files['labels'].str.contains(';') == True).any():
-            warnings.warn('No sample contains more than one label. Maybe you want a single label model?')
+            warnings.warn('No sample contains more than one label. Maybe you want a single label model instead?', stacklevel=2)
             
             
             
@@ -613,7 +620,7 @@ if args.command == 'train':
                   epochs = args.epochs,
                   freeze_epochs = args.freeze_epochs,
                   normalize = True, 
-                  pretrained = args.pretrained, 
+                  pretrained = pretrained, 
                   callbacks = [callback], 
                   transforms = trans,
                   model_state_dict = model_state_dict,
