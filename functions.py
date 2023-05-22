@@ -65,7 +65,7 @@ def process_input(inpath, is_query = False):
                     for sample in taxon.iterdir():
                         if sample.is_dir():
                             for fl in sample.iterdir():
-                                files_records.append({'labels':[taxon.name],
+                                files_records.append({'labels':(taxon.name,),
                                                       'sample':sample.name,
                                                       'files': taxon/sample.name/fl.name
                                                      })
