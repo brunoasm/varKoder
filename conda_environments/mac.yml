@@ -1,4 +1,4 @@
-name: varKoder_test
+name: varKoder
 channels:
   - pytorch
   - fastai
@@ -10,9 +10,11 @@ dependencies:
   - pyarrow=8.0.0
   - pigz=2.6
   - tenacity=8.1.0
-  - pytorch=1.13.1
+  - pytorch=2.0.0
   - humanfriendly=10.0
-  - torchvision
-  - torchaudio
-  - fastai=2.7.10
-  - timm=0.6.7
+  - torchvision=0.15.0
+  - torchaudio=2.0.0 
+  - fastai=2.7.12
+  - timm=0.6.13
+  - bbmap=38.18
+  - wget

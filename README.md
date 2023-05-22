@@ -20,7 +20,7 @@ Finally, you can use *varKoder* to predict labels for an unknown sample, startin
 
 There are two possible strategies for image classification using *varKoder*:
 
-  * Multi-label (default): by default, varKoder uses [multi-label classification](https://en.wikipedia.org/wiki/Multi-label_classification), in which each varKode can be associated with one or more labels. When querying an unknown sample, the response may be one or more of the labels used in training, or none, when the sample is not recognized as anything the model has been trained with. We found that this strategy is particularly useful to train a computer vision model to recognize when a sample was sequenced from low-quality DNA, preventing errors in which low-quality samples are predicted to be similar because of similarity in contamination and DNA damage. For this reason, varKoder automatically adds a flag to potentially low-quality samples when preparing varKodes. Another advantage of multi-label classification is the possibility of adding multiple taxonomic labels for each sample. This enables, for example, correct prediction of a higher taxonomic level even if a lower level (for example, species) is uncertain.
+  * Multi-label (default): by default, varKoder uses [multi-label classification](https://en.wikipedia.org/wiki/Multi-label_classification), in which each varKode can be associated with one or more labels. When querying an unknown sample, the response may be one or more of the labels used in training, or none, when the sample is not recognized as anything the model has been trained with. We found that this strategy is particularly useful to train a computer vision model to recognize when a sample was sequenced from low-quality DNA, preventing errors in which low-quality samples are predicted to be similar because of similarity due to contamination and/or DNA damage. For this reason, varKoder automatically adds a flag to potentially low-quality samples when preparing varKodes. Another advantage of multi-label classification is the possibility of adding multiple taxonomic labels for each sample. This enables, for example, correct prediction of a higher taxonomic level even if a lower level (for example, species) is uncertain.
   
   * Single-label: in this strategy, each varKode is associated with a single label. Instead of predicting the confidence in each label independently, *varKoder* will output which of the labels used in training is the best one for a given query sample. This may be more straightforward to handle, since there will always be a response. But we found it to be more prone to errors. Evaluating the confidence in a particular prediction is also less straigthforward.
 
@@ -40,7 +40,7 @@ Here we provide installation instructions for Linux and OSX, the only systems in
 
 ### Linux
 
-All dependencies can be installed with [Anaconda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
+All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
 To install these dependencies as a new conda environment named `varKoder`, clone this github repository and use anaconda:
 
 ```bash
@@ -48,6 +48,10 @@ git clone https://github.com/brunoasm/varKoder
 cd varkoder
 conda env create --file conda_environments/linux.yml
 ```
+
+If this takes too long, you can try using [mamba](https://github.com/mamba-org/mamba) instead, which should be much faster than conda. Follow instructions to install mamba and use the same command as above, but replacing `conda` with `mamba`.
+
+
 After installing the environment, you will be able to activate the environment by using:
 ```bash
 conda activate varKoder
@@ -64,10 +68,9 @@ cd varkoder
 conda env create --file conda_environments/mac.yml
 ```
 
-To install `bbtools` and `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
+To install `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
 ```bash
 brew tap brewsci/bio
-brew install bbtools
 brew install fastp
 ```
 
@@ -84,17 +87,17 @@ arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebr
 arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
 ```
 
-Finally, `dsk` can be obtained as a binary executable and installed to your conda environment:
+Finally, `dsk` can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
 ```bash
 conda activate varKoder
 wget https://github.com/GATB/dsk/releases/download/v2.3.3/dsk-v2.3.3-bin-Darwin.tar.gz
 tar -xvzf dsk-v2.3.3-bin-Darwin.tar.gz
 cd dsk-v2.3.3-bin-Darwin
 cp bin/* $CONDA_PREFIX/bin/
+cd ..
+rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
+
 ```
-
-After doing this, you can safely delete the downloaded file and folder `dsk-v2.3.3-bin-Darwin` and you need to restart your terminal to be able to use `dsk`
-
 
 ## Usage
 
