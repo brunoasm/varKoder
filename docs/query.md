@@ -66,6 +66,7 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
  *  `prediction_threshold`: Confidence threshold to call a label
  *  `predicted_labels`: labels above the confidence threshold.
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
+ *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
  *  other columns: confidence scores in each label. Each confidence score varies independently between 0 and 1.
 
 
@@ -80,4 +81,5 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
  *  `best_pred_label`: the best taxonomic prediction.
  *  `best_pred_prob`: the confidence of the best prediction.
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
+ *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
  *  other columns: confidence scores in each label. All confidence scores sum to 1

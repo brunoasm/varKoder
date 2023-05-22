@@ -187,4 +187,6 @@ When producing *varKodes*, we use `fastp` xml output to evaluate sequence qualit
  * DNA damage causes an increase in C to T substitutions towards the end of reads (see https://doi.org/10.1098/rsos.160239)
  * Low diversity libraries might consistently start in certain genomic regions instead of randomly
 
-Because this is fast and easy to calculate from files produced during sequencing processing, we use the variation of average base pair frequencies along reads as a heuristics to flag samples that may be low quality. The image classification model then is able to learn the features of these low-quality samples independently from their taxonomy, decreasing error rates.
+Because this is fast and easy to calculate from files produced during sequencing processing, we use the variation of average base pair frequencies along reads as a heuristics to flag samples that may be low quality. Therefore, users can take that into account when evaluating predictions. 
+
+The expected standard deviation for a high-quality, high-diversity sample is 0. We chose an arbitrary threshold of 0.01 to flag samples as low quality if they show more than that.
