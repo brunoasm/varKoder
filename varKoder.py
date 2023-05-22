@@ -79,7 +79,7 @@ parser_train.add_argument('input',
                           help = 'path to the folder with input images.')
 parser_train.add_argument('outdir', 
                           help = 'path to the folder where trained model will be stored.')
-parser_train.add_argument('-t','--label-table', 
+parser_train.add_argument('-t','--label-table-path', 
                           help = 'path to csv table with labels for each sample. By default, varKoder will instead read labels from the image file metadata.')
 parser_train.add_argument('-n','--single-label', 
                           help = 'Train as a single-label image classification model instead of multilabel. If multiple labels are provided, they will be concatenated to a single label.',
@@ -127,10 +127,10 @@ parser_train.add_argument('-P','--pretrained',
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
                           action='store_true'
                          )
-parser_train.add_argument('-i','--downweight-quality', 
-                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
-                          action = 'store_true'
-                         )
+#parser_train.add_argument('-i','--downweight-quality', 
+#                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
+#                          action = 'store_true'
+#                         )
 parser_train.add_argument('-X','--mix-augmentation', 
                           help = 'apply MixUp or CutMix augmentation. See https://docs.fast.ai/callback.mixup.html',
                           choices=['CutMix', 'MixUp', 'None'],
@@ -313,13 +313,12 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
                 all_stats[k].update(stats[k])
             stats_df = stats_to_csv(all_stats, stats_path)
             
-            if args.label_table:
+            if args.command == 'image' and args.label_table:
                 (condensed_files.
-                 merge(stats_df[['sample','base_frequencies_sd']].assign(low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
-                 loc[:,['sample', 'labels', 'low_quality']].
-                 assign(labels = lambda x: x.apply(lambda y: y['labels'] + ['low_quality:' + str(y['low_quality'])], axis = 1)).
+                 merge(stats_df[['sample','base_frequencies_sd']].
+                 assign(possible_low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
                  assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
-                 loc[:,['sample','labels']].
+                 loc[:,['sample', 'labels', 'possible_low_quality']].
                  to_csv(images_d/'labels.csv')
                 )
         
@@ -341,11 +340,10 @@ if args.command == 'image' or (args.command == 'query' and not args.images):
             
             if args.label_table:
                 (condensed_files.
-                 merge(stats_df[['sample','base_frequencies_sd']].assign(low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
-                 loc[:,['sample', 'labels', 'low_quality']].
-                 assign(labels = lambda x: x.apply(lambda y: y['labels'] + ['low_quality:' + str(y['low_quality'])], axis = 1)).
+                 merge(stats_df[['sample','base_frequencies_sd']].
+                 assign(possible_low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
                  assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
-                 loc[:,['sample','labels']].
+                 loc[:,['sample', 'labels', 'possible_low_quality']].
                  to_csv(images_d/'labels.csv')
                 )
         
@@ -383,6 +381,17 @@ if args.command == 'query':
             labs = ';'.join(get_varKoder_labels(p))
         except AttributeError:
             labs = np.nan
+            
+        try:
+            qual_flag = get_varKoder_qual(p)
+        except AttributeError:
+            qual_flag = np.nan
+            
+        try:
+            freq_sd = get_varKoder_freqsd(p)
+        except AttributeError:
+            freq_sd = np.nan
+            
         actual_labels.append(labs)
         
     n_images = len(img_paths)
@@ -429,8 +438,9 @@ if args.command == 'query':
                                           'prediction_type':'Multilabel',
                                           'prediction_threshold':args.threshold,
                                           'predicted_labels': predicted_labels,
-                                          'actual_labels': actual_labels
-                                                  
+                                          'actual_labels': actual_labels,
+                                          'possible_low_quality': qual_flag,
+                                          'basefrequency_sd': freq_sd
                                                    }),
                            predictions_df], axis = 1)
     else:
@@ -461,6 +471,8 @@ if args.command == 'query':
                                                   'prediction_type':'Single label',
                                                   'best_pred_label': best_labels,
                                                   'actual_labels': actual_labels,
+                                                  'possible_low_quality': qual_flag,
+                                                  'basefrequency_sd': freq_sd,
                                                   'best_pred_prob': best_ps
                                                            }),
                                    predictions_df], axis = 1)
@@ -495,22 +507,24 @@ if args.command == 'train':
                                 'bp':int(f.name.split(sample_bp_sep)[1].split(bp_kmer_sep)[0].split('K')[0])*1000,
                                 'path':f
                                })
-    if args.label_table:
+    if args.label_table_path:
         image_files = (pd.DataFrame(image_files).
-                       merge(pd.read_csv(args.label_table)[['sample','labels']], on = 'sample', how = 'left')
+                       merge(pd.read_csv(args.label_table_path)[['sample','labels','possible_low_quality']], on = 'sample', how = 'left')
                       )
     else:
         image_files = (pd.DataFrame(image_files).
-                       assign(labels = lambda x: x['path'].apply(lambda y: ';'.join(get_varKoder_labels(y))))
+                       assign(labels = lambda x: x['path'].apply(lambda y: ';'.join(get_varKoder_labels(y))),
+                              possible_low_quality = lambda x: x['path'].apply(get_varKoder_qual),
+                             )
                       )
         
     #add quality-based sample weigths
-    if args.downweight_quality:
-        image_files = image_files.assign(
-                sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
-            )
-    else:
-        image_files['sample_weights'] = 1
+    #if args.downweight_quality:
+    #    image_files = image_files.assign(
+    #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+    #        )
+    #else:
+    #    image_files['sample_weights'] = 1
 
     
     #2 let's add a column to mark images in the validation set according to input options
@@ -520,18 +534,16 @@ if args.command == 'train':
     else:
         eprint('Splitting validation set randomly. Fraction of samples per label combination held as validation:', str(args.validation_set_fraction))
         validation_samples = (image_files[['sample','labels']].
-                              assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')])))).
+                              assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';')])))).
                               drop_duplicates().
                               groupby('labels').
                               sample(frac = args.validation_set_fraction).
                               loc[:,'sample']
                              )
         
-    image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples))
-    
-    
-    image_files = image_files.assign(labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';') if not z.startswith('low_quality:')]))))
-    
+    image_files = image_files.assign(is_valid = image_files['sample'].isin(validation_samples),
+                                     labels = lambda x: x['labels'].apply(lambda y: ';'.join(sorted([z for z in y.split(';')])))
+                                    )
     
     #3 prepare input to training function based on options
     eprint('Setting up CNN model for training.')

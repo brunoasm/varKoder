@@ -1,9 +1,6 @@
 #!/usr/bin/env python 
 
 #todo:
-#add basefreq sd to predictions output
-#add basefreq sd and weight to training output
-#add basefreq sd to label-table
 #rewrite readme to add all above
 
 #imports used for all commands
@@ -91,8 +88,8 @@ def process_input(inpath, is_query = False):
             if not contains_dir:
                 for fl in inpath.iterdir():
                     if fl.name.endswith('fq') or fl.name.endswith('fastq') or fl.name.endswith('fq.gz') or fl.name.endswith('fastq.gz'):
-                        files_records.append({'labels':'query',
-                                             'sample':inpath.name,
+                        files_records.append({'labels':('query',),
+                                             'sample':f.name.split('.')[0],
                                              'files':fl})
                         
             else:
@@ -100,11 +97,10 @@ def process_input(inpath, is_query = False):
                     if sample.is_dir():
                         for fl in sample.iterdir():
                             if fl.name.endswith('fq') or fl.name.endswith('fastq') or fl.name.endswith('fq.gz') or fl.name.endswith('fastq.gz'):
-                                files_records.append({'labels':'query',
+                                files_records.append({'labels':('query',),
                                                      'sample': sample.name,
                                                      'files':sample/fl.name})
 
-            
 
             files_table = pd.DataFrame(files_records).groupby(['labels','sample']).agg(list).reset_index()
 
@@ -305,6 +301,10 @@ def clean_reads(infiles,
                            timeout = timeout_limit , #clumpify.sh sometimes does not finish but also does not throw an Exception. 10 minutes should be more than enough
                            check = True)
             if verbose: eprint(p.stderr.decode())
+            #clumpify.sh sometimes fails but does not throw an exception. It does print "Exception" though:
+            if p.stderr.decode().find('Exception') > -1:
+                raise subprocess.CalledProcessError('clumpify.sh failed', cmd=command)
+            
             dedup_pair_succesful = True
 
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
@@ -338,6 +338,9 @@ def clean_reads(infiles,
                                timeout = timeout_limit, 
                                check = True)
                 if verbose: eprint(p.stderr.decode())
+                if p.stderr.decode().find('Exception') > -1:
+                    raise subprocess.CalledProcessError('clumpify.sh failed', cmd=command)
+                
                 dedup_pair_succesful = True
 
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
@@ -369,7 +372,13 @@ def clean_reads(infiles,
                            stdout = subprocess.DEVNULL,
                            timeout = timeout_limit,
                            check = True)
+            
             if verbose: eprint(p.stderr.decode())
+            
+            #clumpify.sh sometimes fails but does not throw an exception. It does print "Exception" though:
+            if p.stderr.decode().find('Exception') > -1:
+                raise subprocess.CalledProcessError('clumpify.sh failed', cmd = command)
+                    
             dedup_unpair_succesful = True
 
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
@@ -674,7 +683,8 @@ def make_image(infile,
                overwrite = False,
                verbose = False,
                labels = [],
-               base_sd = 0
+               base_sd = 0,
+               base_sd_thresh = qual_thresh
               ):
     
     Path(outfolder).mkdir(exist_ok = True)
@@ -727,8 +737,9 @@ def make_image(infile,
         
         #Now let's add the labels:
         metadata = PngInfo()
-        metadata.add_text("varkoderKeywords", labels_sep.join(labels))
-        metadata.add_text("varkoderBaseFreqSd", str(base_sd))
+        metadata.add_text('varkoderKeywords', labels_sep.join(labels))
+        metadata.add_text('varkoderBaseFreqSd', str(base_sd))
+        metadata.add_text('varkoderLowQualityFlag', str(base_sd > qual_thresh))
         
       
         #finally, save the image
@@ -896,7 +907,7 @@ def run_clean2img(it_row,
                                        overwrite = args.overwrite,
                                        threads = cores_per_process,
                                        verbose = args.verbose,
-                                       labels = x['labels'] + ['low_quality:' + str(base_sd > qual_thresh)],
+                                       labels = x['labels'],
                                        base_sd = base_sd
                                       )
             except IndexError as e:
@@ -1061,9 +1072,17 @@ def train_cnn(df,
     return(learn)
 
 
-#Function: retrieve varKoder labels as a list, removing the negative label for low quality
+#Function: retrieve varKoder labels as a list
 def get_varKoder_labels(img_path):
-    return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';') if x != 'low_quality:False']
+    return [x for x in Image.open(img_path).info.get('varkoderKeywords').split(';')]
+
+#Function: retrieve varKoder quality flag
+def get_varKoder_qual(img_path):
+    return bool(Image.open(img_path).info.get('varkoderLowQualityFlag'))
+
+#Function: retrieve basefreq sd
+def get_varKoder_freqsd(img_path):
+    return float(Image.open(img_path).info.get('varkoderBaseFreqSd'))
 
 #Custom training loop for fastai to use sample weights
 #def custom_weighted_training_loop(learn, sample_weights):
