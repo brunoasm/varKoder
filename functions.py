@@ -345,9 +345,16 @@ def clean_reads(infiles,
 
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
                 #if still does not work, skip deduplication
-                new_name=str(Path(work_dir)/(basename + '_dedup_paired.fq'))
-                (Path(work_dir)/(basename + '_fixed_paired.fq')).rename(new_name)
-                eprint(basename + ':','DEDUPLICATION FAILED, KEEPING DUPLICATES')
+                new_name=str(Path(work_dir)/(basename + '_dedup_unpaired.fq'))
+                #(Path(work_dir)/(basename + '_fixed_paired.fq')).rename(new_name)
+                for inpath in [Path(work_dir)/(basename + '_R1.fq'), 
+                    Path(work_dir)/(basename + '_R2.fq')]:
+                    with open(inpath,'r') as inf:
+                        with open(new_name, 'a') as outf:
+                            for l in inf:
+                                outf.write(l)
+
+                eprint(basename + ':','DEDUPLICATION FAILED, KEEPING DUPLICATES AND TREATING A UNPAIRED')
             
         (Path(work_dir)/(basename + '_R1.fq')).unlink(missing_ok = True)
         (Path(work_dir)/(basename + '_R2.fq')).unlink(missing_ok = True)
@@ -384,7 +391,11 @@ def clean_reads(infiles,
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
                 #if still does not work, skip deduplication
             new_name=str(Path(work_dir)/(basename + '_dedup_unpaired.fq'))
-            (Path(work_dir)/(basename + '_unpaired.fq')).rename(new_name)
+            with open(new_name,'a') as outf:
+                with open(Path(work_dir)/(basename + '_unpaired.fq'),'r') as inf:
+                    for l in inf:
+                        outf.write(l)
+            #(Path(work_dir)/(basename + '_unpaired.fq')).rename(new_name)
             eprint(basename + ':','DEDUPLICATION FAILED, KEEPING DUPLICATES')
         (Path(work_dir)/(basename + '_unpaired.fq')).unlink(missing_ok = True)
 
