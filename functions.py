@@ -1200,6 +1200,7 @@ def train_multilabel_cnn(df,
               p_lighting = 0,
               pretrained = False,
               metrics_threshold = 0.7,
+              gamma_neg = 4,
               verbose = True):
     
     
@@ -1262,7 +1263,7 @@ def train_multilabel_cnn(df,
                     normalize = normalize,
                     pretrained = pretrained,
                     #cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
-                    loss_func = AsymmetricLossMultiLabel(gamma_pos=0, eps=1e-2, clip = 0.1)
+                    loss_func = AsymmetricLossMultiLabel(gamma_pos=0, gamma_neg=gamma_neg, eps=1e-2, clip = 0.1)
                    ).to_fp16()
 
     #if there a pretrained model body weights, replace them

@@ -109,7 +109,7 @@ parser_train.add_argument('-b', '--max-batch-size',
                            help = 'maximum batch size when using GPU for training.',
                            type = int,
                            default=64 )
-parser_train.add_argument('-r', '--base_learning_rate', 
+parser_train.add_argument('-r', '--base-learning-rate', 
                            help = 'base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates.',
                            type = float,
                            default = 5e-3)
@@ -123,9 +123,14 @@ parser_train.add_argument('-z','--freeze-epochs',
                           type = int,
                           default = 3
                          )
-parser_train.add_argument('-P','--pretrained', 
+parser_train.add_argument('-P','--pretrained-timm', 
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
                           action='store_true'
+                         )
+parser_train.add_argument('-i','--negative_downweighting', 
+                          type = float,
+                          default = 4,
+                          help = 'Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label.',
                          )
 #parser_train.add_argument('-i','--downweight-quality', 
 #                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
@@ -576,10 +581,10 @@ if args.command == 'train':
         eprint("Loading pretrained model:", str(args.pretrained_model))
         past_learn = load_learner(args.pretrained_model, cpu = load_on_cpu)
         model_state_dict = past_learn.model.state_dict()
-        pretrained = True
+        pretrained = False
         del past_learn
     
-    elif args.pretrained:
+    elif args.pretrained_timm:
         pretrained = True
         eprint("Starting model with pretrained weights from timm library.")
         
@@ -637,6 +642,7 @@ if args.command == 'train':
                   callbacks = [callback], 
                   model_state_dict = model_state_dict,
                   metrics_threshold = args.threshold,
+                  gamma_neg = args.negative_downweighting,
                   verbose = not args.no_logging,
                   max_lighting = args.max_lighting,
                   p_lighting = args.p_lighting
