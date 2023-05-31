@@ -46,6 +46,11 @@ sample_bp_sep = '@'
 qual_thresh = 0.01
 
 
+#ignore sklearn warning during training
+from sklearn.exceptions import UndefinedMetricWarning
+warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
+
+
 # defining a function to print to stderr more easily
 # idea from https://stackoverflow.com/questions/5574702/how-to-print-to-stderr-in-python
 def eprint(*args, **kwargs):
@@ -550,7 +555,7 @@ def clean_reads(infiles,
 
 # function takes a fastq file as input and splits it into several files
 # to be saved in outfolder with outprefix as prefix in the file name
-# this is because we found that CNNs could accurately identify samples
+# this is because we found that NNs could accurately identify samples
 # but below a certain level of coverage they were sensitive to amount
 # of data used as input.
 # Therefore, to better generalize we split the input files in several 
@@ -941,7 +946,7 @@ def run_clean2img(it_row,
     
     
 
-###### Functions to train a cnn
+###### Functions to train a nn
 
 #Function: select training and validation set given kmer size and amount of data (as a list).
 #minbp_filter will only consider samples that have yielded at least that amount of data
@@ -983,7 +988,7 @@ def get_train_val_sets():
 
 
 #Function: create a learner and fit model, setting batch size according to number of training images
-def train_cnn(df, 
+def train_nn(df, 
               architecture,
               valid_pct = 0.2,
               max_bs = 64,
@@ -991,6 +996,8 @@ def train_cnn(df,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
+              fine_tune_epochs = 0,
+              fine_tune_freeze_epochs = 0,
               normalize = True,  
               callbacks = CutMix, 
               max_lighting = 0,
@@ -1078,8 +1085,29 @@ def train_cnn(df,
     else:
         with learn.no_bar(), learn.no_logging():
             learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+            
+    #fine tune, if desired
+    if fine_tune_epochs or fine_tune_freeze_epochs:
+        new_lr = base_lr/20
+        eprint('First round of training complete, now fine-tuning with learning rate',
+               str(new_lr),
+               'for',
+               fine_tune_freeze_epochs,
+               'epochs with frozen layers and',
+               fine_tune_epochs,
+               'with unfrozen layers.'
+              )
         
-    
+        if verbose:
+            learn.fine_tune(epochs = fine_tune_epochs, 
+                            freeze_epochs = fine_tune_freeze_epochs, 
+                            base_lr = new_lr)
+        else:
+            with learn.no_bar(), learn.no_logging():
+                learn.fine_tune(epochs = fine_tune_epochs, 
+                                freeze_epochs = fine_tune_freeze_epochs, 
+                                base_lr = new_lr)
+
     return(learn)
 
 
@@ -1186,7 +1214,7 @@ def get_varKoder_freqsd(img_path):
 
 
 #Function: create a learner and fit model, setting batch size according to number of training images
-def train_multilabel_cnn(df, 
+def train_multilabel_nn(df, 
               architecture,
               valid_pct = 0.2,
               max_bs = 64,
@@ -1194,6 +1222,8 @@ def train_multilabel_cnn(df,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
+              fine_tune_epochs = 0,
+              fine_tune_freeze_epochs = 0,
               normalize = True,  
               callbacks = MixUp,
               max_lighting = 0,
@@ -1251,8 +1281,8 @@ def train_multilabel_cnn(df,
     labels = [i for i,x in enumerate(dls.vocab) if x != 'low_quality:True']
     
     #now define metrics
-    precision = PrecisionMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
-    recall = RecallMulti(labels = labels, average = 'weighted', thresh=metrics_threshold)
+    precision = PrecisionMulti(labels = labels, average = 'micro', thresh=metrics_threshold)
+    recall = RecallMulti(labels = labels, average = 'micro', thresh=metrics_threshold)
     metrics = [precision, recall]
 
 
@@ -1283,13 +1313,33 @@ def train_multilabel_cnn(df,
     #learn.model = torch.compile(learn.model)
 
     #train
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore', category=UndefinedMetricWarning)
-        if verbose:
+    if verbose:
+        learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+    else:
+        with learn.no_bar(), learn.no_logging():
             learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+            
+    #fine tune, if desired
+    if fine_tune_epochs or fine_tune_freeze_epochs:
+        new_lr = base_lr/20
+        eprint('First round of training complete, now fine-tuning with learning rate',
+               str(new_lr),
+               'for',
+               fine_tune_freeze_epochs,
+               'epochs with frozen layers and',
+               fine_tune_epochs,
+               'with unfrozen layers.'
+              )
+        
+        if verbose:
+            learn.fine_tune(epochs = fine_tune_epochs, 
+                            freeze_epochs = fine_tune_freeze_epochs, 
+                            base_lr = new_lr)
         else:
             with learn.no_bar(), learn.no_logging():
-                learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
+                learn.fine_tune(epochs = fine_tune_epochs, 
+                                freeze_epochs = fine_tune_freeze_epochs, 
+                                base_lr = new_lr)
         
     
     return(learn)

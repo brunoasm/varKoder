@@ -23,7 +23,7 @@ parent_parser.add_argument('-x', '--overwrite', help = 'overwrite existing resul
 # create parser for image command
 parser_img = subparsers.add_parser('image', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
-                                     help = 'Preprocess reads and prepare images for CNN training.')
+                                     help = 'Preprocess reads and prepare images for Neural Network training.')
 parser_img.add_argument('-v', '--verbose', 
                            help = 'show output for fastp, dsk and bbtools.',
                            action = 'store_true',
@@ -74,7 +74,7 @@ parser_img.add_argument('-X', '--no-image',
 # create parser for train command
 parser_train = subparsers.add_parser('train', parents = [parent_parser],
                                      formatter_class = argparse.ArgumentDefaultsHelpFormatter,
-                                     help = 'Train a CNN based on provided images.')
+                                     help = 'Train a Neural Network based on provided images.')
 parser_train.add_argument('input', 
                           help = 'path to the folder with input images.')
 parser_train.add_argument('outdir', 
@@ -116,12 +116,22 @@ parser_train.add_argument('-r', '--base-learning-rate',
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
-                          default = 17
+                          default = 25
                          )
 parser_train.add_argument('-z','--freeze-epochs', 
                           help = 'number of freeze epochs to train. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
-                          default = 3
+                          default = 0
+                         )
+parser_train.add_argument('-Z','--fine-tune-freeze-epochs', 
+                          help = 'number of freeze epochs to train in second round. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
+                          type = int,
+                          default = 5
+                         )
+parser_train.add_argument('-E','--fine-tune-epochs', 
+                          help = 'number of freeze epochs to train in second round. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
+                          type = int,
+                          default = 0
                          )
 parser_train.add_argument('-P','--pretrained-timm', 
                           help = 'download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.',
@@ -551,7 +561,7 @@ if args.command == 'train':
                                     )
     
     #3 prepare input to training function based on options
-    eprint('Setting up CNN model for training.')
+    eprint('Setting up neural network model for training.')
     eprint('Model architecture:',args.architecture)
     
     callback = {'MixUp': MixUp,
@@ -603,15 +613,22 @@ if args.command == 'train':
         else:
             loss = CrossEntropyLossFlat()
 
-        eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
+        eprint("Start training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate)
+        
+        if args.fine_tune_freeze_epochs or args.fine_tune_epochs:
+            eprint("This will be followed by fine-tuning for", args.fine_tune_freeze_epochs,"epochs with frozen model body weigths followed by", args.fine_tune_epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate/20)
+
+            
         #5 call training function
-        learn = train_cnn(df = image_files, 
+        learn = train_nn(df = image_files, 
                           architecture = args.architecture, 
                           valid_pct = args.validation_set_fraction,
                           max_bs = args.max_batch_size,
                           base_lr = args.base_learning_rate,
                           epochs = args.epochs,
                           freeze_epochs = args.freeze_epochs,
+                          fine_tune_epochs = args.fine_tune_epochs,
+                          fine_tune_freeze_epochs = args.fine_tune_freeze_epochs,
                           normalize = True, 
                           pretrained = pretrained, 
                           callbacks = callback, 
@@ -628,15 +645,21 @@ if args.command == 'train':
             
             
             
-        eprint("Training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths.")
+        eprint("Start training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate)
+        
+        if args.fine_tune_freeze_epochs or args.fine_tune_epochs:
+            eprint("This will be followed by fine-tuning for", args.fine_tune_freeze_epochs,"epochs with frozen model body weigths followed by", args.fine_tune_epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate/50)
+
         #5 call training function        
-        learn = train_multilabel_cnn(df = image_files, 
+        learn = train_multilabel_nn(df = image_files, 
                   architecture = args.architecture, 
                   valid_pct = args.validation_set_fraction,
                   max_bs = args.max_batch_size,
                   base_lr = args.base_learning_rate,
                   epochs = args.epochs,
                   freeze_epochs = args.freeze_epochs,
+                  fine_tune_epochs = args.fine_tune_epochs,
+                  fine_tune_freeze_epochs = args.fine_tune_freeze_epochs,
                   normalize = True, 
                   pretrained = pretrained, 
                   callbacks = [callback], 
