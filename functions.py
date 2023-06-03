@@ -45,7 +45,6 @@ bp_kmer_sep = '+'
 sample_bp_sep = '@'
 qual_thresh = 0.01
 
-
 #ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
@@ -996,8 +995,6 @@ def train_nn(df,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
-              fine_tune_epochs = 0,
-              fine_tune_freeze_epochs = 0,
               normalize = True,  
               callbacks = CutMix, 
               max_lighting = 0,
@@ -1086,28 +1083,6 @@ def train_nn(df,
         with learn.no_bar(), learn.no_logging():
             learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
             
-    #fine tune, if desired
-    if fine_tune_epochs or fine_tune_freeze_epochs:
-        new_lr = base_lr/20
-        eprint('First round of training complete, now fine-tuning with learning rate',
-               str(new_lr),
-               'for',
-               fine_tune_freeze_epochs,
-               'epochs with frozen layers and',
-               fine_tune_epochs,
-               'with unfrozen layers.'
-              )
-        
-        if verbose:
-            learn.fine_tune(epochs = fine_tune_epochs, 
-                            freeze_epochs = fine_tune_freeze_epochs, 
-                            base_lr = new_lr)
-        else:
-            with learn.no_bar(), learn.no_logging():
-                learn.fine_tune(epochs = fine_tune_epochs, 
-                                freeze_epochs = fine_tune_freeze_epochs, 
-                                base_lr = new_lr)
-
     return(learn)
 
 
@@ -1222,8 +1197,6 @@ def train_multilabel_nn(df,
               model_state_dict = None,
               epochs = 30, 
               freeze_epochs = 0,
-              fine_tune_epochs = 0,
-              fine_tune_freeze_epochs = 0,
               normalize = True,  
               callbacks = MixUp,
               max_lighting = 0,
@@ -1319,29 +1292,6 @@ def train_multilabel_nn(df,
         with learn.no_bar(), learn.no_logging():
             learn.fine_tune(epochs = epochs, freeze_epochs = freeze_epochs, base_lr = base_lr)
             
-    #fine tune, if desired
-    if fine_tune_epochs or fine_tune_freeze_epochs:
-        new_lr = base_lr/20
-        eprint('First round of training complete, now fine-tuning with learning rate',
-               str(new_lr),
-               'for',
-               fine_tune_freeze_epochs,
-               'epochs with frozen layers and',
-               fine_tune_epochs,
-               'with unfrozen layers.'
-              )
-        
-        if verbose:
-            learn.fine_tune(epochs = fine_tune_epochs, 
-                            freeze_epochs = fine_tune_freeze_epochs, 
-                            base_lr = new_lr)
-        else:
-            with learn.no_bar(), learn.no_logging():
-                learn.fine_tune(epochs = fine_tune_epochs, 
-                                freeze_epochs = fine_tune_freeze_epochs, 
-                                base_lr = new_lr)
-        
-    
     return(learn)
     
 

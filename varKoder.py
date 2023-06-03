@@ -91,7 +91,7 @@ parser_train.add_argument('-d','--threshold',
                           default = 0.7
                          )
 parser_train.add_argument('-V','--validation-set',
-                          help = 'comma-separated list of sample IDs to be included in the validation set. If not provided, a random validation set will be created. Turns off --validation-set-fraction'
+                          help = 'comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. Turns off --validation-set-fraction'
                          ) 
 parser_train.add_argument('-f','--validation-set-fraction',
                           help = 'fraction of samples to be held as a random validation set. Will be ignored if --validation-set is provided.',
@@ -116,20 +116,10 @@ parser_train.add_argument('-r', '--base-learning-rate',
 parser_train.add_argument('-e','--epochs', 
                           help = 'number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
-                          default = 25
+                          default = 30
                          )
 parser_train.add_argument('-z','--freeze-epochs', 
                           help = 'number of freeze epochs to train. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
-                          type = int,
-                          default = 0
-                         )
-parser_train.add_argument('-Z','--fine-tune-freeze-epochs', 
-                          help = 'number of freeze epochs to train in second round. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
-                          type = int,
-                          default = 5
-                         )
-parser_train.add_argument('-E','--fine-tune-epochs', 
-                          help = 'number of freeze epochs to train in second round. Recommended if using a pretrained model. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune',
                           type = int,
                           default = 0
                          )
@@ -545,7 +535,11 @@ if args.command == 'train':
     #2 let's add a column to mark images in the validation set according to input options
     if args.validation_set: #if a specific validation set was defined, let's use it
         eprint('Spliting validation set as defined by user.')
-        validation_samples = args.validation_set.split(',')
+        try: #try to treat as a path first
+            with open(args.validation_set, 'r') as valsamps:
+                validation_samples = valsamps.readline().strip().split(',')
+        except: #if not, try to treat as a list
+            validation_samples = args.validation_set.split(',')
     else:
         eprint('Splitting validation set randomly. Fraction of samples per label combination held as validation:', str(args.validation_set_fraction))
         validation_samples = (image_files[['sample','labels']].
@@ -615,10 +609,6 @@ if args.command == 'train':
 
         eprint("Start training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate)
         
-        if args.fine_tune_freeze_epochs or args.fine_tune_epochs:
-            eprint("This will be followed by fine-tuning for", args.fine_tune_freeze_epochs,"epochs with frozen model body weigths followed by", args.fine_tune_epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate/20)
-
-            
         #5 call training function
         learn = train_nn(df = image_files, 
                           architecture = args.architecture, 
@@ -627,8 +617,6 @@ if args.command == 'train':
                           base_lr = args.base_learning_rate,
                           epochs = args.epochs,
                           freeze_epochs = args.freeze_epochs,
-                          fine_tune_epochs = args.fine_tune_epochs,
-                          fine_tune_freeze_epochs = args.fine_tune_freeze_epochs,
                           normalize = True, 
                           pretrained = pretrained, 
                           callbacks = callback, 
@@ -647,8 +635,6 @@ if args.command == 'train':
             
         eprint("Start training for", args.freeze_epochs,"epochs with frozen model body weigths followed by", args.epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate)
         
-        if args.fine_tune_freeze_epochs or args.fine_tune_epochs:
-            eprint("This will be followed by fine-tuning for", args.fine_tune_freeze_epochs,"epochs with frozen model body weigths followed by", args.fine_tune_epochs,"epochs with unfrozen weigths and learning rate of", args.base_learning_rate/50)
 
         #5 call training function        
         learn = train_multilabel_nn(df = image_files, 
@@ -658,8 +644,6 @@ if args.command == 'train':
                   base_lr = args.base_learning_rate,
                   epochs = args.epochs,
                   freeze_epochs = args.freeze_epochs,
-                  fine_tune_epochs = args.fine_tune_epochs,
-                  fine_tune_freeze_epochs = args.fine_tune_freeze_epochs,
                   normalize = True, 
                   pretrained = pretrained, 
                   callbacks = [callback], 
