@@ -22,7 +22,7 @@ from PIL.Image import Resampling
 from fastai.data.all import DataBlock, ColSplitter, ColReader
 from fastai.vision.all import ImageBlock, MultiCategoryBlock, CategoryBlock, vision_learner
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
-from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti
+from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed, default_device
 from fastai.callback.mixup import CutMix, MixUp
@@ -1256,7 +1256,8 @@ def train_multilabel_nn(df,
     #now define metrics
     precision = PrecisionMulti(labels = labels, average = 'micro', thresh=metrics_threshold)
     recall = RecallMulti(labels = labels, average = 'micro', thresh=metrics_threshold)
-    metrics = [precision, recall]
+    auc = RocAuc(average = 'micro')
+    metrics = [auc, precision, recall]
 
 
     #create learner
