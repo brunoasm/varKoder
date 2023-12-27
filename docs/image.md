@@ -1,4 +1,4 @@
-# varKoder.py image
+# varKoder image
 
 This command processes raw sequencing reads and produces *varKodes*, which are images representing the variation in K-mer frequencies for a given k-mer length.
 
@@ -14,7 +14,7 @@ Optionally, the command can be used to preprocess sequences without creating ima
 
 ## Input format
 
-`varKoder.py image` accepts two input formats: folder-based or table-based.
+`varKoder image` accepts two input formats: folder-based or table-based.
 
 Only the table-based format supports multiple labels per sample (for example, you could label the family, genus and species for a sample at the same time). With folder-based programs, varKoder will infer the label from the folder structure.
 
@@ -149,7 +149,7 @@ Note:
 
 The defaults for optional arguments were chosen based on our sets. Here are some tips to help you choose values for optional arguments in case you want to change them:
 
- 1. `--min-bp` and `--max-bp`. These arguments define how many subsampled images will be generated for each sample. We use several varKodes per sample with different amounts of input data so that the neural network can be trained to ignore random fluctuations in kmer counts and focus on features that define taxa. The rule used by `varKoder.py` is to create images for subsampled sequence files with standardized input ampounts of data, between `--min-bp` amd `--max-bp` with bp amounts corresponding to 1, 2, or 5 in each order of magnitude. For example, if `--min-bp` is 1M (1 million) and `--max-bp` is 100M (100 million), you will get 7 varKode images for each sample, corresponding to randomly chosen reads for input amounts 1M, 2M, 5M, 10M, 20M, 50M and 100M of base pairs. If `--max-bp` is ommitted, we will follow this rule until we reach the largest input amount possible for the number of raw reads in each sample, including a varKode based on all of the data available.
+ 1. `--min-bp` and `--max-bp`. These arguments define how many subsampled images will be generated for each sample. We use several varKodes per sample with different amounts of input data so that the neural network can be trained to ignore random fluctuations in kmer counts and focus on features that define taxa. The rule used by `varKoder` is to create images for subsampled sequence files with standardized input ampounts of data, between `--min-bp` amd `--max-bp` with bp amounts corresponding to 1, 2, or 5 in each order of magnitude. For example, if `--min-bp` is 1M (1 million) and `--max-bp` is 100M (100 million), you will get 7 varKode images for each sample, corresponding to randomly chosen reads for input amounts 1M, 2M, 5M, 10M, 20M, 50M and 100M of base pairs. If `--max-bp` is ommitted, we will follow this rule until we reach the largest input amount possible for the number of raw reads in each sample, including a varKode based on all of the data available.
  
  2. If `--max-bp` is set, `varKoder` first truncates raw read files to 5 times the value of `--max-bp`. This can speed up raw read cleaning and kmer counting, but it means that subsampled files are randomly chosen from the reads available in this trimmed raw read files, not the whole initial raw reads.
 
@@ -168,11 +168,11 @@ For example:
 
 ```ugandensis_12@00010000K+k7.png``` is a varKode of the species `Acridocarpus`, sample id `ugandensis_12`, made from 10 million base pairs and for a kmer length of `7`.
 
-The labels associated with this image will be saved by default as image EXIF metadata with the key `varkoderKeywords`. These include, for example, the taxon name **Acridocarpus** and a flag about the DNA quality. The metadata will be read by `varkoder.py` during training time and can also be accessed with programs such as [exiftool](https://exiftool.org/) or your [operating system](https://www.adobe.com/creativecloud/file-types/image/raster/exif-file.html).
+The labels associated with this image will be saved by default as image EXIF metadata with the key `varkoderKeywords`. These include, for example, the taxon name **Acridocarpus** and a flag about the DNA quality. The metadata will be read by `varKoder` during training time and can also be accessed with programs such as [exiftool](https://exiftool.org/) or your [operating system](https://www.adobe.com/creativecloud/file-types/image/raster/exif-file.html).
 
 If the option `--label-table` has been used, these labels will be additionally saved in the output folder in a csv file named `labels.csv`.
 
-`varkoder.py image` will also save a csv table with sample processing statistics. By default, this is `stats.csv` but it can be changed with the `--stats-file` argument.
+`varKoder image` will also save a csv table with sample processing statistics. By default, this is `stats.csv` but it can be changed with the `--stats-file` argument.
 
 By default, only the stats file and final images are saved. Intermediate files (clean reads, `fastp` reports, processed reads, kmer counts) are saved in a temporary folder and deleted when `varKoder` finishes processing. To save these files instead, provide a folder path with the `--int-folder` argument. In the provided path, `varKoder` will save 3 folders: 
 

@@ -26,7 +26,11 @@ There are two possible strategies for image classification using *varKoder*:
 
 See options below in [Usage](#Usage) section on how to implement each strategy.
 
-## Installing dependencies
+## Installation
+
+To install varKoder, it is best to use Anaconda (or Anaconda and homebrew, for macs) to install dependencies, and then pip to install varKoder itself to your conda environment. Follow the instructions below to accomplish that.
+
+### Dependencies
 
 Python packages required to run `varKoder` can be installed with anaconda (see instructions below for Linux and Mac).
 
@@ -38,7 +42,7 @@ It also uses a few external programs:
 
 Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested:
 
-### Linux
+#### Linux
 
 All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
 To install these dependencies as a new conda environment named `varKoder`, clone this github repository and use anaconda:
@@ -57,9 +61,8 @@ After installing the environment, you will be able to activate the environment b
 conda activate varKoder
 ```
 
-Now you are ready to use *varKoder*.
 
-### Mac
+#### Mac
 
 We tested this program using a Mac laptop with an M2 processor. Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available:
 ```bash
@@ -99,19 +102,29 @@ rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 
 ```
 
+### varKoder installation
+
+After installing dependencies, install varKoder in your conda environment. Assuming you are still in the cloned repository:
+
+```bash
+conda activate varKoder
+pip install .
+```
+
+
 ## Usage
 
 varKoder is run as a python script. For example, assuming that the script is in a folder named `varKoder`, you can the program help by using:
 
 ```bash
-python varKoder/varKoder.py -h
+varKoder -h
 ```
 
 There are three commands available (`image`, `train` and `query`) and you can also get help on each command by using `-h`:
 ```bash
-python varKoder/varKoder.py image -h
-python varKoder/varKoder.py train -h
-python varKoder/varKoder.py query -h
+varKoder image -h
+varKoder train -h
+varKoder query -h
 ```
 
 Follow these links for detailed information for each command:
