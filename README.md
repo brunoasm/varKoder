@@ -30,8 +30,6 @@ See options below in [Usage](#Usage) section on how to implement each strategy.
 
 To install varKoder, it is best to use Anaconda (or Anaconda and homebrew, for macs) to install dependencies, and then pip to install varKoder itself to your conda environment. Follow the instructions below to accomplish that.
 
-### Dependencies
-
 Python packages required to run `varKoder` can be installed with anaconda (see instructions below for Linux and Mac).
 
 It also uses a few external programs:
@@ -42,29 +40,25 @@ It also uses a few external programs:
 
 Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested:
 
-#### Linux
+### Linux
 
 All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
-To install these dependencies as a new conda environment named `varKoder`, clone this github repository and use anaconda:
+
+To install dependencies and varKoder as a new conda environment named `varKoder`, use these commands
 
 ```bash
 git clone https://github.com/brunoasm/varKoder
 cd varkoder
 conda env create --file conda_environments/linux.yml
+conda activate varKoder
+pip install .
 ```
 
 If this takes too long, you can try using [mamba](https://github.com/mamba-org/mamba) instead, which should be much faster than conda. Follow instructions to install mamba and use the same command as above, but replacing `conda` with `mamba`.
 
+### Mac
 
-After installing the environment, you will be able to activate the environment by using:
-```bash
-conda activate varKoder
-```
-
-
-#### Mac
-
-We tested this program using a Mac laptop with an M2 processor. Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available:
+We tested this program using Macs with ARM processors (M1,M2,etc). Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available:
 ```bash
 git clone https://github.com/brunoasm/varKoder
 cd varkoder
@@ -102,10 +96,7 @@ rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 
 ```
 
-### varKoder installation
-
-After installing dependencies, install varKoder in your conda environment. Assuming you are still in the cloned repository:
-
+After installing all dependencies, install varKoder with:
 ```bash
 conda activate varKoder
 pip install .
