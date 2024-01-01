@@ -287,79 +287,23 @@ def main():
 		map_path = pkg_resources.resource_filename('varKoder', f'kmer_mapping/{args.kmer_size}mer_mapping.parquet')
 		kmer_mapping = pd.read_parquet(map_path).set_index('kmer')
 
-		# to use multiprocessing, we need to define the loop as a function, and avoid global variables
-		# the partial function in functools does not work, so we do this by defining a new function:
-		def partial_run_clean2img(it_row):
-			return run_clean2img(it_row, 
-					  kmer_mapping=kmer_mapping, 
-					  args=args,
-					  np_rng=np_rng,
-					  inter_dir=inter_dir, 
-					  all_stats=all_stats, 
-					  stats_path=stats_path,
-					  images_d=images_d,
-					  label_sample_sep=label_sample_sep,
-					  humanfriendly=humanfriendly,
-					  defaultdict=defaultdict,
-					  eprint=eprint,
-					  make_image=make_image,
-					  count_kmers=count_kmers
-					 )
-	
-	
-		#if only one sample processed at a time, we do a for loop
-		if args.n_threads == 1:  
-			for x in condensed_files.iterrows():
-				stats = partial_run_clean2img(x)
-				try:
-					all_stats.update(read_stats(stats_path))
-				except:
-					pass
-				for k in stats.keys():
-					all_stats[k].update(stats[k])
-				stats_df = stats_to_csv(all_stats, stats_path)
-			
-				if args.command == 'image' and args.label_table:
-					(condensed_files.
-					 merge(stats_df[['sample','base_frequencies_sd']].
-					 assign(possible_low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
-					 assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
-					 loc[:,['sample', 'labels', 'possible_low_quality']].
-					 to_csv(images_d/'labels.csv')
-					)
-		
-		#if more than one sample processed at a time, use multiprocessing
-		else:
-			pool = multiprocessing.Pool(processes=int(args.n_threads))
-	
-			for stats in pool.imap_unordered(partial_run_clean2img, condensed_files.iterrows(), chunksize = int(max(1, len(condensed_files.index)/args.n_threads/2))):
-		
-				try:
-					all_stats.update(read_stats(stats_path))
-				except:
-					pass
-			
-				for k in stats.keys():
-					all_stats[k].update(stats[k])
-				
-				stats_df = stats_to_csv(all_stats, stats_path)
-			
-				if args.label_table:
-					(condensed_files.
-					 merge(stats_df[['sample','base_frequencies_sd']].
-					 assign(possible_low_quality = lambda x: x['base_frequencies_sd'] > qual_thresh)).
-					 assign(labels= lambda x: x['labels'].apply(lambda y: labels_sep.join(y))).
-					 loc[:,['sample', 'labels', 'possible_low_quality']].
-					 to_csv(images_d/'labels.csv')
-					)
-		
-			pool.close()
-	
-	
-		eprint('All images done, saved in',str(images_d))
 
-		#for stats in res:
-		#    all_stats.update(stats)
+        # Prepare arguments for run_clean2img function
+        args_for_multiprocessing = [(row, kmer_mapping, args, np_rng, inter_dir, all_stats, stats_path, images_d) for _, row in condensed_files.iterrows()]
+        
+        # Single-threaded execution
+        if args.n_threads == 1:  
+            for arg_tuple in args_for_multiprocessing:
+                stats = run_clean2img(*arg_tuple)
+                process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
+        
+        # Multi-threaded execution
+        else:
+            with multiprocessing.Pool(processes=int(args.n_threads)) as pool:
+                for stats in pool.imap_unordered(run_clean2img_wrapper, args_for_multiprocessing):
+                    process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
+        
+        eprint('All images done, saved in', str(images_d))
 	
 	
 	###################

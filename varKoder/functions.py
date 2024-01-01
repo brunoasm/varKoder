@@ -943,7 +943,32 @@ def run_clean2img(it_row,
         eprint('Images done for', x['sample'])
     return(stats)
     
-    
+
+## This is just an unwrapper to be able to use run_clean2img() with multiprocessing
+def run_clean2img_wrapper(args_tuple):
+    # Unpack the arguments
+    return run_clean2img(*args_tuple)
+
+# This processes stats after creating images
+def process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep):
+    try:
+        all_stats.update(read_stats(stats_path))
+    except Exception as e:
+        eprint(f"Error updating stats: {e}")
+
+    for k in stats.keys():
+        all_stats[k].update(stats[k])
+
+    stats_df = stats_to_csv(all_stats, stats_path)
+
+    if args.command == 'image' and args.label_table:
+        merged_data = (condensed_files
+                       .merge(stats_df[['sample', 'base_frequencies_sd']],
+                              how='left', on='sample')
+                       .assign(possible_low_quality=lambda x: x['base_frequencies_sd'] > qual_thresh)
+                       .assign(labels=lambda x: x['labels'].apply(lambda y: labels_sep.join(y))))
+        merged_data[['sample', 'labels', 'possible_low_quality']].to_csv(images_d / 'labels.csv')
+
 
 ###### Functions to train a nn
 
