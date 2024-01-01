@@ -21,7 +21,7 @@ setup(
     include_package_data=True,
     entry_points={
         'console_scripts': [
-            'varkoder=varKoder.varKoder:main'  # Adjust if using a different function name
+            'varKoder=varKoder.varKoder:main'  # Adjust if using a different function name
         ]
     }
 )
