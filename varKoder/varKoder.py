@@ -288,22 +288,22 @@ def main():
                 kmer_mapping = pd.read_parquet(map_path).set_index('kmer')
 
 
-        # Prepare arguments for run_clean2img function
-        args_for_multiprocessing = [(row, kmer_mapping, args, np_rng, inter_dir, all_stats, stats_path, images_d) for _, row in condensed_files.iterrows()]
-        
-        # Single-threaded execution
-        if args.n_threads == 1:  
-            for arg_tuple in args_for_multiprocessing:
-                stats = run_clean2img(*arg_tuple)
-                process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
-        
-        # Multi-threaded execution
-        else:
-            with multiprocessing.Pool(processes=int(args.n_threads)) as pool:
-                for stats in pool.imap_unordered(run_clean2img_wrapper, args_for_multiprocessing):
-                    process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
-        
-        eprint('All images done, saved in', str(images_d))
+                # Prepare arguments for run_clean2img function
+                args_for_multiprocessing = [(tup, kmer_mapping, args, np_rng, inter_dir, all_stats, stats_path, images_d) for tup in condensed_files.iterrows()]
+ 
+                # Single-threaded execution
+                if args.n_threads == 1:  
+                    for arg_tuple in args_for_multiprocessing:
+                        stats = run_clean2img(*arg_tuple)
+                        process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
+                
+                # Multi-threaded execution
+                else:
+                    with multiprocessing.Pool(processes=int(args.n_threads)) as pool:
+                        for stats in pool.imap_unordered(run_clean2img_wrapper, args_for_multiprocessing):
+                            process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep)
+                
+                eprint('All images done, saved in', str(images_d))
         
         
         ###################
@@ -519,12 +519,15 @@ def main():
 
 
                 #4 if a pretrained model has been provided, load model state
-                load_on_cpu = True
-                dev = torch.device('cpu')
+                #dev = torch.device('cpu')
                 model_state_dict = None
 
                 if torch.has_mps or (torch.has_cuda and torch.cuda.device_count()):
+                        print("GPU available. Will try to use GPU for processing.")
                         load_on_cpu = False
+                else:
+                        load_on_cpu = True
+                        print("GPU not available. Using CPU for processing.")
 
                 if args.pretrained_model:
                         eprint("Loading pretrained model:", str(args.pretrained_model))

@@ -792,7 +792,7 @@ def run_clean2img(it_row,
                   all_stats, 
                   stats_path,
                   images_d,
-                  label_sample_sep,
+                  label_sample_sep=label_sample_sep,
                   humanfriendly=humanfriendly,
                   defaultdict=defaultdict,
                   eprint=eprint,
@@ -946,15 +946,20 @@ def run_clean2img(it_row,
 
 ## This is just an unwrapper to be able to use run_clean2img() with multiprocessing
 def run_clean2img_wrapper(args_tuple):
+    #print(f"args_tuple received: {args_tuple}")
     # Unpack the arguments
     return run_clean2img(*args_tuple)
 
 # This processes stats after creating images
 def process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep):
-    try:
-        all_stats.update(read_stats(stats_path))
-    except Exception as e:
-        eprint(f"Error updating stats: {e}")
+    # Check if stats.csv exists
+    if stats_path.exists():
+        try:
+            all_stats.update(read_stats(stats_path))
+        except Exception as e:
+            eprint(f"Error updating stats: {e}")
+    else:
+        eprint(f"'{stats_path}' not found. Initializing empty stats.")
 
     for k in stats.keys():
         all_stats[k].update(stats[k])
