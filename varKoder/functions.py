@@ -101,9 +101,9 @@ def process_input(inpath, is_query=False):
                 contains_dir = True
                 break
 
-        # if there are no subdirectories, treat everything as a single sample. Otherwise, use each directory for a sample
+        # if there are no subdirectories, treat each fastq as a single sample. Otherwise, use each directory for a sample
         if not contains_dir:
-            for fl in inpath.iterdir():
+            for i, fl in enumerate(inpath.iterdir()):
                 if (
                     fl.name.endswith("fq")
                     or fl.name.endswith("fastq")
@@ -113,7 +113,7 @@ def process_input(inpath, is_query=False):
                     files_records.append(
                         {
                             "labels": ("query",),
-                            "sample": f.name.split(".")[0],
+                            "sample": str(i) + "_" + fl.name.split(".")[0],
                             "files": fl,
                         }
                     )
@@ -229,7 +229,7 @@ def clean_reads(
     start_time = time.time()
     timeout_limit = (
         10 * 60
-    )  # timeout parameter used for bbtools, which may hang. 5 minutes should be more than enough
+    )  # timeout parameter used for bbtools, which may hang. 10 minutes should be more than enough
 
     # let's print a message to the user
     basename = Path(outpath).name.removesuffix("".join(Path(outpath).suffixes))
@@ -341,7 +341,6 @@ def clean_reads(
         write_out
     ):  # if we reach the end and are still writing out, count how many bp retained
         bp_read = sum([v for k, v in initial_bp.items()])
-
     retained_bp = bp_read
 
     # now we will use bbtools to deduplicate reads
