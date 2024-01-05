@@ -1,4 +1,4 @@
-# varKoder.py query
+# varKoder query
 
 Once of have a trained neural network, you can use the `query` command to use it to predict the taxon of unknown samples. 
 

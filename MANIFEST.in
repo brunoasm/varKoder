@@ -1,0 +1,2 @@
+recursive-include varKoder/kmer_mapping *
+
