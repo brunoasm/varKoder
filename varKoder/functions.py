@@ -169,8 +169,8 @@ def process_input(inpath, is_query=False):
     files_table = (
         files_table.loc[:, ["labels", "sample", "files"]]
         .groupby("sample")
-        .agg(sum)
-        .applymap(lambda x: sorted(set(x)))
+        .agg("sum")
+        .map(lambda x: sorted(set(x)))
         .reset_index()
     )
 
@@ -880,7 +880,7 @@ def make_image(
         counts = pd.read_csv(
             StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
         )
-        counts = kmers.join(counts).groupby(["x", "y"]).agg(sum).reset_index()
+        counts = kmers.join(counts).groupby(["x", "y"]).agg("sum").reset_index()
         counts.loc[:, "count"] = counts["count"].fillna(0)
 
         # Now we will place counts in an array, log the counts and rescale to use 8 bit integers

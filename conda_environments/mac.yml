@@ -6,15 +6,13 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.9.14
-  - pyarrow=8.0.0
-  - pigz=2.6
-  - tenacity=8.1.0
-  - pytorch=2.0.0
-  - humanfriendly=10.0
-  - torchvision=0.15.0
-  - torchaudio=2.0.0 
-  - fastai=2.7.12
-  - timm=0.6.13
+  - python>=3.9
+  - pyarrow>=14.0.1
+  - pigz
+  - tenacity
+  - pytorch=2.1.0
+  - humanfriendly=10
+  - fastai=2.7.13
+  - timm
   - bbmap=38.18
   - wget

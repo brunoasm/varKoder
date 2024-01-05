@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="varKoder",
-    version="0.9.0",
+    version="0.9.3",
     packages=find_packages(),
     url="https://github.com/brunoasm/varKoder",
     license="GNU General Public License",
@@ -11,8 +11,8 @@ setup(
     description="A tool that uses variation in K-mer frequencies as DNA barcodes.",
     install_requires=[
         "torch",
-        "fastai>=2.7.12",
-        "timm==0.6.13",
+        "fastai>=2.7.13",
+        "timm",
         "pyarrow",
         "pandas",
         "humanfriendly",

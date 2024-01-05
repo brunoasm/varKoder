@@ -721,7 +721,8 @@ def main():
         # dev = torch.device('cpu')
         model_state_dict = None
 
-        if torch.has_mps or (torch.has_cuda and torch.cuda.device_count()):
+        if torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
+                                             and torch.cuda.device_count()):
             print("GPU available. Will try to use GPU for processing.")
             load_on_cpu = False
         else:
