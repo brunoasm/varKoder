@@ -100,6 +100,12 @@ def main():
         action="store_true",
     )
     parser_img.add_argument(
+        "-D",
+        "--no-deduplicate",
+        help="do not attempt to remove duplicates in raw reads.",
+        action="store_true",
+    )
+    parser_img.add_argument(
         "-r",
         "--no-merge",
         help="do not attempt to merge paired reads.",
@@ -327,6 +333,12 @@ def main():
         action="store_true",
     )
     parser_query.add_argument(
+        "-D",
+        "--no-deduplicate",
+        help="do not attempt to remove duplicates in raw reads.",
+        action="store_true",
+    )
+    parser_query.add_argument(
         "-M",
         "--max-bp",
         help="number of post-cleaning basepairs to use for making image. If not provided, all data will be used.",
@@ -354,6 +366,12 @@ def main():
     ##################################################
 
     if args.command == "image" or (args.command == "query" and not args.images):
+        if args.command == "query":
+            if not args.overwrite:
+                if Path(args.outdir, "predictions.csv").is_file():
+                    raise Exception(
+                        "Output predictions file exists, use --overwrite if you want to overwrite it."
+                    )
         # check if kmer size provided is supported
         if args.kmer_size not in range(5, 9 + 1):
             raise Exception("kmer size must be between 5 and 9")
@@ -455,12 +473,6 @@ def main():
     ###################
 
     if args.command == "query":
-        if not args.overwrite:
-            if Path(args.outdir, "predictions.csv").is_file():
-                raise Exception(
-                    "Output predictions file exists, use --overwrite if you want to overwrite it."
-                )
-
         if args.images:
             images_d = Path(args.input)
         # if we provided sequences rather than images, they were processed in the command above

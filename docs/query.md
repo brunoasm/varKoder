@@ -28,7 +28,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 | --- | --- |
 | `-h`, `--help` | show help message and exit. |
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
-| `-v`, `--verbose` |  show output for `fastp`, `dsand `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
+| `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips in `image` command on usage. (default: 1) |
@@ -39,6 +39,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 | `-m`, `--keep-images` |       save varKode image files. By default only predictions are saved and images are discarded. |
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See tips in `image` command  for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See tips in `image` command  for details.|
+| `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See tips in `image` command for details. |
 | `-M MAX_BP`, `--max-bp MAX_BP` | maximum number of post-cleaning basepairs to make an image. By default this is all the data available for each sample. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp) |
 | `-b MAX_BATCH_SIZE`, `--max-batch-size MAX_BATCH_SIZE` | maximum batch size when using GPU for prediction. (default: 64) |
 

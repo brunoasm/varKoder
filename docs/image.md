@@ -143,6 +143,7 @@ Note:
 | `-t`, `--label-table` |  output a table with labels associated with each image, in addition to including them in the EXIF data. |
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See notes below for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See notes below for details. |
+| `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See notes below for details. |
 | `-X`, `--no-image` |       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
 
 ## Image command tips
@@ -153,7 +154,7 @@ The defaults for optional arguments were chosen based on our sets. Here are some
  
  2. If `--max-bp` is set, `varKoder` first truncates raw read files to 5 times the value of `--max-bp`. This can speed up raw read cleaning and kmer counting, but it means that subsampled files are randomly chosen from the reads available in this trimmed raw read files, not the whole initial raw reads.
 
- 3. `--no-merge` and `--no-adpater`. We have not extensively tested the effect of skipping adapter trimming and merging of overlapping reads. It may be the case that these preprocessing steps are unnecessary and you can speed up computation by using these arguments and skipping these steps.
+ 3. `--no-deduplicate`, `--no-merge` and `--no-adpater`. We have not extensively tested the effect of skipping adapter trimming, deduplication and merging of overlapping reads. It may be the case that these preprocessing steps are unnecessary and you can speed up computation by using these arguments and skipping these steps.
 
  4. If `--n-threads` is more than 1, `varKoder` will use Python `multiprocessing` library to do sample preprocessing in parallel (i. e. clean, split raw reads and generate images). If `-cpus-per-thread` is more than one, the number of CPUs will be passed to subprograms (i. e. `fastp`, `dsk`, `bbtools`) when processing a sample: this is the number of cores dedicated to each sample. So a user can select to parallelize computing for each sample, or to do more than one sample in parallel, or both. We have not extensively tested the potential speed ups of each method.
 
