@@ -42,13 +42,13 @@ Here we provide installation instructions for Linux and OSX, the only systems in
 
 ### Linux
 
-All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the script. 
+All dependencies can be installed with [conda](https://anaconda.org). For convenience, we provide a conda environment file with package versions that are compatible with the current version of the progam. 
 
 To install dependencies and varKoder as a new conda environment named `varKoder`, use these commands
 
 ```bash
 git clone https://github.com/brunoasm/varKoder
-cd varkoder
+cd varKoder
 conda env create --file conda_environments/linux.yml
 conda activate varKoder
 pip install .
