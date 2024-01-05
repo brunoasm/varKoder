@@ -58,11 +58,12 @@ If this takes too long, you can try using [mamba](https://github.com/mamba-org/m
 
 ### Mac
 
-We tested this program using Macs with ARM processors (M1,M2,etc). Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available:
+We tested this program using Macs with ARM processors (M1,M2,etc). Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available through conda and install varKoder to the conda environment:
 ```bash
 git clone https://github.com/brunoasm/varKoder
 cd varkoder
 conda env create --file conda_environments/mac.yml
+pip install .
 ```
 
 To install `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
@@ -94,12 +95,6 @@ cp bin/* $CONDA_PREFIX/bin/
 cd ..
 rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 
-```
-
-After installing all dependencies, install varKoder with:
-```bash
-conda activate varKoder
-pip install .
 ```
 
 
