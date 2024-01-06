@@ -37,6 +37,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 | `-t THRESHOLD`, `--threshold THRESHOLD`} | Threshold to make a prediction. This is the minimum confidence necessary (one a scale 0-1) for varKoder to predict a taxon or other label for a given sample. (default: 0.5) |
 | `-i INT_FOLDER`, `--int-folder INT_FOLDER` | folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details. |
 | `-m`, `--keep-images` |       save varKode image files. By default only predictions are saved and images are discarded. |
+| `-P`, `--include-probs` |   whether probabilities for each label should be included in the output. By default only prediction above threshold are report. Be careful, this can greatly increase output file size if there are many possible labels. | 
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See tips in `image` command  for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See tips in `image` command  for details.|
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See tips in `image` command for details. |

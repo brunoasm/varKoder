@@ -317,7 +317,13 @@ def main():
     parser_query.add_argument(
         "-m",
         "--keep-images",
-        help="whether barcode images should be saved.",
+        help="whether barcode images should be saved to a directory named 'query_images'.",
+        action="store_true",
+    )
+    parser_query.add_argument(
+        "-P",
+        "--include-probs",
+        help="whether probabilities for each label should be included in the output.",
         action="store_true",
     )
     parser_query.add_argument(
@@ -388,7 +394,7 @@ def main():
             images_d = Path(args.outdir)
         elif args.command == "query":
             if args.keep_images:
-                images_d = Path(args.outdir) / "images"
+                images_d = Path(args.outdir) / "query_images"
                 images_d.mkdir(parents=True, exist_ok=True)
             elif args.int_folder:
                 images_d = Path(tempfile.mkdtemp(prefix="barcoding_img_"))
@@ -515,19 +521,16 @@ def main():
                 "This is a multilabel classification model, each input may have 0 or more predictions."
             )
             pp, _ = learn.get_preds(dl=query_dl, act=nn.Sigmoid())
-            predictions_df = pd.DataFrame(pp)
-            predictions_df.columns = learn.dls.vocab
+            above_threshold = pp >= args.threshold
+            vocab = learn.dls.vocab
+            predicted_labels = [
+                 ";".join([vocab[idx] for idx, val in enumerate(row) if val])
+                 for row in above_threshold
+             ]
 
-            predicted_labels = predictions_df.apply(
-                lambda row: ";".join(
-                    [col for col in row.index if row[col] >= args.threshold]
-                ),
-                axis=1,
-            )
 
-            predictions_df = pd.concat(
-                [
-                    pd.DataFrame(
+
+            output_df = pd.DataFrame(
                         {
                             "varKode_image_path": img_paths,
                             "sample_id": [
@@ -562,11 +565,15 @@ def main():
                             "possible_low_quality": qual_flag,
                             "basefrequency_sd": freq_sd,
                         }
-                    ),
-                    predictions_df,
-                ],
-                axis=1,
-            )
+                    )
+
+            if args.include_probs:
+                output_df = pd.concat([
+                        output_df,
+                        pd.DataFrame(pp),
+                    ],
+                    axis=1
+                )
         else:
             eprint(
                 "This is a single label classification model, each input may will have only one prediction."
@@ -578,9 +585,8 @@ def main():
             best_ps, best_idx = torch.max(pp, dim=1)
             best_labels = learn.dls.vocab[best_idx]
 
-            predictions_df = pd.concat(
-                [
-                    pd.DataFrame(
+
+            output_df = pd.DataFrame(
                         {
                             "varKode_image_path": img_paths,
                             "sample_id": [
@@ -615,14 +621,19 @@ def main():
                             "basefrequency_sd": freq_sd,
                             "best_pred_prob": best_ps,
                         }
-                    ),
-                    predictions_df,
-                ],
-                axis=1,
-            )
+                    )
+
+            if args.include_probs:
+                output_df = pd.concat(
+                    [ 
+                        output_df,
+                        pd.DataFrame(pp),
+                    ],
+                    axis=1
+                )
         outdir = Path(args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
-        predictions_df.to_csv(outdir / "predictions.csv")
+        output_df.to_csv(outdir / "predictions.csv")
 
     ###################
     # train command
