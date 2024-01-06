@@ -29,6 +29,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 | `-h`, `--help` | show help message and exit. |
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
+| `-p`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips in `image` command on usage. (default: 1) |
@@ -52,9 +53,16 @@ If `--max-bp` is less than the data available for a sample, *varKoder* will ramd
 
 If there are less than 100 samples included in a query, we use a CPU to compute predictions. If there are more than 100 samples and a GPU is available, we use a GPU and group varKodes in batches of size `--max-batch-size`. The only constraint to batch size is the memory available in the GPU: the larger the batch size, the faster predictions will be done.
 
+## Input 
+By default, if the input folder contains subfolders, `varKoder query` will assume that raw reads in each subfolder should all be treated as a single sample (named with subfolder name). To override this behavior, use `--no-pairs`. If there are no subfolders or `--no-pairs` is used, each fastq file in the input will be treated as a separate sample (named after the file name). See help on `varKoder image` command for more information about fastq processing.
+
+If the `--images` argument is used, `varKoder query` will not attempt to process fastq files. Instead, it will recursively search for `png` files in the input folder, assuming they are varKodes generated with `varKoder image`.
+
 ## Output
 
 The main output is a table in `csv` format saved as `predictions.csv` in the output folder. The columns included depend on whether the model used for predictions is single-label or multi-label. In addition to this output table, varKodes produced from a raw reads input can be saved to the same folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
+
+By default, only the top prediction (if single-label) or predictions above threshold (if multi-label) are included in the table. To also include the predicted probability of all possible labels, use the argument `--include-probs`. CAUTION: if there are many possible labels in the trained model (for example, thousands) this can generate a very large output file.
 
 ### Multi-label:
 
@@ -69,7 +77,7 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
  *  `predicted_labels`: labels above the confidence threshold.
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
- *  other columns: confidence scores in each label. Each confidence score varies independently between 0 and 1.
+ *  other columns: confidence scores in each label. Each confidence score varies independently between 0 and 1. They are only included with `--include-probs` option.
 
 
 ### Single-label:
@@ -84,4 +92,4 @@ The main output is a table in `csv` format saved as `predictions.csv` in the out
  *  `best_pred_prob`: the confidence of the best prediction.
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
- *  other columns: confidence scores in each label. All confidence scores sum to 1
+ *  other columns: confidence scores in each label. All confidence scores sum to 1. They are only included with `--include-probs` option.

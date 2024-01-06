@@ -97,10 +97,10 @@ genus:Acridocarpus;species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R2.fastq.g
 ```csv
 labels,sample,files
 genus:Acridocarpus,ugandensis_12,12_GGGAGCTAGTGG.R1.fastq.gz
-species:smeathmanii,smeathmannii_168,68_TATGTCACATGG.R2.fastq.gz
-genus:Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
 species:ugandensis,ugandensis_12,12_GGGAGCTAGTGG.R2.fastq.gz
 genus:Acridocarpus,smeathmannii_168,168_TATGTCACATGG.R1.fastq.gz
+species:smeathmanii,smeathmannii_168,68_TATGTCACATGG.R2.fastq.gz
+genus:Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
 species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R2.fastq.gz
 ```
 
@@ -161,7 +161,7 @@ The defaults for optional arguments were chosen based on our sets. Here are some
 
 ## Output
 
-varKodes will be saved as png images to a folder named `images` (or another name is the `--outdir` argument is provided). Each image will be named with the following convention:
+varKodes will be saved as png images to a folder named `images` (or another name is the `--outdir` argument is provided). To avoid file system problems, `varKoder` will automatically create a random subfolder structure if there are thousands of input samples, so that no folder has more than a few thousand files. Each image will be named with the following convention:
 
 ```sample@[thousands_of_bp]K+k[kmer_length].png```
 

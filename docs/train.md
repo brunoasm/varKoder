@@ -21,7 +21,7 @@ There are two modes of training:
 
 | argument | description |
 | --- | --- |
-| input       |          path to the folder with input images. These must have been generated with `varKoder image` |
+| input       |          path to the folder with input images. varKoder will search for images in all subfolders. These images must have been generated with `varKoder image` |
 | outdir       |         path to the folder where trained model will be stored. |
 
 

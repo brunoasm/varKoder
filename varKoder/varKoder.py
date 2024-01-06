@@ -274,6 +274,12 @@ def main():
         default=False,
     )
     parser_query.add_argument(
+        "-p",
+        "--no-pairs",
+        help="prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample",
+        action="store_true",
+    )
+    parser_query.add_argument(
         "-I",
         "--images",
         help="input folder contains processed images instead of raw reads.",
@@ -407,7 +413,9 @@ def main():
 
         ##### STEP A - parse input and create a table relating reads files to samples and taxa
         inpath = Path(args.input)
-        condensed_files = process_input(inpath, is_query=args.command == "query")
+        condensed_files = process_input(inpath, 
+                is_query = args.command == "query",
+                no_pairs = args.no_pairs)
 
         ### We will save statistics in a dictionary and then output as a table
         ### If a table already exists, read it
@@ -425,6 +433,12 @@ def main():
         )
         kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
 
+        # check if we will need multiple subfolder levels
+        # this will ensure we have about 1000 samples per subfolder
+        # number of actual files will depend on how many images per sample
+        n_records = condensed_files.shape[0]
+        subfolder_levels = math.floor(math.log(n_records/1000,16))
+
         # Prepare arguments for run_clean2img function
         args_for_multiprocessing = [
             (
@@ -436,6 +450,7 @@ def main():
                 all_stats,
                 stats_path,
                 images_d,
+                subfolder_levels
             )
             for tup in condensed_files.iterrows()
         ]
@@ -483,7 +498,7 @@ def main():
             images_d = Path(args.input)
         # if we provided sequences rather than images, they were processed in the command above
 
-        img_paths = [img for img in images_d.iterdir() if img.name.endswith("png")]
+        img_paths = [img for img in images_d.rglob("*.png")]
 
         actual_labels = []
         for p in img_paths:
@@ -649,20 +664,19 @@ def main():
 
         # 1 let's create a data table for all images.
         image_files = list()
-        for f in Path(args.input).rglob("*"):
-            if f.name.endswith("png"):
-                image_files.append(
-                    {
-                        "sample": f.name.split(sample_bp_sep)[0],
-                        "bp": int(
-                            f.name.split(sample_bp_sep)[1]
-                            .split(bp_kmer_sep)[0]
-                            .split("K")[0]
-                        )
-                        * 1000,
-                        "path": f,
-                    }
-                )
+        for f in Path(args.input).rglob("*.png"):
+            image_files.append(
+                {
+                    "sample": f.name.split(sample_bp_sep)[0],
+                    "bp": int(
+                        f.name.split(sample_bp_sep)[1]
+                        .split(bp_kmer_sep)[0]
+                        .split("K")[0]
+                    )
+                    * 1000,
+                    "path": f,
+                }
+            )
         if args.label_table_path:
             image_files = pd.DataFrame(image_files).merge(
                 pd.read_csv(args.label_table_path)[

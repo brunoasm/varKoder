@@ -8,7 +8,7 @@ from io import StringIO
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 from sklearn.exceptions import UndefinedMetricWarning
 
-import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools
+import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools, hashlib
 import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from math import log
 
@@ -59,7 +59,7 @@ def eprint(*args, **kwargs):
 
 
 # this function process the input file or folder and returns a table with files
-def process_input(inpath, is_query=False):
+def process_input(inpath, is_query=False, no_pairs=False):
     # first, check if input is a folder
     # if it is, make input table from the folder
     # try:
@@ -94,13 +94,13 @@ def process_input(inpath, is_query=False):
         # start by checking if input directory contains directories
         contains_dir = False
         for f in inpath.iterdir():
-            if f.is_dir():
+            if f.is_dir() and no_pairs is False:
                 contains_dir = True
                 break
 
-        # if there are no subdirectories, treat each fastq as a single sample. Otherwise, use each directory for a sample
+        # if there are no subdirectories, or no_pairs is True treat each fastq as a single sample. Otherwise, use each directory for a sample
         if not contains_dir:
-            for i, fl in enumerate(inpath.iterdir()):
+            for i, fl in enumerate(inpath.rglob('*')):
                 if (
                     fl.name.endswith("fq")
                     or fl.name.endswith("fastq")
@@ -666,9 +666,15 @@ def make_image(
     labels=[],
     base_sd=0,
     base_sd_thresh=qual_thresh,
+    subfolder_levels=0
 ):
-    Path(outfolder).mkdir(exist_ok=True)
     outfile = Path(infile).name.removesuffix("".join(Path(infile).suffixes)) + ".png"
+    if subfolder_levels:
+        hsh = list(hashlib.md5(outfile.encode("UTF-8")).hexdigest())
+        for i in range(subfolder_levels):
+            outfolder=outfolder/hsh.pop()
+    Path(outfolder).mkdir(exist_ok=True, parents=True)
+
 
     if not overwrite and (outfolder / outfile).is_file():
         eprint("File exists. Skipping image for file:", str(infile))
@@ -772,6 +778,7 @@ def run_clean2img(
     all_stats,
     stats_path,
     images_d,
+    subfolder_levels=0,
     label_sample_sep=label_sample_sep,
     humanfriendly=humanfriendly,
     defaultdict=defaultdict,
@@ -907,6 +914,7 @@ def run_clean2img(
                     verbose=args.verbose,
                     labels=x["labels"],
                     base_sd=base_sd,
+                    subfolder_levels=subfolder_levels
                 )
             except IndexError as e:
                 eprint("IMAGE FAIL:", infile)
