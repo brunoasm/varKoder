@@ -20,7 +20,6 @@ If the input folder contains images in the `png` format, we will assume these ar
 ### Required arguments
 | argument | description |
 | --- | --- |
-|  model  |                pickle file with exported trained model. |
 |  input  |                path to folder with fastq files to be queried. |
 |  outdir  |               path to the folder where results will be saved. | 
 ### Optional arguments
@@ -28,6 +27,8 @@ If the input folder contains images in the `png` format, we will assume these ar
 | --- | --- |
 | `-h`, `--help` | show help message and exit. |
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
+| `-x` `--overwrite` | overwrite results. | 
+| `-l MODEL`, `--model MODEL` | either to path pickle file with exported trained model or name of HuggingFace hub model to pull (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-p`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
@@ -47,7 +48,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 
 ## Query command tips
 
-The query command preprocesses samples to generate varKode images and then predicts their taxonomy by using a pretrained neural network. See `image` command tips for options  `--no-merge`, `--no-adapter`, `--stats-file`, `--int-folder` , `--cpus-per-thread` and `--kmer-size`.
+The query command preprocesses samples to generate varKode images and then predicts their taxonomy by using a pretrained neural network. See `image` command tips for options  `--no-merge`, `--no-adapter`, `--stats-file`, `--int-folder` , `--no-deduplicate`, `--cpus-per-thread` and `--kmer-size`.
 
 If `--max-bp` is less than the data available for a sample, *varKoder* will ramdomly choose reads to include. If it is more than the data available for a sample, this sample will be skipped.
 
@@ -57,6 +58,11 @@ If there are less than 100 samples included in a query, we use a CPU to compute 
 By default, if the input folder contains subfolders, `varKoder query` will assume that raw reads in each subfolder should all be treated as a single sample (named with subfolder name). To override this behavior, use `--no-pairs`. If there are no subfolders or `--no-pairs` is used, each fastq file in the input will be treated as a separate sample (named after the file name). See help on `varKoder image` command for more information about fastq processing.
 
 If the `--images` argument is used, `varKoder query` will not attempt to process fastq files. Instead, it will recursively search for `png` files in the input folder, assuming they are varKodes generated with `varKoder image`.
+
+## Models
+If you trained your own model with `varKoder train`, you can use this model for making predictions by providing the path with the option `--model`.
+
+If you want to use a pytorch model from [Hugging Face hub](https://huggingface.co), you can provide the repository for this model using the same option (`--model`). The default model is a model pretrained on SRA data ([brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA))
 
 ## Output
 

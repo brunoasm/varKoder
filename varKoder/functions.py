@@ -37,6 +37,7 @@ import torch
 
 from timm import create_model
 from timm.loss import AsymmetricLossMultiLabel
+from huggingface_hub import from_pretrained_fastai
 
 
 # define filename separators

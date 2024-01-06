@@ -163,7 +163,7 @@ def main():
         "-c",
         "--architecture",
         help="model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.",
-        default="vit_large_patch32_224",
+        default="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA",
     )
     parser_train.add_argument(
         "-m",
@@ -259,13 +259,18 @@ def main():
         help="Query a fastq file agains a trained neural network. The program will automatically deduplicate, merge overlapping reads, clean adapters, count k-mers, produce images and query this image. The response is written to stdout in json format",
     )
 
-    parser_query.add_argument("model", help="pickle file with exported trained model.")
     parser_query.add_argument(
         "input", help="path to folder with fastq files to be queried."
     )
     parser_query.add_argument(
         "outdir", help="path to the folder where results will be saved."
     )
+    parser_query.add_argument(
+        "-l",
+        "--model", 
+        help="path pickle file with exported trained model or name of HuggingFace hub model",
+        default="brunoasm/vit_large_patch32_224.NCBI_SRA"
+        )
     parser_query.add_argument(
         "-v",
         "--verbose",
@@ -521,12 +526,16 @@ def main():
 
         n_images = len(img_paths)
 
-        if n_images >= 128:
-            eprint(n_images, "images in the input, will try to use GPU for prediction.")
-            learn = load_learner(args.model, cpu=False)
-        else:
-            eprint(n_images, "images in the input, will use CPU for prediction.")
-            learn = load_learner(args.model, cpu=True)
+        try:
+            if n_images >= 128:
+                eprint(n_images, "images in the input, will try to use GPU for prediction.")
+                learn = load_learner(args.model, cpu=False)
+            else:
+                eprint(n_images, "images in the input, will use CPU for prediction.")
+                learn = load_learner(args.model, cpu=True)
+        except FileNotFoundError:
+            print('Model',args.model,"not found locally, trying Hugging Face hub.")
+            learn = from_pretrained_fastai(args.model)
 
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=args.max_batch_size)
