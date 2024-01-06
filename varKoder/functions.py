@@ -225,9 +225,6 @@ def clean_reads(
     verbose=False,
 ):
     start_time = time.time()
-    timeout_limit = (
-        0.5 * 60
-    )  # timeout parameter used for bbtools, which may hang. 10 minutes should be more than enough
 
     # let's print a message to the user
     basename = Path(outpath).name.removesuffix("".join(Path(outpath).suffixes))
