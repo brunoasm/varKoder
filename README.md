@@ -63,6 +63,7 @@ We tested this program using Macs with ARM processors (M1,M2,etc). Not all depen
 git clone https://github.com/brunoasm/varKoder
 cd varkoder
 conda env create --file conda_environments/mac.yml
+conda activate varKoder
 pip install .
 ```
 
