@@ -753,7 +753,7 @@ def main():
             print("GPU not available. Using CPU for processing.")
 
         if args.pretrained_model:
-            eprint("Loading pretrained model:", str(args.pretrained_model))
+            eprint("Loading pretrained model from file:", str(args.pretrained_model))
             past_learn = load_learner(args.pretrained_model, cpu=load_on_cpu)
             model_state_dict = past_learn.model.state_dict()
             pretrained = False
