@@ -42,7 +42,7 @@ There are two modes of training:
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/ca llback.schedule.html#learner.fine_tune (default: 25) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://huggingface.co/docs/hub/timm for possible options. Prepend 'hf_hub:' to model name to pull from Hugging Face Hub (default: vit_large_patch32_224) |
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://huggingface.co/docs/hub/timm for possible options. Prepend 'hf_hub:' to model name to pull from Hugging Face Hub (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) |
 | -g NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
 | -P, --pretrained-timm | download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
