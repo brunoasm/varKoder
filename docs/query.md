@@ -20,7 +20,7 @@ If the input folder contains images in the `png` format, we will assume these ar
 ### Required arguments
 | argument | description |
 | --- | --- |
-|  input  |                path to folder with fastq files to be queried. |
+|  input  |                path to folder with fastq files or varKode png images to be queried. |
 |  outdir  |               path to the folder where results will be saved. | 
 ### Optional arguments
 | argument | description |
