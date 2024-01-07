@@ -1,0 +1,18 @@
+channels:
+  - pytorch
+  - nvidia
+  - fastai
+  - bioconda
+  - conda-forge
+dependencies:
+  - fastai::fastai=2.7.13
+  - conda-forge::huggingface_hub
+  - conda-forge::timm
+  - conda-forge::pyarrow>=14.0.1
+  - conda-forge::pandas
+  - conda-forge::humanfriendly
+  - conda-forge::pigz
+  - conda-forge::tenacity
+  - bioconda::bbmap
+  - bioconda::dsk=2.3.3
+  - bioconda::fastp=0.23
