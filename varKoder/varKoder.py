@@ -418,9 +418,12 @@ def main():
 
         ##### STEP A - parse input and create a table relating reads files to samples and taxa
         inpath = Path(args.input)
-        condensed_files = process_input(inpath, 
-                is_query = args.command == "query",
-                no_pairs = args.no_pairs)
+        condensed_files = process_input(
+            inpath, 
+            is_query=args.command == "query", 
+            no_pairs=args.command == "query" and getattr(args, 'no_pairs', False)
+        )
+            
 
         ### We will save statistics in a dictionary and then output as a table
         ### If a table already exists, read it
