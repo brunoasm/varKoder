@@ -10,6 +10,9 @@ RUN conda install -n base conda-forge::mamba && \
     mamba clean --all -f -y && \ 
     conda run pip install -e /varKoder
 
+#Set workdir
+WORKDIR /home
+
 # Set entrypoint
 ENTRYPOINT ["conda", "run",  "varKoder"]
 
