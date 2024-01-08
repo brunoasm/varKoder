@@ -736,7 +736,8 @@ def main():
         else:
             pretrained = False
             eprint("Starting model with random weigths.")
-
+            
+        # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
             eprint("Single label model requested.")
             if (image_files["labels"].str.contains(";") == True).any():
@@ -744,39 +745,6 @@ def main():
                     "Some samples contain more than one label. These will be concatenated. Maybe you want a multilabel model instead?",
                     stacklevel=2,
                 )
-
-            if args.mix_augmentation == "None":
-                loss = CrossEntropyLoss()
-            else:
-                loss = CrossEntropyLossFlat()
-
-            eprint(
-                "Start training for",
-                args.freeze_epochs,
-                "epochs with frozen model body weigths followed by",
-                args.epochs,
-                "epochs with unfrozen weigths and learning rate of",
-                args.base_learning_rate,
-            )
-
-            # 5 call training function
-            learn = train_nn(
-                df=image_files,
-                architecture=args.architecture,
-                valid_pct=args.validation_set_fraction,
-                max_bs=args.max_batch_size,
-                base_lr=args.base_learning_rate,
-                epochs=args.epochs,
-                freeze_epochs=args.freeze_epochs,
-                normalize=True,
-                pretrained=pretrained,
-                callbacks=callback,
-                max_lighting=args.max_lighting,
-                p_lighting=args.p_lighting,
-                loss_fn=loss,
-                model_state_dict=model_state_dict,
-                verbose=not args.no_logging,
-            )
         else:
             eprint("Multilabel model requested.")
             if not (image_files["labels"].str.contains(";") == True).any():
@@ -784,35 +752,51 @@ def main():
                     "No sample contains more than one label. Maybe you want a single label model instead?",
                     stacklevel=2,
                 )
-
-            eprint(
-                "Start training for",
-                args.freeze_epochs,
-                "epochs with frozen model body weigths followed by",
-                args.epochs,
-                "epochs with unfrozen weigths and learning rate of",
-                args.base_learning_rate,
-            )
-
-            # 5 call training function
-            learn = train_multilabel_nn(
-                df=image_files,
-                architecture=args.architecture,
-                valid_pct=args.validation_set_fraction,
-                max_bs=args.max_batch_size,
-                base_lr=args.base_learning_rate,
-                epochs=args.epochs,
-                freeze_epochs=args.freeze_epochs,
-                normalize=True,
-                pretrained=pretrained,
-                callbacks=[callback],
-                model_state_dict=model_state_dict,
-                metrics_threshold=args.threshold,
-                gamma_neg=args.negative_downweighting,
-                verbose=not args.no_logging,
-                max_lighting=args.max_lighting,
-                p_lighting=args.p_lighting,
-            )
+        
+        # Set loss function based on args.mix_augmentation
+        if args.mix_augmentation == "None" and args.single_label:
+            loss = CrossEntropyLoss()
+        else:
+            loss = CrossEntropyLossFlat()
+        
+        # Print training information
+        eprint(
+            "Start training for",
+            args.freeze_epochs,
+            "epochs with frozen model body weights followed by",
+            args.epochs,
+            "epochs with unfrozen weights and learning rate of",
+            args.base_learning_rate,
+        )
+        
+        # Additional parameters for multilabel training
+        extra_params = {}
+        if not args.single_label:
+            extra_params = {
+                "metrics_threshold": args.threshold,
+                "gamma_neg": args.negative_downweighting,
+            }
+        
+        # Call training function
+        learn = train_nn(
+            df=image_files,
+            architecture=args.architecture,
+            valid_pct=args.validation_set_fraction,
+            max_bs=args.max_batch_size,
+            base_lr=args.base_learning_rate,
+            epochs=args.epochs,
+            freeze_epochs=args.freeze_epochs,
+            normalize=True,
+            pretrained=pretrained,
+            callbacks=[callback],
+            max_lighting=args.max_lighting,
+            p_lighting=args.p_lighting,
+            loss_fn=loss,
+            model_state_dict=model_state_dict,
+            verbose=not args.no_logging,
+            is_multilabel=not args.single_label,
+            **extra_params
+        )
 
         # save results
         outdir = Path(args.outdir)
