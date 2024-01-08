@@ -33,6 +33,7 @@ from fastai.callback.core import Callback
 from fastai.torch_core import set_seed
 
 from torch import nn
+from torch.nn import CrossEntropyLoss
 import torch
 
 from timm import create_model
@@ -1152,6 +1153,7 @@ def train_nn(
     max_lighting=0,
     p_lighting=0,
     pretrained=False,
+    loss_fn=CrossEntropyLoss(),
     is_multilabel=False,
     metrics_threshold=0.7,
     gamma_neg=4,
@@ -1225,12 +1227,8 @@ def train_nn(
         recall = RecallMulti(labels=labels, average="micro", thresh=metrics_threshold)
         auc = RocAuc(average="micro")
         metrics = [auc, precision, recall]
-        loss_func = AsymmetricLossMultiLabel(
-            gamma_pos=0, gamma_neg=gamma_neg, eps=1e-2, clip=0.1
-        )
     else:
         metrics = accuracy
-        loss_func = CrossEntropyLossFlat()
 
     learn = vision_learner(
         dls,
@@ -1239,7 +1237,7 @@ def train_nn(
         normalize=normalize,
         pretrained=pretrained,
         cbs=callbacks,
-        loss_func=loss_func,
+        loss_func=loss_fn,
     ).to_fp16()
 
     # if there a pretrained model body weights, replace them

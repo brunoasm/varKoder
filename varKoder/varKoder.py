@@ -756,8 +756,14 @@ def main():
         # Set loss function based on args.mix_augmentation
         if args.mix_augmentation == "None" and args.single_label:
             loss = CrossEntropyLoss()
-        else:
+        elif args.single_label:
             loss = CrossEntropyLossFlat()
+        else:
+            loss = AsymmetricLossMultiLabel(
+              gamma_pos=0, 
+              gamma_neg=args.negative_downweighting, 
+              eps=1e-2, 
+              clip=0.1)
         
         # Print training information
         eprint(
@@ -774,7 +780,6 @@ def main():
         if not args.single_label:
             extra_params = {
                 "metrics_threshold": args.threshold,
-                "gamma_neg": args.negative_downweighting,
             }
         
         # Call training function
