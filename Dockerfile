@@ -5,7 +5,7 @@ FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 COPY . /varKoder
 
 # Install conda packages
-RUN conda install -n base mamba && \
+RUN conda install -n base conda-forge::mamba && \
     mamba env update -n base --file /varKoder/conda_environments/docker.yml && \
     mamba clean --all -f -y && \ 
     conda run pip install -e /varKoder
