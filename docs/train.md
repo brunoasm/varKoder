@@ -34,7 +34,6 @@ There are two modes of training:
 | -x , --overwrite | overwrite existing results. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |
 | -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. By default, varKoder will attempt to read labels from image metadata. |
-| -i, --ignore-quality |  ignore sequence quality when training. By default low-quality samples are labelled as such. |
 | -S, --single-label  |  Train as a single-label image classification model. This option must be combined with --ignore-quality. By default, models are trained as multi-label. |
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
@@ -45,7 +44,7 @@ There are two modes of training:
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 25) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
 | -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://huggingface.co/docs/hub/timm for possible options. Prepend 'hf_hub:' to model name to pull from Hugging Face Hub (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) |
-| -g NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
+| -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
 | -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
