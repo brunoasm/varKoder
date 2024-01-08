@@ -1158,6 +1158,7 @@ def train_nn(
     metrics_threshold=0.7,
     gamma_neg=4,
     verbose=True,
+    num_workers = 0
 ):
     # find a batch size that is a power of 2 and splits the dataset in about 10 batches
     batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
@@ -1216,7 +1217,10 @@ def train_nn(
     )
 
     # create data loaders with calculated batch size and appropriate device
-    dls = dbl.dataloaders(df, bs=batch_size, device=default_device(), num_workers=0)
+    dls = dbl.dataloaders(df, 
+        bs=batch_size, 
+        device=default_device(), 
+        num_workers=num_workers)
 
     # create learner
     if is_multilabel:

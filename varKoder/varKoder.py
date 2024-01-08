@@ -130,12 +130,19 @@ def main():
         "outdir", help="path to the folder where trained model will be stored."
     )
     parser_train.add_argument(
+        "-n",
+        "--num-workers",
+        help="number of subprocess for data loading. See https://docs.fast.ai/data.load.html#dataloader",
+        default=0,
+        type=int,
+    )
+    parser_train.add_argument(
         "-t",
         "--label-table-path",
         help="path to csv table with labels for each sample. By default, varKoder will instead read labels from the image file metadata.",
     )
     parser_train.add_argument(
-        "-n",
+        "-S",
         "--single-label",
         help="Train as a single-label image classification model instead of multilabel. If multiple labels are provided, they will be concatenated to a single label.",
         action="store_true",
@@ -199,9 +206,9 @@ def main():
         default=0,
     )
     parser_train.add_argument(
-        "-P",
-        "--pretrained-timm",
-        help="download pretrained model weights from timm. See https://github.com/rwightman/pytorch-image-models.",
+        "-w",
+        "--random-weigths",
+        help="start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
         action="store_true",
     )
     parser_train.add_argument(
@@ -729,7 +736,7 @@ def main():
             pretrained = False
             del past_learn
 
-        elif args.pretrained_timm:
+        elif not args.random_weigths:
             pretrained = True
             eprint("Starting model with pretrained weights from timm library.")
 
@@ -800,6 +807,7 @@ def main():
             model_state_dict=model_state_dict,
             verbose=not args.no_logging,
             is_multilabel=not args.single_label,
+            num_workers=args.num_workers,
             **extra_params
         )
 
