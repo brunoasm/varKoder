@@ -33,6 +33,7 @@ from fastai.callback.core import Callback
 from fastai.torch_core import set_seed
 
 from torch import nn
+from torch.nn import CrossEntropyLoss
 import torch
 
 from timm import create_model
@@ -1033,115 +1034,6 @@ def get_train_val_sets():
     return train_valid
 
 
-# Function: create a learner and fit model, setting batch size according to number of training images
-def train_nn(
-    df,
-    architecture,
-    valid_pct=0.2,
-    max_bs=64,
-    base_lr=1e-3,
-    model_state_dict=None,
-    epochs=30,
-    freeze_epochs=0,
-    normalize=True,
-    callbacks=CutMix,
-    max_lighting=0,
-    p_lighting=0,
-    pretrained=False,
-    loss_fn=CrossEntropyLossFlat(),
-    verbose=True,
-):
-    # find a batch size that is a power of 2 and splits the dataset in about 10 batches
-    batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
-    batch_size = min(batch_size, max_bs)
-
-    # set kind of splitter for DataBlock
-    if "is_valid" in df.columns:
-        sptr = ColSplitter()
-    else:
-        sptr = RandomSplitter(valid_pct=valid_pct)
-
-    # check if item resizing is necessary
-    default_cfg = create_model(architecture, pretrained=False).default_cfg
-    if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-        item_transforms = Resize(
-            size=default_cfg["input_size"][1:],
-            method=ResizeMethod.Squish,
-            resamples=(Resampling.BOX, Resampling.BOX),
-        )
-        eprint(
-            "Model architecture",
-            architecture,
-            "requires image resizing to",
-            str(default_cfg["input_size"][1:]),
-        )
-        eprint("This will be done automatically.")
-    else:
-        item_transforms = None
-
-    # set batch transforms
-    transforms = aug_transforms(
-        do_flip=False,
-        max_rotate=0,
-        max_zoom=1,
-        max_lighting=max_lighting,
-        max_warp=0,
-        p_affine=0,
-        p_lighting=p_lighting,
-    )
-
-    # set DataBlock
-    dbl = DataBlock(
-        blocks=(ImageBlock, CategoryBlock),
-        splitter=sptr,
-        get_x=ColReader("path"),
-        get_y=ColReader("labels"),
-        item_tfms=item_transforms,
-        batch_tfms=transforms,
-    )
-
-    # create data loaders with calculated batch size and appropriate device
-    dls = dbl.dataloaders(df, bs=batch_size, device=default_device(), num_workers=0)
-
-    # create learner
-    learn = vision_learner(
-        dls,
-        architecture,
-        metrics=accuracy,
-        normalize=normalize,
-        pretrained=pretrained,
-        cbs=callbacks,
-        loss_func=loss_fn,
-    ).to_fp16()
-
-    # if there a pretrained model body weights, replace them
-    # first, filter state dict to only keys that match and values that have the same size
-    # this will allow incomptibilities (e. g. if training on a different number of classes)
-    # solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
-    if model_state_dict:
-        old_state_dict = learn.state_dict()
-        new_state_dict = {
-            k: v
-            for k, v in model_state_dict.items()
-            if k in old_state_dict and old_state_dict[k].size() == v.size()
-        }
-        learn.model.load_state_dict(new_state_dict, strict=False)
-
-    # compile with pytorch for faster training
-    # commented out because currently returning errors
-    # update when fastai has better documentation
-    # learn.model = torch.compile(learn.model)
-
-    # train
-    if verbose:
-        learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
-    else:
-        with learn.no_bar(), learn.no_logging():
-            learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
-
-    return learn
-
-
 # Function: retrieve varKoder labels as a list
 def get_varKoder_labels(img_path):
     return [x for x in Image.open(img_path).info.get("varkoderKeywords").split(";")]
@@ -1247,8 +1139,7 @@ def get_varKoder_freqsd(img_path):
 #        return -loss.sum()
 
 
-# Function: create a learner and fit model, setting batch size according to number of training images
-def train_multilabel_nn(
+def train_nn(
     df,
     architecture,
     valid_pct=0.2,
@@ -1258,10 +1149,12 @@ def train_multilabel_nn(
     epochs=30,
     freeze_epochs=0,
     normalize=True,
-    callbacks=MixUp,
+    callbacks=CutMix,
     max_lighting=0,
     p_lighting=0,
     pretrained=False,
+    loss_fn=CrossEntropyLoss(),
+    is_multilabel=False,
     metrics_threshold=0.7,
     gamma_neg=4,
     verbose=True,
@@ -1270,7 +1163,7 @@ def train_multilabel_nn(
     batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
     batch_size = min(batch_size, max_bs)
 
-    # check which kind of splitter to use
+    # set kind of splitter for DataBlock
     if "is_valid" in df.columns:
         sptr = ColSplitter()
     else:
@@ -1305,11 +1198,19 @@ def train_multilabel_nn(
         p_lighting=p_lighting,
     )
 
+    # set DataBlock
+    if is_multilabel:
+        blocks = (ImageBlock, MultiCategoryBlock)
+        get_y = ColReader("labels", label_delim=";")
+    else:
+        blocks = (ImageBlock, CategoryBlock)
+        get_y = ColReader("labels")
+
     dbl = DataBlock(
-        blocks=(ImageBlock, MultiCategoryBlock),
+        blocks=blocks,
         splitter=sptr,
         get_x=ColReader("path"),
-        get_y=ColReader("labels", label_delim=";"),
+        get_y=get_y,
         item_tfms=item_transforms,
         batch_tfms=transforms,
     )
@@ -1317,32 +1218,29 @@ def train_multilabel_nn(
     # create data loaders with calculated batch size and appropriate device
     dls = dbl.dataloaders(df, bs=batch_size, device=default_device(), num_workers=0)
 
-    # find all labels that are not 'low_quality:True'
-    labels = [i for i, x in enumerate(dls.vocab) if x != "low_quality:True"]
-
-    # now define metrics
-    precision = PrecisionMulti(labels=labels, average="micro", thresh=metrics_threshold)
-    recall = RecallMulti(labels=labels, average="micro", thresh=metrics_threshold)
-    auc = RocAuc(average="micro")
-    metrics = [auc, precision, recall]
-
     # create learner
+    if is_multilabel:
+        # find all labels that are not 'low_quality:True'
+        labels = [i for i, x in enumerate(dls.vocab) if x != "low_quality:True"]
+        # define metrics
+        precision = PrecisionMulti(labels=labels, average="micro", thresh=metrics_threshold)
+        recall = RecallMulti(labels=labels, average="micro", thresh=metrics_threshold)
+        auc = RocAuc(average="micro")
+        metrics = [auc, precision, recall]
+    else:
+        metrics = accuracy
+
     learn = vision_learner(
         dls,
         architecture,
         metrics=metrics,
         normalize=normalize,
         pretrained=pretrained,
-        # cbs = callbacks.append(CustomWeightedTrainingCallback(df['sample_weights'])),
-        loss_func=AsymmetricLossMultiLabel(
-            gamma_pos=0, gamma_neg=gamma_neg, eps=1e-2, clip=0.1
-        ),
+        cbs=callbacks,
+        loss_func=loss_fn,
     ).to_fp16()
 
     # if there a pretrained model body weights, replace them
-    # first, filter state dict to only keys that match and values that have the same size
-    # this will allow incomptibilities (e. g. if training on a different number of classes)
-    # solution inspired by: https://discuss.pytorch.org/t/how-to-load-part-of-pre-trained-model/1113/8
     if model_state_dict:
         old_state_dict = learn.state_dict()
         new_state_dict = {
@@ -1352,11 +1250,6 @@ def train_multilabel_nn(
         }
         learn.model.load_state_dict(new_state_dict, strict=False)
 
-    # compile with pytorch for faster training
-    # commented out because currently returning errors (May 21)
-    # update when fastai has better documentation
-    # learn.model = torch.compile(learn.model)
-
     # train
     if verbose:
         learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
@@ -1365,7 +1258,6 @@ def train_multilabel_nn(
             learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
 
     return learn
-
 
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
 def get_varKoder_quality_weigths(img_path):

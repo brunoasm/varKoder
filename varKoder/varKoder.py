@@ -543,6 +543,27 @@ def main():
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=args.max_batch_size)
 
+        # Predicting and construction output dataframe
+        common_data = {
+            "varKode_image_path": img_paths,
+            "sample_id": [
+                img.with_suffix("").name.split(sample_bp_sep)[0].split(label_sample_sep)[-1]
+                for img in img_paths
+            ],
+            "query_basepairs": [
+                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[0]
+                for img in img_paths
+            ],
+            "query_kmer_len": [
+                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[-1]
+                for img in img_paths
+            ],
+            "trained_model_path": str(args.model),
+            "actual_labels": actual_labels,
+            "possible_low_quality": qual_flag,
+            "basefrequency_sd": freq_sd,
+        }
+        
         if "MultiLabel" in str(learn.loss_func):
             eprint(
                 "This is a multilabel classification model, each input may have 0 or more predictions."
@@ -551,113 +572,36 @@ def main():
             above_threshold = pp >= args.threshold
             vocab = learn.dls.vocab
             predicted_labels = [
-                 ";".join([vocab[idx] for idx, val in enumerate(row) if val])
-                 for row in above_threshold
-             ]
-
-
-
-            output_df = pd.DataFrame(
-                        {
-                            "varKode_image_path": img_paths,
-                            "sample_id": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[0]
-                                    .split(label_sample_sep)[-1]
-                                )
-                                for img in img_paths
-                            ],
-                            "query_basepairs": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[-1]
-                                    .split(bp_kmer_sep)[0]
-                                )
-                                for img in img_paths
-                            ],
-                            "query_kmer_len": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[-1]
-                                    .split(bp_kmer_sep)[-1]
-                                )
-                                for img in img_paths
-                            ],
-                            "trained_model_path": str(args.model),
-                            "prediction_type": "Multilabel",
-                            "prediction_threshold": args.threshold,
-                            "predicted_labels": predicted_labels,
-                            "actual_labels": actual_labels,
-                            "possible_low_quality": qual_flag,
-                            "basefrequency_sd": freq_sd,
-                        }
-                    )
-
-            if args.include_probs:
-                output_df = pd.concat([
-                        output_df,
-                        pd.DataFrame(pp),
-                    ],
-                    axis=1
-                )
+                ";".join([vocab[idx] for idx, val in enumerate(row) if val])
+                for row in above_threshold
+            ]
+        
+            output_df = pd.DataFrame({
+                **common_data,
+                "prediction_type": "Multilabel",
+                "prediction_threshold": args.threshold,
+                "predicted_labels": predicted_labels,
+            })
+        
         else:
             eprint(
                 "This is a single label classification model, each input may will have only one prediction."
             )
             pp, _ = learn.get_preds(dl=query_dl)
-            predictions_df = pd.DataFrame(pp)
-            predictions_df.columns = learn.dls.vocab
-
+        
             best_ps, best_idx = torch.max(pp, dim=1)
             best_labels = learn.dls.vocab[best_idx]
+        
+            output_df = pd.DataFrame({
+                **common_data,
+                "prediction_type": "Single label",
+                "best_pred_label": best_labels,
+                "best_pred_prob": best_ps,
+            })
+        
+        if args.include_probs:
+            output_df = pd.concat([output_df, pd.DataFrame(pp, columns=learn.dls.vocab)], axis=1)
 
-
-            output_df = pd.DataFrame(
-                        {
-                            "varKode_image_path": img_paths,
-                            "sample_id": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[0]
-                                    .split(label_sample_sep)[-1]
-                                )
-                                for img in img_paths
-                            ],
-                            "query_basepairs": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[-1]
-                                    .split(bp_kmer_sep)[0]
-                                )
-                                for img in img_paths
-                            ],
-                            "query_kmer_len": [
-                                (
-                                    img.with_suffix("")
-                                    .name.split(sample_bp_sep)[-1]
-                                    .split(bp_kmer_sep)[-1]
-                                )
-                                for img in img_paths
-                            ],
-                            "trained_model_path": str(args.model),
-                            "prediction_type": "Single label",
-                            "best_pred_label": best_labels,
-                            "actual_labels": actual_labels,
-                            "possible_low_quality": qual_flag,
-                            "basefrequency_sd": freq_sd,
-                            "best_pred_prob": best_ps,
-                        }
-                    )
-
-            if args.include_probs:
-                output_df = pd.concat(
-                    [ 
-                        output_df,
-                        pd.DataFrame(pp),
-                    ],
-                    axis=1
-                )
         outdir = Path(args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         output_df.to_csv(outdir / "predictions.csv")
@@ -792,7 +736,8 @@ def main():
         else:
             pretrained = False
             eprint("Starting model with random weigths.")
-
+            
+        # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
             eprint("Single label model requested.")
             if (image_files["labels"].str.contains(";") == True).any():
@@ -800,39 +745,6 @@ def main():
                     "Some samples contain more than one label. These will be concatenated. Maybe you want a multilabel model instead?",
                     stacklevel=2,
                 )
-
-            if args.mix_augmentation == "None":
-                loss = CrossEntropyLoss()
-            else:
-                loss = CrossEntropyLossFlat()
-
-            eprint(
-                "Start training for",
-                args.freeze_epochs,
-                "epochs with frozen model body weigths followed by",
-                args.epochs,
-                "epochs with unfrozen weigths and learning rate of",
-                args.base_learning_rate,
-            )
-
-            # 5 call training function
-            learn = train_nn(
-                df=image_files,
-                architecture=args.architecture,
-                valid_pct=args.validation_set_fraction,
-                max_bs=args.max_batch_size,
-                base_lr=args.base_learning_rate,
-                epochs=args.epochs,
-                freeze_epochs=args.freeze_epochs,
-                normalize=True,
-                pretrained=pretrained,
-                callbacks=callback,
-                max_lighting=args.max_lighting,
-                p_lighting=args.p_lighting,
-                loss_fn=loss,
-                model_state_dict=model_state_dict,
-                verbose=not args.no_logging,
-            )
         else:
             eprint("Multilabel model requested.")
             if not (image_files["labels"].str.contains(";") == True).any():
@@ -840,35 +752,56 @@ def main():
                     "No sample contains more than one label. Maybe you want a single label model instead?",
                     stacklevel=2,
                 )
-
-            eprint(
-                "Start training for",
-                args.freeze_epochs,
-                "epochs with frozen model body weigths followed by",
-                args.epochs,
-                "epochs with unfrozen weigths and learning rate of",
-                args.base_learning_rate,
-            )
-
-            # 5 call training function
-            learn = train_multilabel_nn(
-                df=image_files,
-                architecture=args.architecture,
-                valid_pct=args.validation_set_fraction,
-                max_bs=args.max_batch_size,
-                base_lr=args.base_learning_rate,
-                epochs=args.epochs,
-                freeze_epochs=args.freeze_epochs,
-                normalize=True,
-                pretrained=pretrained,
-                callbacks=[callback],
-                model_state_dict=model_state_dict,
-                metrics_threshold=args.threshold,
-                gamma_neg=args.negative_downweighting,
-                verbose=not args.no_logging,
-                max_lighting=args.max_lighting,
-                p_lighting=args.p_lighting,
-            )
+        
+        # Set loss function based on args.mix_augmentation
+        if args.mix_augmentation == "None" and args.single_label:
+            loss = CrossEntropyLoss()
+        elif args.single_label:
+            loss = CrossEntropyLossFlat()
+        else:
+            loss = AsymmetricLossMultiLabel(
+              gamma_pos=0, 
+              gamma_neg=args.negative_downweighting, 
+              eps=1e-2, 
+              clip=0.1)
+        
+        # Print training information
+        eprint(
+            "Start training for",
+            args.freeze_epochs,
+            "epochs with frozen model body weights followed by",
+            args.epochs,
+            "epochs with unfrozen weights and learning rate of",
+            args.base_learning_rate,
+        )
+        
+        # Additional parameters for multilabel training
+        extra_params = {}
+        if not args.single_label:
+            extra_params = {
+                "metrics_threshold": args.threshold,
+            }
+        
+        # Call training function
+        learn = train_nn(
+            df=image_files,
+            architecture=args.architecture,
+            valid_pct=args.validation_set_fraction,
+            max_bs=args.max_batch_size,
+            base_lr=args.base_learning_rate,
+            epochs=args.epochs,
+            freeze_epochs=args.freeze_epochs,
+            normalize=True,
+            pretrained=pretrained,
+            callbacks=[callback],
+            max_lighting=args.max_lighting,
+            p_lighting=args.p_lighting,
+            loss_fn=loss,
+            model_state_dict=model_state_dict,
+            verbose=not args.no_logging,
+            is_multilabel=not args.single_label,
+            **extra_params
+        )
 
         # save results
         outdir = Path(args.outdir)
