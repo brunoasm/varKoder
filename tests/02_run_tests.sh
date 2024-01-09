@@ -7,9 +7,7 @@ TESTDIR=Bembidion
 prepend_text() {
     local prefix="$1"
     shift
-    "$@" | while read line; do
-        echo "$prefix: $line"
-    done
+    "$@" 2> >(while read line; do echo "$prefix: $line"; done)
 }
 
 
