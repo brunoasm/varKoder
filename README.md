@@ -67,26 +67,7 @@ conda activate varKoder
 pip install .
 ```
 
-To install `fastp`, the easiest way is to use [Homebrew](https://brew.sh). Install homebrew and then run the following:
-```bash
-brew tap brewsci/bio
-brew install fastp
-```
-
-In macs with ARM processors (i. e. M1 or M2), you may get an error when installing `fastp`, which was compiled for Intel. To workaround the error, you have to install [Rosetta2](https://support.apple.com/en-us/HT211861) so your Mac can run Intel-based programs. You will also need to  install the Intel version of homebrew. You can accomplish this with the following commands:
-
-```bash
-## install rosetta to run intel-based programs
-/usr/sbin/softwareupdate --install-rosetta
-
-## Install intel-version of homebrew
-arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-
-## install fastp with hombrew
-arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
-```
-
-Finally, `dsk` can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
+Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
 ```bash
 conda activate varKoder
 wget https://github.com/GATB/dsk/releases/download/v2.3.3/dsk-v2.3.3-bin-Darwin.tar.gz
@@ -95,8 +76,9 @@ cd dsk-v2.3.3-bin-Darwin
 cp bin/* $CONDA_PREFIX/bin/
 cd ..
 rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
-
 ```
+
+The latest SRA toolkit is required to run tests and examples, but not for basic varKoder functionality.On Macs, it is better to install it with Homebrew. See instructions here: https://formulae.brew.sh/formula/sratoolkit 
 
 
 ## Usage

@@ -9,7 +9,7 @@ from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 from sklearn.exceptions import UndefinedMetricWarning
 
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools, hashlib
-import re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
+import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from math import log
 
 from PIL import Image
@@ -94,12 +94,9 @@ def process_input(inpath, is_query=False, no_pairs=False):
     elif is_query:
         files_records = list()
         # start by checking if input directory contains directories
-        contains_dir = False
-        for f in inpath.iterdir():
-            if f.is_dir() and no_pairs is False:
-                contains_dir = True
-                break
-
+        contains_dir = any(f.is_dir() or 
+                           (f.is_symlink() and Path(os.readlink(f)).is_dir()) 
+                           for f in inpath.iterdir())
         # if there are no subdirectories, or no_pairs is True treat each fastq as a single sample. Otherwise, use each directory for a sample
         if not contains_dir:
             for i, fl in enumerate(inpath.rglob('*')):
@@ -119,8 +116,10 @@ def process_input(inpath, is_query=False, no_pairs=False):
 
         else:
             for sample in inpath.iterdir():
-                if sample.is_dir():
+                if sample.resolve().is_dir():
+                    eprint("is_dir")
                     for fl in sample.iterdir():
+                        eprint(fl)
                         if (
                             fl.name.endswith("fq")
                             or fl.name.endswith("fastq")
@@ -134,6 +133,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                     "files": sample / fl.name,
                                 }
                             )
+            eprint(files_records)
 
         files_table = (
             pd.DataFrame(files_records)
