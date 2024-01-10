@@ -544,8 +544,12 @@ def main():
                 eprint(n_images, "images in the input, will use CPU for prediction.")
                 learn = load_learner(args.model, cpu=True)
         except FileNotFoundError:
-            print('Model',args.model,"not found locally, trying Hugging Face hub.")
-            learn = from_pretrained_fastai(args.model)
+            eprint('Model',args.model,"not found locally, trying Hugging Face hub.")
+            try: 
+                learn = from_pretrained_fastai(args.model)
+            except:
+                raise Exception('Unable to load model',args.model,"locally or from Hugging Face Hub, please check")
+
 
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=args.max_batch_size)
