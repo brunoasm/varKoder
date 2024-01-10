@@ -19,3 +19,4 @@ dependencies:
   - bioconda::bbmap
   - bioconda::dsk=2.3.3
   - bioconda::fastp=0.23
+  - bioconda::sra-tools>=3
