@@ -419,6 +419,12 @@ def main():
             else:
                 images_d = inter_dir / "images"
 
+        if not args.overwrite and Path(args.outdir).exists():
+            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
+        else:
+            if Path(args.outdir).is_dir():
+                shutil.rmtree(Path(args.outdir))
+
         eprint("Kmer size:", str(args.kmer_size))
         eprint("Processing reads and preparing images")
         eprint("Reading input data")
@@ -439,7 +445,7 @@ def main():
         stats_path = Path(args.stats_file)
         if stats_path.exists():
             all_stats.update(
-                pd.read_csv(stats_path, index_col=[0]).to_dict(orient="index")
+                    pd.read_csv(stats_path, index_col=[0],dtype={0:str}).to_dict(orient="index")
             )
 
         ### the same kmer mapping will be used for all files, so we will use it as a global variable

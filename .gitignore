@@ -6,3 +6,12 @@
 __pycache__/
 varKoder.egg-info/
 varKoder/__pycache__/
+tests/Bembidion/
+tests/fastq_query/
+tests/images/
+tests/inferences_Bembidion/
+tests/inferences_SRA/
+tests/stats.csv
+tests/trained_pretrained/
+tests/trained_random/
+build
