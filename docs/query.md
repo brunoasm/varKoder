@@ -1,19 +1,19 @@
 # varKoder query
 
-Once of have a trained neural network, you can use the `query` command to use it to predict the taxon of unknown samples. 
+The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details.
 
 ## Input format
 
-The input for the query command is the path to a folder containing fastq or image files. There are 3 possiblities to structure this input, detailed below:
+The input for the query command is the path to a folder containing fastq or image files. There are 3 possibilities to structure this input, detailed below:
 
 ### Single read files
 If the input folder contains raw reads in fastq format (either gzipped or not), each fastq file will be considered as an independent query to build varKodes and predict their taxonomy.
 
 ### Paired read files
-If the input folder contains subfolders and each subfolder contains one or more fastq files (gzipped or not), each subfolder will be considered an independent query and the varKode will be built from all fastq files contained in each subfolder. Paired reads may be merged, simiarly to the `image` command. One model prediction will be made for each varKode (i. e. each subfolder)
+If the input folder contains subfolders and each subfolder contains one or more fastq files (gzipped or not), each subfolder will be considered an independent query and the varKode will be built from all fastq files contained in each subfolder. Paired reads may be merged, similar to the `image` command. One model prediction will be made for each varKode (i. e. each subfolder)
 
 ### varKodes
-If the input folder contains images in the `png` format, we will assume these are varKodes and use them directly in model prediction.
+If the input folder contains images in the `png` format and the option `--images` is used, we will assume these are varKodes and use them directly in model prediction. No sequence will be processed.
 
 ## Arguments
 
@@ -62,7 +62,7 @@ If the `--images` argument is used, `varKoder query` will not attempt to process
 ## Models
 If you trained your own model with `varKoder train`, you can use this model for making predictions by providing the path with the option `--model`.
 
-If you want to use a pytorch model from [Hugging Face hub](https://huggingface.co), you can provide the repository for this model using the same option (`--model`). The default model is a model pretrained on SRA data ([brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA))
+If you want to use a pytorch model from [Hugging Face hub](https://huggingface.co), you can provide the repository for this model using the same option (`--model`). The default model is a model pretrained on SRA data ([brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA)).
 
 ## Output
 
