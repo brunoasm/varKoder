@@ -6,7 +6,7 @@ This python script can generate varKodes from raw reads, which are images encodi
 
 For more information see the publication:
 
-``` Add paper here later ```
+``` Add paper/preprint when online ```
 
 ## Approach
 
@@ -39,7 +39,18 @@ It also uses a few external programs:
  - [dsk](https://github.com/GATB/dsk)
  - [pigz](https://zlib.net/pigz/)
 
-Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested:
+Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested. We also provide a docker image, which allows usage without installation, but has not been thoroughly tested yet. On macs, docker will probably not be able to use GPUs for training.
+
+### Docker
+
+First, install [Docker](https://www.docker.com/products/docker-desktop/) or [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html).
+
+Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varKoder` in all commands in this documentation.
+
+For example, to get help, you can run: 
+```bash
+docker run -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varKoder -h
+```
 
 ### Linux
 
@@ -81,6 +92,15 @@ rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 
 The latest SRA toolkit is required to run tests and examples, but not for basic varKoder functionality.On Macs, it is better to install it with Homebrew. See instructions here: https://formulae.brew.sh/formula/sratoolkit 
 
+### Test installation
+
+We provide scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html).
+
+To run the tests, navigate to the cloned `varKoder` repository in a terminal and run:
+```bash
+cd tests
+bash 01_download_fastqs.sh && bash 03_test_installation.sh
+```
 
 ## Usage
 
@@ -104,8 +124,17 @@ Follow these links for detailed information for each command:
 3. [Identifying and unknown sample with `varKoder.py query`](docs/query.md)
 
 
+## TLDR
+
+If you just want to predict labels for an unknown sequence file in fastq format in a Unix system, do the following steps:
+1. Install [docker](https://www.docker.com/products/docker-desktop/) and make sure it is running 
+2. Create a folder named `varkoder`, create a subfolder named `input` within it. Place some sequence files in fastq format within `input`
+3. Open a terminal, navigate to the folder `varkoder` that you created.
+4. Type `docker run -v $PWD:/home -v $TMPDIR:/tmp varKoder query input output`
+5. The directory `output` will be created, containing a csv file with predictions. Currently, the default model tries to predict NCBI taxonomic IDs at the family level.
+
 ## Author
 
-B. de Medeiros (Field Museum of Natural History), starting in 2019.
+Bruno A. S. de Medeiros (Field Museum of Natural History), starting in 2019. If using **varKoder**, please cite our publication on the top of this page.
 
 
