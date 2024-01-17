@@ -45,11 +45,11 @@ Here we provide installation instructions for Linux and OSX, the only systems in
 
 First, install [Docker](https://www.docker.com/products/docker-desktop/) or [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html).
 
-Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varKoder` in all commands in this documentation.
+Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder` in all commands in this documentation.
 
 For example, to get help, you can run: 
 ```bash
-docker run -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varKoder -h
+docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder -h
 ```
 
 ### Linux
@@ -130,7 +130,7 @@ If you just want to predict labels for an unknown sequence file in fastq format 
 1. Install [docker](https://www.docker.com/products/docker-desktop/) and make sure it is running 
 2. Create a folder named `varkoder`, create a subfolder named `input` within it. Place some sequence files in fastq format within `input`
 3. Open a terminal, navigate to the folder `varkoder` that you created.
-4. Type `docker run -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varKoder:latest query input output`
+4. Type `docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder:latest query input output`
 5. The directory `output` will be created, containing a csv file with predictions. Currently, the default model tries to predict NCBI taxonomic IDs at the family level.
 
 ## Author
