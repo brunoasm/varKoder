@@ -11,8 +11,9 @@ For more information see the publication:
 ## Approach
 
 With *varKoder*, we use very low coverage whole genome sequencing to produce images that represent the genome composition of a sample. These images look like this, for example:
-
-``` Add examples ```
+| Beetle | Bacteria | Mushroom |
+| ----- |  ----- | ----- |
+| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+k7.png)  |  
 
 We then use well-established image classification models to train a neural network using these images so it can learn to associate *varKodes* with labels associated with them. Often, these labels will be the known taxonomic identification of a sample, such as its species or genus. However, our approach is very general and the labels could include any other features of interest.
 
