@@ -91,6 +91,7 @@ Now you will be able to use the latest varKoder image available on [dockerhub](h
 
 For example, to get help, you can run: 
 ```bash
+[ -z "$TMPDIR" ] && TMPDIR=$(dirname $(mktemp -u -t tmp.XXXXXXXXXX))
 docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder -h
 ```
 
@@ -102,18 +103,18 @@ If you do not have `sudo` access to a computer, docker may not work. In this cas
     ```
 3. Run singularity image by replacing `varKoder` with:
    ```bash
-   singularity exec --no-home --cleanenv --nv  -B $(pwd):/home --pwd /home varKoder.sif varKoder
+   singularity exec --no-home --cleanenv --nv  -B $(pwd):/home -B /tmp:/tmp --pwd /home varKoder.sif varKoder
    ```
 
 For example, the command to get help would be:
 ```bash
-singularity exec --no-home --cleanenv --nv  -B $(pwd):/home --pwd /home varKoder.sif varKoder -h
+singularity exec --no-home --cleanenv --nv  -B $(pwd):/home -B /tmp:/tmp --pwd /home varKoder.sif varKoder -h
 ```
 
 
 ### Test installation
 
-We provide scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). 
+We provide scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). The test script also prints examples of **varKoder** usage for you to get more familiar with the software.
 
 To run the tests, navigate to the cloned `varKoder` repository in a terminal and run:
 ```bash
@@ -121,7 +122,10 @@ cd tests
 conda activate varKoder
 bash 01_download_fastqs.sh && bash 03_test_installation.sh
 ```
-The test data we are using was originally published by:
+
+This will download 50k paired-end reads for species of *Bembidion* from NCBI SRA and run the tests on them.
+
+The test data was originally published by:
 Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation of small specimens with low amounts of degraded DNA. Mol Ecol Resour. 2017 Nov;17(6):1183-1201. doi: [10.1111/1755-0998.12660](doi.org/10.1111/1755-0998.12660). Epub 2017 Mar 30. PMID: 28199781.
 
 
