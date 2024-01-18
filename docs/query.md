@@ -39,7 +39,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-t THRESHOLD`, `--threshold THRESHOLD`} | Threshold to make a prediction. This is the minimum confidence necessary (one a scale 0-1) for varKoder to predict a taxon or other label for a given sample. (default: 0.5) |
 | `-i INT_FOLDER`, `--int-folder INT_FOLDER` | folder to write intermediate files (clean reads and kmer counts). If ommitted, a temporary folder will be used. See *Output* below for details. |
 | `-m`, `--keep-images` |       save varKode image files. By default only predictions are saved and images are discarded. |
-| `-P`, `--include-probs` |   whether probabilities for each label should be included in the output. By default only prediction above threshold are report. Be careful, this can greatly increase output file size if there are many possible labels. | 
+| `-P`, `--include-probs` |   whether confidence scores for each label should be included in the output. By default, only predictions above threshold are report. Be careful, this can greatly increase output file size if there are many possible labels. | 
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See tips in `image` command  for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See tips in `image` command  for details.|
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See tips in `image` command for details. |
@@ -68,7 +68,7 @@ If you want to use a pytorch model from [Hugging Face hub](https://huggingface.c
 
 The main output is a table in `csv` format saved as `predictions.csv` in the output folder. The columns included depend on whether the model used for predictions is single-label or multi-label. In addition to this output table, varKodes produced from a raw reads input can be saved to the same folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
 
-By default, only the top prediction (if single-label) or predictions above threshold (if multi-label) are included in the table. To also include the predicted probability of all possible labels, use the argument `--include-probs`. CAUTION: if there are many possible labels in the trained model (for example, thousands) this can generate a very large output file.
+By default, only the top prediction (if single-label) or predictions above threshold (if multi-label) are included in the table. To also include the predicted confidence of all possible labels, use the argument `--include-probs`. CAUTION: if there are many possible labels in the trained model (for example, thousands) this can generate a very large output file.
 
 ### Multi-label:
 
