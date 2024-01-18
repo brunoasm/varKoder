@@ -4,7 +4,7 @@ A tool that uses **var**iation in **K**-mer frequecies as DNA barc**ode**s.
 
 This python program can generate varKodes from raw reads, which are images encoding the relative frequecies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
 
-For more information see the publication:
+For more information see the preprint:
 
 de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Anderson, C., and Davis, C.C. (2024). **A universal DNA barcode for the Tree of Life**. *EcoEvoRxiv*. https://doi.org/10.32942/X24891
 
@@ -113,13 +113,16 @@ singularity exec --no-home --cleanenv --nv  -B $(pwd):/home --pwd /home varKoder
 
 ### Test installation
 
-We provide scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html).
+We provide scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). 
 
 To run the tests, navigate to the cloned `varKoder` repository in a terminal and run:
 ```bash
 cd tests
 bash 01_download_fastqs.sh && bash 03_test_installation.sh
 ```
+Test data was originally published by:
+Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation of small specimens with low amounts of degraded DNA. Mol Ecol Resour. 2017 Nov;17(6):1183-1201. doi: [10.1111/1755-0998.12660](doi.org/10.1111/1755-0998.12660). Epub 2017 Mar 30. PMID: 28199781.
+
 
 ## Usage
 
