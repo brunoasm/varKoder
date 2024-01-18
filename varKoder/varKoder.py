@@ -5,6 +5,7 @@
 from varKoder.functions import *
 import argparse, pkg_resources
 
+version=pkg_resources.get_distribution("varKoder").version
 
 def main():
     # create top-level parser with common arguments
@@ -22,7 +23,7 @@ def main():
     parent_parser.add_argument(
         "-x", "--overwrite", help="overwrite existing results.", action="store_true"
     )
-
+    parent_parser.add_argument("-vv", "--version", action='version', version=f'%(prog)s {version}', help="prints varKoder version installed")
     # create parser for image command
     parser_img = subparsers.add_parser(
         "image",
