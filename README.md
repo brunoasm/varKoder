@@ -120,7 +120,7 @@ To run the tests, navigate to the cloned `varKoder` repository in a terminal and
 cd tests
 bash 01_download_fastqs.sh && bash 03_test_installation.sh
 ```
-Test data was originally published by:
+The test data we are using was originally published by:
 Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation of small specimens with low amounts of degraded DNA. Mol Ecol Resour. 2017 Nov;17(6):1183-1201. doi: [10.1111/1755-0998.12660](doi.org/10.1111/1755-0998.12660). Epub 2017 Mar 30. PMID: 28199781.
 
 
