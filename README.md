@@ -2,11 +2,11 @@
 
 A tool that uses **var**iation in **K**-mer frequecies as DNA barc**ode**s.
 
-This python script can generate varKodes from raw reads, which are images encoding the relative frequecies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
+This python program can generate varKodes from raw reads, which are images encoding the relative frequecies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
 
 For more information see the publication:
 
-``` Add paper/preprint when online ```
+de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Anderson, C., and Davis, C.C. (2024). **A universal DNA barcode for the Tree of Life**. *EcoEvoRxiv*. https://doi.org/10.32942/X24891
 
 ## Approach
 
@@ -39,18 +39,7 @@ It also uses a few external programs:
  - [dsk](https://github.com/GATB/dsk)
  - [pigz](https://zlib.net/pigz/)
 
-Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested. We also provide a docker image, which allows usage without installation, but has not been thoroughly tested yet. On macs, docker will probably not be able to use GPUs for training.
-
-### Docker
-
-First, install [Docker](https://www.docker.com/products/docker-desktop/) or [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html).
-
-Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder` in all commands in this documentation.
-
-For example, to get help, you can run: 
-```bash
-docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder -h
-```
+Here we provide installation instructions for Linux and OSX, the only systems in which the program has been tested. We also provide a docker image, which allows usage without installation, but has not been thoroughly tested yet. On macs, docker will probably not be able to use GPUs for training or querying.
 
 ### Linux
 
@@ -90,7 +79,37 @@ cd ..
 rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 ```
 
-The latest SRA toolkit is required to run tests and examples, but not for basic varKoder functionality.On Macs, it is better to install it with Homebrew. See instructions here: https://formulae.brew.sh/formula/sratoolkit 
+The latest SRA toolkit is required to run tests and examples, but not for basic varKoder functionality. On Macs, it is currently better to install it with Homebrew. See instructions here: https://formulae.brew.sh/formula/sratoolkit 
+
+### Docker
+
+To use varKoder without installing it locally, you can run it through the docker image.
+
+First, install [Docker](https://www.docker.com/products/docker-desktop/) or [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html).
+
+Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder` in all commands in this documentation.
+
+For example, to get help, you can run: 
+```bash
+docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder -h
+```
+
+If you do not have `sudo` access to a computer, docker may not work. In this case, you can install singularity and pull the docker image. It is a 2-step process:
+
+1. Pull docker image and convert to singularity SIF format: 
+    ```bash
+    singularity pull varKoder.sif docker://brunoasm/varkoder
+    ```
+3. Run singularity image by replacing `varKoder` with:
+   ```bash
+   singularity exec --no-home --cleanenv --nv  -B $(pwd):/home --pwd /home varKoder.sif varKoder
+   ```
+
+For example, the command to get help would be:
+```bash
+singularity exec --no-home --cleanenv --nv  -B $(pwd):/home --pwd /home varKoder.sif varKoder -h
+```
+
 
 ### Test installation
 
