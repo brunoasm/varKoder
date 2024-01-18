@@ -26,15 +26,19 @@ case $choice in
         ;;
 esac
 
+echo "$color How many cores you have available for computing? Type the number and hit enter:$reset"
+
+read -p "Enter number of cores: " NCORES
+
 # Test local installation with image, train and query commands
-echo "$color$prefix $IM_CMD$reset"
-prepend_text IM $prefix $IM_CMD
+echo "$color$prefix $IM_CMD -n $NCORES$reset"
+prepend_text IM $prefix $IM_CMD -n $NCORES
 
-echo -e "$color$prefix $T1_CMD$reset"
-prepend_text T1 $prefix $T1_CMD
+echo -e "$color$prefix $T1_CMD -n $NCORES$reset"
+prepend_text T1 $prefix $T1_CMD -n $NCORES
 
-echo -e "$color$prefix $T2_CMD$reset"
-prepend_text T2 $prefix $T2_CMD
+echo -e "$color$prefix $T2_CMD -n $NCORES$reset"
+prepend_text T2 $prefix $T2_CMD -n $NCORES
 
 #create a query folder with validation samples
 while IFS=, read -r _ sample _ _ _ _ is_valid; do
@@ -51,11 +55,11 @@ while IFS=, read -r _ sample _ _ _ _ is_valid; do
     fi
 done < trained_pretrained/input_data.csv
 
-echo -e "$color$prefix $Q1_CMD$reset"
-prepend_text Q1 $prefix $Q1_CMD
+echo -e "$color$prefix $Q1_CMD -n $NCORES$reset"
+prepend_text Q1 $prefix $Q1_CMD -n $NCORES
 
-echo -e "$color$prefix $Q2_CMD$reset"
-prepend_text Q2 $prefix $Q2_CMD
+echo -e "$color$prefix $Q2_CMD -n $NCORES$reset"
+prepend_text Q2 $prefix $Q2_CMD -n $NCORES
 
 echo "${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
