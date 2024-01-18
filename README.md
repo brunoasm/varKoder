@@ -126,6 +126,7 @@ bash 01_download_fastqs.sh && bash 03_test_installation.sh
 This will download 50k paired-end reads for species of *Bembidion* from NCBI SRA and run the tests on them.
 
 The test data was originally published by:
+
 Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation of small specimens with low amounts of degraded DNA. Mol Ecol Resour. 2017 Nov;17(6):1183-1201. doi: [10.1111/1755-0998.12660](doi.org/10.1111/1755-0998.12660). Epub 2017 Mar 30. PMID: 28199781.
 
 
@@ -162,6 +163,8 @@ If you just want to predict labels for an unknown sequence file in fastq format 
 
 ## Author
 
-Bruno A. S. de Medeiros (Field Museum of Natural History), starting in 2019. If using **varKoder**, please cite our publication on the top of this page.
+Bruno A. S. de Medeiros (Field Museum of Natural History), starting in 2019. 
+
+If using **varKoder**, please cite our publication on the top of this page.
 
 
