@@ -118,7 +118,7 @@ We provide scripts to test the installation using `image`, `train` and `query` c
 To run the tests, navigate to the cloned `varKoder` repository in a terminal and run:
 ```bash
 cd tests
-conda acgivate varKoder
+conda activate varKoder
 bash 01_download_fastqs.sh && bash 03_test_installation.sh
 ```
 The test data we are using was originally published by:
