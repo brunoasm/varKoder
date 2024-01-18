@@ -32,6 +32,7 @@ There are two modes of training:
 | -h, --help | show help message and exit |
 | -d SEED, --seed SEED | random seed passed to `pytorch`. |
 | -x , --overwrite | overwrite existing results. |
+| `-vv`, `--version` |  shows varKoder version. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |
 | -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. By default, varKoder will attempt to read labels from image metadata. |
 | -S, --single-label  |  Train as a single-label image classification model. This option must be combined with --ignore-quality. By default, models are trained as multi-label. |

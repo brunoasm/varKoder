@@ -28,6 +28,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-h`, `--help` | show help message and exit. |
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-x` `--overwrite` | overwrite results. | 
+| `-vv`, `--version` |  shows varKoder version. |
 | `-l MODEL`, `--model MODEL` | either to path pickle file with exported trained model or name of HuggingFace hub model to pull (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-p`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 

@@ -131,6 +131,7 @@ Note:
 | `-h`, `--help` | show help message and exit. |
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
+| `-vv`, `--version` |  shows varKoder version. |
 | `-x`, `--overwrite` | overwrite existing results. By default samples are skipped if files exist. |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | length of kmers to count. Lengths from 5 to 9 are supported at the moment. (default: 7) |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips below on usage. (default: 1) |
