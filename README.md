@@ -131,7 +131,7 @@ Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation 
 
 ## Usage
 
-varKoder is run as a python script. For example, assuming that the script is in a folder named `varKoder`, you can the program help by using:
+varKoder is run as a python script. For example, assuming that the script is in a folder named `varKoder`, you can get help by using:
 
 ```bash
 varKoder -h
