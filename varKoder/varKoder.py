@@ -379,6 +379,13 @@ def main():
     # execution
     args = main_parser.parse_args()
 
+    # check if input directory exists
+    
+    if not Path(args.input).exists():
+        raise Exception("Input path", args.input, "does not exist. Please check.")
+    elif not Path(args.input).is_dir():
+        raise Exception("Input path", args.input, "is not a directory. Please check.")
+
     # set random seed
     try:
         set_seed(args.seed)
@@ -622,7 +629,7 @@ def main():
 
         outdir = Path(args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
-        output_df.to_csv(outdir / "predictions.csv")
+        output_df.to_csv(outdir / "predictions.csv", index=False)
 
     ###################
     # train command
@@ -829,7 +836,7 @@ def main():
         learn.export(outdir / "trained_model.pkl")
         with open(outdir / "labels.txt", "w") as outfile:
             outfile.write("\n".join(learn.dls.vocab))
-        image_files.to_csv(outdir / "input_data.csv")
+        image_files.to_csv(outdir / "input_data.csv",index=False)
 
         eprint("Model, labels, and data table saved to directory", str(outdir))
 

@@ -980,7 +980,8 @@ def process_stats(
             .assign(labels=lambda x: x["labels"].apply(lambda y: labels_sep.join(y)))
         )
         merged_data[["sample", "labels", "possible_low_quality"]].to_csv(
-            images_d / "labels.csv"
+            images_d / "labels.csv" ,
+            index = False
         )
 
 
