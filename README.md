@@ -131,7 +131,7 @@ Sproul JS, Maddison DR. Sequencing historical specimens: successful preparation 
 
 ## Usage
 
-varKoder is run as a python script. For example, assuming that the script is in a folder named `varKoder`, you can get help by using:
+varKoder is installed to your conda environment using the instructions above and can be run directly. For example, to get help:
 
 ```bash
 varKoder -h
