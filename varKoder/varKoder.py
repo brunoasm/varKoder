@@ -383,8 +383,8 @@ def main():
     
     if not Path(args.input).exists():
         raise Exception("Input path", args.input, "does not exist. Please check.")
-    elif not Path(args.input).is_dir():
-        raise Exception("Input path", args.input, "is not a directory. Please check.")
+    #elif not Path(args.input).is_dir():
+    #    raise Exception("Input path", args.input, "is not a directory. Please check.")
 
     # set random seed
     try:
