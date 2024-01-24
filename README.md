@@ -158,7 +158,7 @@ If you just want to predict labels for an unknown sequence file in fastq format 
 2. Create a folder named `varkoder`, create a subfolder named `input` within it. Place some sequence files in fastq format within `input`
 3. Open a terminal, navigate to the folder `varkoder` that you created.
 4. Type `docker run --platform linux/amd64 -v $PWD:/home -v $TMPDIR:/tmp brunoasm/varkoder:latest query --threshold 0.7 input output`
-5. The directory `output` will be created, containing a csv file with predictions. Currently, the default model tries to predict NCBI taxonomic IDs at the family level, and training has been done with Illumina data only.
+5. The directory `output` will be created, containing a csv file with predictions. Currently, the default model tries to predict NCBI taxonomic IDs at the family level, and training has been done with Illumina data only. See more information here: https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA
    
    If you get no predictions back, try adjusting the threshold down. If you get ambiguous predictions, try adjusting it up. Threshold is the minimum confidence that you  choose for a prediction, varying from 0 to 1. Low thresholds increase sensitivity but lead to more false positives.
 
