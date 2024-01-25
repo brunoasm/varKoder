@@ -378,17 +378,28 @@ def clean_reads(
             "--stdout",
         ] + extra_command
 
+        try:
+            with open(Path(work_dir) / (basename + "_clean_paired.fq"), "wb") as outf:
+                p = subprocess.run(
+                    command,
+                    check=True,
+                    stderr=subprocess.PIPE,
+                    stdout=outf,
+                )
+                if verbose:
+                    eprint(p.stderr.decode())
+                (Path(work_dir) / (basename + "_paired.fq")).unlink(missing_ok=True)
+        except subprocess.CalledProcessError as e:
+            eprint("fastp failed with paired reads, treating them as unpaired")
 
-        with open(Path(work_dir) / (basename + "_clean_paired.fq"), "wb") as outf:
-            p = subprocess.run(
-                command,
-                check=True,
-                stderr=subprocess.PIPE,
-                stdout=outf,
-            )
-            if verbose:
-                eprint(p.stderr.decode())
-            (Path(work_dir) / (basename + "_paired.fq")).unlink(missing_ok=True)
+            with open((Path(work_dir) / (basename + "_unpaired.fq")),"a") as unpair_f:
+                with open(Path(work_dir) / (basename + "_R1.fq"),"r") as pair_f:
+                    for line in pair_f:
+                        unpair_f.write(line)
+                with open(Path(work_dir) / (basename + "_R2.fq"),"r") as pair_f:
+                    for line in pair_f:
+                        unpair_f.write(line)
+
 
     # and remove adapters from unpaired reads, if any
     if (Path(work_dir) / (basename + "_unpaired.fq")).is_file():

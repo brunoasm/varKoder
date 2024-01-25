@@ -433,6 +433,7 @@ def main():
             if Path(args.outdir).is_dir():
                 shutil.rmtree(Path(args.outdir))
 
+        eprint("varKoder",version)
         eprint("Kmer size:", str(args.kmer_size))
         eprint("Processing reads and preparing images")
         eprint("Reading input data")
