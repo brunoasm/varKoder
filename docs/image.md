@@ -146,6 +146,7 @@ Note:
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See notes below for details. |
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See notes below for details. |
 | `-X`, `--no-image` |       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
+| `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. (default: 10,10) |
 
 ## Image command tips
 
