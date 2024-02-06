@@ -121,7 +121,7 @@ def main():
     parser_img.add_argument(
         "-T",
         "--trim-bp",
-        help="number of base pairs to trim from the beggining and and of reads, separated by comma.",
+        help="number of base pairs to trim from the start and end of each read, separated by comma.",
         default="10,10"
     )
 
@@ -372,7 +372,7 @@ def main():
     parser_query.add_argument(
         "-T",
         "--trim-bp",
-        help="number of base pairs to trim from the beggining and and of reads, separated by comma.",
+        help="number of base pairs to trim from the start and end of each read, separated by comma.",
         default="10,10"
     )
     parser_query.add_argument(
