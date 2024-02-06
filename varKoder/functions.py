@@ -221,6 +221,7 @@ def clean_reads(
     cut_adapters=True,
     merge_reads=True,
     deduplicate=True,
+    trim_bp=(0,0),
     max_bp=None,
     threads=1,
     overwrite=False,
@@ -351,7 +352,7 @@ def clean_reads(
         extra_command.extend(["--dedup", "--dup_calc_accuracy", "1"])
     else:
         extra_command.extend(["--dont_eval_duplication"])
-    eprint(f"Preprocessing {basename}: {', '.join(act_list)}")
+    eprint(f"Preprocessing {basename}: {', '.join(act_list)}. Trimming (front,tail): {trim_bp}")
 
 
 
@@ -376,6 +377,10 @@ def clean_reads(
             "--json",
             str(Path(work_dir) / (basename + "_fastp_paired.json")),
             "--stdout",
+            "--trim_front1",
+            str(trim_bp[0]),
+            "--trim_tail1",
+            str(trim_bp[1]),
         ] + extra_command
 
         try:
@@ -390,7 +395,7 @@ def clean_reads(
                     eprint(p.stderr.decode())
                 (Path(work_dir) / (basename + "_paired.fq")).unlink(missing_ok=True)
         except subprocess.CalledProcessError as e:
-            eprint("fastp failed with paired reads, treating them as unpaired")
+            eprint(f"{basename}: fastp failed with paired reads, treating them as unpaired")
 
             with open((Path(work_dir) / (basename + "_unpaired.fq")),"a") as unpair_f:
                 with open(Path(work_dir) / (basename + "_R1.fq"),"r") as pair_f:
@@ -421,6 +426,10 @@ def clean_reads(
             "--trim_poly_g",
             "--thread",
             str(threads),
+            "--trim_front1",
+            str(trim_bp[0]),
+            "--trim_tail1",
+            str(trim_bp[1]),
         ] + extra_command
 
         p = subprocess.run(
@@ -821,6 +830,7 @@ def run_clean2img(
             cut_adapters=args.no_adapter is False,
             merge_reads=args.no_merge is False,
             deduplicate=args.no_deduplicate is False,
+            trim_bp=args.trim_bp.split(','),
             max_bp=maxbp,
             threads=cores_per_process,
             overwrite=args.overwrite,

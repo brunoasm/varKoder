@@ -118,6 +118,12 @@ def main():
         help="clean and split raw reads, but do not generate image.",
         action="store_true",
     )
+    parser_img.add_argument(
+        "-T",
+        "--trim-bp",
+        help="number of base pairs to trim from the beggining and and of reads, separated by comma.",
+        default="10,10"
+    )
 
     # create parser for train command
     parser_train = subparsers.add_parser(
@@ -362,6 +368,12 @@ def main():
         "--no-deduplicate",
         help="do not attempt to remove duplicates in raw reads.",
         action="store_true",
+    )
+    parser_query.add_argument(
+        "-T",
+        "--trim-bp",
+        help="number of base pairs to trim from the beggining and and of reads, separated by comma.",
+        default="10,10"
     )
     parser_query.add_argument(
         "-M",
