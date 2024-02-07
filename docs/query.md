@@ -44,13 +44,13 @@ If the input folder contains images in the `png` format and the option `--images
 | `-a`, `--no-adapter` |      do not attempt to remove adapters from raw reads. See tips in `image` command  for details. |
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See tips in `image` command  for details.|
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See tips in `image` command for details. |
-| `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. (default: 10,10) |
+| `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. This is applied to both forward and reverse reads in the case of paired ends.  (default: 10,10) |
 | `-M MAX_BP`, `--max-bp MAX_BP` | maximum number of post-cleaning basepairs to make an image. By default this is all the data available for each sample. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp) |
 | `-b MAX_BATCH_SIZE`, `--max-batch-size MAX_BATCH_SIZE` | maximum batch size when using GPU for prediction. (default: 64) |
 
 ## Query command tips
 
-The query command preprocesses samples to generate varKode images and then predicts their taxonomy by using a pretrained neural network. See `image` command tips for options  `--no-merge`, `--no-adapter`, `--stats-file`, `--int-folder` , `--no-deduplicate`, `--cpus-per-thread` and `--kmer-size`.
+The query command preprocesses samples to generate varKode images and then predicts their taxonomy by using a pretrained neural network. See [image](image.md) command tips for options  `--no-merge`, `--no-adapter`, `--stats-file`, `--int-folder` , `--no-deduplicate`, `--trim-bp`, `--cpus-per-thread` and `--kmer-size`.
 
 If `--max-bp` is less than the data available for a sample, *varKoder* will ramdomly choose reads to include. If it is more than the data available for a sample, this sample will be skipped.
 
