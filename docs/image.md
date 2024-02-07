@@ -104,7 +104,7 @@ genus:Acridocarpus,macrocalyx_176,176_GGACATGACCGG.R1.fastq.gz
 species:macrocalyx,macrocalyx_176,176_GGACATGACCGG.R2.fastq.gz
 ```
 
-In this case, the model will try to predict both the genus and the species for each sample. You do not need to provide multiple labels per sample, or explicitly include taxonomic level. If you only wants to predict genera, for example, this would work:
+In this case, the model will try to predict both the genus and the species for each sample. You do not need to provide multiple labels per sample, and label format is free, as long as they do not include ```;```. If you only want to predict genera, for example, you could ommit the taxonomic rank:
 
 ```csv
 labels,sample,files
@@ -146,6 +146,7 @@ Note:
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See notes below for details. |
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See notes below for details. |
 | `-X`, `--no-image` |       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
+| `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. This is applied to both forward and reverse reads in the case of paired ends. (default: 10,10) |
 
 ## Image command tips
 
@@ -155,9 +156,9 @@ The defaults for optional arguments were chosen based on our sets. Here are some
  
  2. If `--max-bp` is set, `varKoder` first truncates raw read files to 5 times the value of `--max-bp`. This can speed up raw read cleaning and kmer counting, but it means that subsampled files are randomly chosen from the reads available in this trimmed raw read files, not the whole initial raw reads.
 
- 3. `--no-deduplicate`, `--no-merge` and `--no-adpater`. We have not extensively tested the effect of skipping adapter trimming, deduplication and merging of overlapping reads. It may be the case that these preprocessing steps are unnecessary and you can speed up computation by using these arguments and skipping these steps.
+ 3. `--no-deduplicate`, `--no-merge`, `--no-adpater`, `--trim-bp`. We have not extensively tested the effect of skipping adapter trimming, deduplication and merging of overlapping reads, or of sequence trimming. It may be the case that these preprocessing steps are unnecessary and you can speed up computation by using these arguments and skipping these steps. That said, fastp is extremely efficient, so the overhead added is minimal. 
 
- 4. If `--n-threads` is more than 1, `varKoder` will use Python `multiprocessing` library to do sample preprocessing in parallel (i. e. clean, split raw reads and generate images). If `-cpus-per-thread` is more than one, the number of CPUs will be passed to subprograms (i. e. `fastp`, `dsk`, `bbtools`) when processing a sample: this is the number of cores dedicated to each sample. So a user can select to parallelize computing for each sample, or to do more than one sample in parallel, or both. We have not extensively tested the potential speed ups of each method.
+ 4. If `--n-threads` is more than 1, `varKoder` will use Python `multiprocessing` library to do sample preprocessing in parallel (i. e. clean, split raw reads and generate images). If `-cpus-per-thread` is more than one, the number of CPUs will be passed to subprograms (i. e. `fastp`, `dsk`, `bbtools`) when processing a sample: this is the number of cores dedicated to each sample. So a user can select to parallelize computing for each sample, or to do more than one sample in parallel, or both. We have not extensively tested the potential speed-ups of each method.
 
 
 ## Output
