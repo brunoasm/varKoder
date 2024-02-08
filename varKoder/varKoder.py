@@ -853,6 +853,8 @@ def main():
 
         eprint("Model, labels, and data table saved to directory", str(outdir))
 
+    if not args.int_folder and inter_dir.is_dir(): 
+        shutil.rmtree(inter_dir)
     eprint("DONE")
 
 
