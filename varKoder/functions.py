@@ -59,25 +59,6 @@ warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
-# This functions returns True if input file has at least 8 lines (i. e. two reads in fastq format)
-def fastq_with_2plus_reads(infile):
-    line_count = 0
-    # Attempt to open as a gzipped file
-    try:
-        with gzip.open(infile, 'rt') as f:  # 'rt' mode for text mode reading
-            for _ in f:
-                line_count += 1
-                if line_count >= 8:  # Checking for at least 2 reads
-                    return True
-    except gzip.BadGzipFile:
-        # If not gzipped, read as a regular file
-        with open(infile, 'r') as f:
-            for _ in f:
-                line_count += 1
-                if line_count >= 8:
-                    return True
-    return False  # Less than 8 lines means fewer than 2 reads
-
 # this function process the input file or folder and returns a table with files
 def process_input(inpath, is_query=False, no_pairs=False):
     # first, check if input is a folder
@@ -614,24 +595,7 @@ def split_fastq(
             stdout=subprocess.DEVNULL,
             check=True,
         )
-        # if not fastq_with_2plus_reads(outfile):
-        #     if verbose:
-        #         eprint(f"reformat.sh generated a fastq file with less than 2 reads for {infile}. This is probably due to no reads shorter than {bp} basepairs, but may cause problems downstream. We will sample two random reads, regardless of length.")
-        #     command = [
-        #         "reformat.sh",
-        #         "samplereadstarget=2",
-        #         "sampleseed=" + str(int(seed) + i),
-        #         "in=" + str(infile),
-        #         "out=" + str(outfile),
-        #         "overwrite=true",
-        #     ]
-        #     p = subprocess.run(
-        #     command,
-        #     stderr=subprocess.PIPE,
-        #     stdout=subprocess.DEVNULL,
-        #     check=True,
-        #     )  
-        #     eprint(' '.join(command))
+
         if verbose:
             eprint(p.stderr.decode())
 
