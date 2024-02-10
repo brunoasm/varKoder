@@ -87,7 +87,7 @@ To use varKoder without installing it locally, you can run it through the docker
 
 First, install [Docker](https://www.docker.com/products/docker-desktop/) or [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html).
 
-Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com) by replacing `varKoder` with `docker run --platform linux/amd64 -v $PWD:/home -v /tmp:/tmp brunoasm/varkoder` in all commands in this documentation.
+Now you will be able to use the latest varKoder image available on [dockerhub](https://hub.docker.com/r/brunoasm/varkoder) by replacing `varKoder` with `docker run --platform linux/amd64 -v $PWD:/home -v /tmp:/tmp brunoasm/varkoder` in all commands in this documentation.
 
 For example, to get help, you can run: 
 ```bash
