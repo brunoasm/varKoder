@@ -1,14 +1,16 @@
 # Start from the cuda base image
 FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
 
-# Copy the varKoder repository contents
+# Install dependencies
+COPY ./conda_environments/docker.yml docker.yml
+
+RUN conda env update -n base --file docker.yml && \
+    conda clean --all -f -y
+
+# Install varKoder
 COPY . /varKoder
 
-# Install conda packages
-RUN conda install -n base conda-forge::mamba && \
-    mamba env update -n base --file /varKoder/conda_environments/docker.yml && \
-    mamba clean --all -f -y && \ 
-    conda run pip install -e /varKoder
+RUN conda run pip install --no-deps --no-cache-dir -e /varKoder
 
 #Set workdir
 WORKDIR /home
