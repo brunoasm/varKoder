@@ -769,7 +769,7 @@ def make_image(
 
 # Function: read stats file:
 def read_stats(stats_path):
-    return pd.read_csv(stats_path, index_col=[0], dtype={0: str}).to_dict(
+    return pd.read_csv(stats_path, index_col=[0], dtype={0: str}, low_memory=False).to_dict(
         orient="index"
     )
 
