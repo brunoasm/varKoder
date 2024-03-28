@@ -457,6 +457,8 @@ def main():
             is_query=args.command == "query", 
             no_pairs=args.command == "query" and getattr(args, 'no_pairs', False)
         )
+        if condensed_files.shape[0] == 0:
+            raise Exception("No files found in input. Please check.")
             
 
         ### We will save statistics in a dictionary and then output as a table
