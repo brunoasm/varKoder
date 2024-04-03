@@ -468,7 +468,7 @@ def main():
         stats_path = Path(args.stats_file)
         if stats_path.exists():
             all_stats.update(
-                    pd.read_csv(stats_path, index_col=[0],dtype={0:str}).to_dict(orient="index")
+                    pd.read_csv(stats_path, index_col=[0],dtype={0:str},low_memory=False).to_dict(orient="index")
             )
 
         ### the same kmer mapping will be used for all files, so we will use it as a global variable
