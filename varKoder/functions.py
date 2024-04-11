@@ -9,6 +9,7 @@ from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 from sklearn.exceptions import UndefinedMetricWarning
 
 import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools, hashlib
+import pandas.errors
 import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from math import log
 
@@ -431,11 +432,18 @@ def clean_reads(
             str(trim_bp[1]),
         ] + extra_command
 
-        p = subprocess.run(
+        try:
+            p = subprocess.run(
             command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True
-        )
-        if verbose:
-            eprint(p.stderr.decode())
+            )
+
+            if verbose:
+                eprint(p.stderr.decode())
+
+        except subprocess.CalledProcessError as e:
+            eprint(f"{basename}: fastp failed with unpaired reads")
+            raise
+
         (Path(work_dir) / (basename + "_unpaired.fq")).unlink(missing_ok=True)
 
     # now that we finished cleaning, let's compress and move the final file to their destination folder
@@ -941,7 +949,7 @@ def run_clean2img(
                     base_sd=base_sd,
                     subfolder_levels=subfolder_levels
                 )
-            except IndexError as e:
+            except (IndexError, pandas.errors.ParserError) as e:
                 eprint("IMAGE FAIL:", infile)
                 if args.verbose:
                     eprint(e)
