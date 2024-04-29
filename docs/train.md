@@ -34,7 +34,7 @@ There are two modes of training:
 | -x , --overwrite | overwrite existing results. |
 | `-vv`, `--version` |  shows varKoder version. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |
-| -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. By default, varKoder will attempt to read labels from image metadata. |
+| -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. This table must have columns `sample` and `labels`. Labels are passed as a string, with multiple labels separated by `;`. By default, varKoder will attempt to read labels from image metadata instead of a label table. |
 | -S, --single-label  |  Train as a single-label image classification model. This option must be combined with --ignore-quality. By default, models are trained as multi-label. |
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
