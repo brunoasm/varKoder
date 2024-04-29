@@ -676,7 +676,8 @@ def main():
         if args.label_table_path:
             image_files = pd.DataFrame(image_files).merge(
                 pd.read_csv(args.label_table_path)[
-                    ["sample", "labels", "possible_low_quality"]
+                     ["sample", "labels"]
+                    #["sample", "labels", "possible_low_quality"]
                 ],
                 on="sample",
                 how="left",
