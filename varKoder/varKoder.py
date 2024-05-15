@@ -3,7 +3,7 @@
 
 # import functions and libraries
 from varKoder.functions import *
-import argparse, pkg_resources
+import argparse
 
 version=pkg_resources.get_distribution("varKoder").version
 
@@ -45,6 +45,10 @@ def main():
     parser_img.add_argument(
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
+    parser_img.add_argument(
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = ['varKode', 'cgr', 'cgrc']
+    )
+    
     parser_img.add_argument(
         "-n",
         "--n-threads",
@@ -471,11 +475,8 @@ def main():
                     pd.read_csv(stats_path, index_col=[0],dtype={0:str},low_memory=False).to_dict(orient="index")
             )
 
-        ### the same kmer mapping will be used for all files, so we will use it as a global variable
-        map_path = pkg_resources.resource_filename(
-            "varKoder", f"kmer_mapping/{args.kmer_size}mer_mapping.parquet"
-        )
-        kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
+        ### the same kmer mapping will be used for all files, so we will use it as a global variable to decrease overhead
+        kmer_mapping = get_kmer_mapping(args.kmer_size, args.kmer_mapping)
 
         # check if we will need multiple subfolder levels
         # this will ensure we have about 1000 samples per subfolder

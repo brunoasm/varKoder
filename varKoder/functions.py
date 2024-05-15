@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 # imports used for all commands
+import pkg_resources
+import traceback
 from pathlib import Path
 from collections import OrderedDict, defaultdict
 
@@ -8,7 +10,7 @@ from io import StringIO
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 from sklearn.exceptions import UndefinedMetricWarning
 
-import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools, hashlib
+import pandas as pd, numpy as np, itertools, tempfile, shutil, subprocess, functools, hashlib
 import pandas.errors
 import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from math import log
@@ -41,7 +43,6 @@ from timm import create_model
 from timm.loss import AsymmetricLossMultiLabel
 from huggingface_hub import from_pretrained_fastai
 
-
 # define filename separators
 label_sample_sep = "+"
 labels_sep = ";"
@@ -51,7 +52,6 @@ qual_thresh = 0.01
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
-
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 
@@ -677,15 +677,100 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
 
     return stats
 
+# This function returns the coordinates of kmers according to chaos game representation
+# for a given kmer_size
+# If include_rc is False, then only canonical kmers are included, 
+#### reverse complements are skipped and the representation is
+#### reduced in size to the smallest square needed
+def get_cgr(kmer_size, include_rc = True):
+
+    corners = np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)
+
+    nucleotides = np.array([0, 1, 2, 3], dtype=np.uint8)  # A, C, G, T
+    all_sequences = np.array(np.meshgrid(*[nucleotides]*kmer_size)).T.reshape(-1, kmer_size)
+
+    rev_sequences = all_sequences[:, ::-1]  # Reverse the sequences
+    rev_complement = 3 - rev_sequences      # Compute reverse complement
+
+    less_than = all_sequences < rev_complement
+    greater_than = all_sequences > rev_complement
+    diff = less_than | greater_than
+    first_diff_index = np.argmax(diff, axis=1)
+    is_lex_less = less_than[np.arange(len(all_sequences)), first_diff_index]
+ 
+    canonical_sequences = np.where(is_lex_less[:, np.newaxis], all_sequences, rev_complement)
+    
+    if not include_rc:
+        canonical_sequences,can_idx = np.unique(canonical_sequences, axis=0, return_index = True)
+        all_sequences = all_sequences[can_idx]
+        
+
+    # Calculate CGR coordinates using vectorized operations
+    coords = np.full((all_sequences.shape[0], 2), 0.5)  # Start coordinates (x, y) at the center
+    for i in range(kmer_size):
+        coords = (coords + corners[all_sequences[:, i]]) / 2
+
+    # Convert integer sequences back to string for display
+    nucleotide_map = np.array(['A', 'C', 'G', 'T'])
+    sequences_str = [''.join(nucleotide_map[seq]) for seq in canonical_sequences]
+    df = pd.DataFrame({
+                      'x': coords[:, 0],
+                      'y': coords[:, 1]
+                      }, index=sequences_str)
+
+    # Replace coords with integer numbers and 1-indexed for compatibility with varKodes
+    # sq_side is needed in case we are skipping reverse complements
+    n_kmers = df.shape[0]
+    sq_side = math.ceil(math.sqrt(n_kmers))
+    df = (df.sort_values(by=['x', 'y'])
+              .assign(x=lambda w: np.repeat(np.arange(sq_side), sq_side)[:len(w)] + 1,
+                      y=lambda w: np.tile(np.arange(sq_side), sq_side)[:len(w)] + 1)
+         )
+    
+
+    return df
+
+
+
+
+# This function returns a table mapping specific kmers of size kmer-size to
+# a x and y coordinates in a square grid
+# method options: varkode, cgr, cgrc
+# cgr: chaos game representation (duplicating canonical to include reverse complements)
+# cgrc: chaos game representation canonical, skipping reverse complements
+def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
+
+
+    if method == 'varKode':
+        map_path = pkg_resources.resource_filename(
+            "varKoder", f"kmer_mapping/{kmer_size}mer_mapping.parquet"
+        )
+        kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
+    elif method == 'cgr':
+        kmer_mapping = get_cgr(kmer_size, include_rc = True)
+    elif method == 'cgrc':
+        kmer_mapping = get_cgr(kmer_size, include_rc = False)
+    else:
+        raise Exception('method must be "varKode", "cgr" or "cgrc"')
+
+    return kmer_mapping
+
+
+
+
+
+
+
 
 # given an input dsk hdf5 file, make an image with kmer counts
-# mapping is the path to the table in parquet format that relates kmers to their positions in the image
+# kmer_mapping is the instruction of which mapping to use:
+### * k+
 # we do not need to save the ascii dsk kmer counts to disk, but the program requires a file
 # so we will create a temporary file and delete it
 def make_image(
     infile,
     outfolder,
-    kmers,
+    kmer_mapping,
     threads=1,
     overwrite=False,
     verbose=False,
@@ -694,6 +779,9 @@ def make_image(
     base_sd_thresh=qual_thresh,
     subfolder_levels=0
 ):
+    
+    
+    
     outfile = Path(infile).name.removesuffix("".join(Path(infile).suffixes)) + ".png"
     if subfolder_levels:
         hsh = list(hashlib.md5(outfile.encode("UTF-8")).hexdigest())
@@ -707,7 +795,7 @@ def make_image(
         return OrderedDict()
 
     start_time = time.time()
-    kmer_size = len(kmers.index[0])
+    kmer_size = len(kmer_mapping.index[0])
 
     with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
         # first, dump dsk results as ascii, save in a pandas df and merge with mapping
@@ -742,12 +830,12 @@ def make_image(
         counts = pd.read_csv(
             StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
         )
-        counts = kmers.join(counts).groupby(["x", "y"]).agg("sum").reset_index()
+        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("sum").reset_index()
         counts.loc[:, "count"] = counts["count"].fillna(0)
 
         # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
-        array_width = kmers["x"].max()
-        array_height = kmers["y"].max()
+        array_width = kmer_mapping["x"].max()
+        array_height = kmer_mapping["y"].max()
 
         # Now let's create the image:
         kmer_array = np.zeros(shape=[array_height, array_width])
@@ -937,11 +1025,14 @@ def run_clean2img(
                 Path(inter_dir, "clean_reads").glob(str(x["sample"]) + "_fastp_*.json")
             )
             stats[str(x["sample"])]["base_frequencies_sd"] = base_sd
+            kmer_mapping = get_kmer_mapping(
+                kmer_size = args.kmer_size,
+                method = args.kmer_mapping)     
             try:
                 img_stats = make_image(
                     infile=infile,
                     outfolder=images_d,
-                    kmers=kmer_mapping,
+                    kmer_mapping=kmer_mapping,
                     overwrite=args.overwrite,
                     threads=cores_per_process,
                     verbose=args.verbose,
@@ -949,10 +1040,11 @@ def run_clean2img(
                     base_sd=base_sd,
                     subfolder_levels=subfolder_levels
                 )
-            except (IndexError, pandas.errors.ParserError) as e:
+            except (IndexError, pd.errors.ParserError) as e:
                 eprint("IMAGE FAIL:", infile)
                 if args.verbose:
                     eprint(e)
+                    traceback.print_exc(file=sys.stdout)
                 eprint("SKIPPING IMAGE")
                 stats[str(x["sample"])].update({"failed_step": "image"})
                 continue
