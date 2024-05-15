@@ -49,6 +49,7 @@ labels_sep = ";"
 bp_kmer_sep = "+"
 sample_bp_sep = "@"
 qual_thresh = 0.01
+mapping_choices = ['varKode', 'cgr', 'cgrc']
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
@@ -777,12 +778,21 @@ def make_image(
     labels=[],
     base_sd=0,
     base_sd_thresh=qual_thresh,
-    subfolder_levels=0
+    subfolder_levels=0,
+    mapping_code='varKode',
 ):
     
     
-    
-    outfile = Path(infile).name.removesuffix("".join(Path(infile).suffixes)) + ".png"
+    in_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
+    in_base1, in_k = in_basename.split(bp_kmer_sep)
+
+    outfile = (in_base1 +
+               bp_kmer_sep +
+               mapping_code +
+               bp_kmer_sep +
+               in_k +
+               ".png"
+              )
     if subfolder_levels:
         hsh = list(hashlib.md5(outfile.encode("UTF-8")).hexdigest())
         for i in range(subfolder_levels):
@@ -847,11 +857,12 @@ def make_image(
         kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode="L")
 
-        # Now let's add the labels:
+        # Now let's add the labels and other metadata:
         metadata = PngInfo()
         metadata.add_text("varkoderKeywords", labels_sep.join(labels))
         metadata.add_text("varkoderBaseFreqSd", str(base_sd))
         metadata.add_text("varkoderLowQualityFlag", str(base_sd > qual_thresh))
+        metadata.add_text("varkoderMapping", mapping_code)
 
         # finally, save the image
         img.save(Path(outfolder) / outfile, optimize=True, pnginfo=metadata)
@@ -1038,7 +1049,8 @@ def run_clean2img(
                     verbose=args.verbose,
                     labels=x["labels"],
                     base_sd=base_sd,
-                    subfolder_levels=subfolder_levels
+                    subfolder_levels=subfolder_levels,
+                    mapping_code = args.kmer_mapping
                 )
             except (IndexError, pd.errors.ParserError) as e:
                 eprint("IMAGE FAIL:", infile)
@@ -1171,6 +1183,16 @@ def get_varKoder_qual(img_path):
 # Function: retrieve basefreq sd
 def get_varKoder_freqsd(img_path):
     return float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
+
+# Function: retrieve mapping
+def get_varKoder_mapping(img_path):
+    return str(Image.open(img_path).info.get("varkoderMapping"))
+    
+# Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
+def get_varKoder_quality_weigths(img_path):
+    base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
+    weight = 2 / (1 + math.exp(20 * base_sd))
+    return weight
 
 
 # Custom training loop for fastai to use sample weights
@@ -1387,8 +1409,3 @@ def train_nn(
 
     return learn
 
-# Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
-def get_varKoder_quality_weigths(img_path):
-    base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
-    weight = 2 / (1 + math.exp(20 * base_sd))
-    return weight

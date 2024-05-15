@@ -3,7 +3,7 @@
 
 # import functions and libraries
 from varKoder.functions import *
-import argparse
+import argparse, pkg_resources
 
 version=pkg_resources.get_distribution("varKoder").version
 
@@ -46,7 +46,7 @@ def main():
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
     parser_img.add_argument(
-        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = ['varKode', 'cgr', 'cgrc']
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
     )
     
     parser_img.add_argument(
@@ -297,7 +297,7 @@ def main():
         default=False,
     )
     parser_query.add_argument(
-        "-p",
+        "-1",
         "--no-pairs",
         help="prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample",
         action="store_true",
@@ -311,6 +311,10 @@ def main():
     parser_query.add_argument(
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
+    parser_query.add_argument(
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
+    )
+    
     parser_query.add_argument(
         "-n",
         "--n-threads",
@@ -562,6 +566,15 @@ def main():
             except AttributeError:
                 freq_sd = np.nan
 
+            try:
+                q_kmer_mapping = get_varKoder_mapping(p)
+            except AttributeError:
+                p_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
+                properties = p_basename.split(sample_bp_sep)[-1].split(bp_kmer_sep)
+                q_kmer_mapping = properties[1] if len(properties) == 3 and properties[1] in ['varKode', 'cgr', 'cgrc'] else np.nan
+
+
+
             actual_labels.append(labs)
 
         n_images = len(img_paths)
@@ -599,6 +612,7 @@ def main():
                 img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[-1]
                 for img in img_paths
             ],
+            "query_mapping": q_kmer_mapping,
             "trained_model_path": str(args.model),
             "actual_labels": actual_labels,
             "possible_low_quality": qual_flag,
@@ -856,9 +870,12 @@ def main():
         image_files.to_csv(outdir / "input_data.csv",index=False)
 
         eprint("Model, labels, and data table saved to directory", str(outdir))
-
-    if not args.int_folder and inter_dir.is_dir(): 
-        shutil.rmtree(inter_dir)
+    
+    try: #this will cause an error for train command, so need to catch exception
+        if not args.int_folder and inter_dir.is_dir(): 
+            shutil.rmtree(inter_dir)
+    except:
+        pass
     eprint("DONE")
 
 
