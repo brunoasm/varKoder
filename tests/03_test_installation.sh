@@ -1,7 +1,7 @@
 source 02_constants.sh
 
 echo "$color What would you like to test? Please choose an option by typing the number:"
-echo "1. installation using conda and pip"
+echo "1. local conda installation"
 echo "2. docker image"
 echo "3. singularity image$reset"
 
