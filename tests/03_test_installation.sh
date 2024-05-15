@@ -41,7 +41,7 @@ echo -e "$color$prefix $T2_CMD -n $NCORES$reset"
 prepend_text T2 $prefix $T2_CMD -n $NCORES
 
 #create a query folder with validation samples
-while IFS=, read -r _ sample _ _ _ _ is_valid; do
+while IFS=, read -r sample _ _ _ _ is_valid; do
     if [ "$is_valid" = "True" ]; then
         mkdir -p fastq_query
         for dir in "./Bembidion/"*"/$sample"; do
