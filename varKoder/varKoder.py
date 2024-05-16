@@ -700,18 +700,7 @@ def main():
         # 1 let's create a data table for all images.
         image_files = list()
         for f in Path(args.input).rglob("*.png"):
-            image_files.append(
-                {
-                    "sample": f.name.split(sample_bp_sep)[0],
-                    "bp": int(
-                        f.name.split(sample_bp_sep)[1]
-                        .split(bp_kmer_sep)[0]
-                        .split("K")[0]
-                    )
-                    * 1000,
-                    "path": f,
-                }
-            )
+            image_files.append(get_metadata_from_img_filename(f))
         if args.label_table_path:
             image_files = pd.DataFrame(image_files).merge(
                 pd.read_csv(args.label_table_path)[
@@ -901,24 +890,11 @@ def main():
     # convert command
     ###################
     if args.command == "convert":
-############ARsfgdfhsdgjfhk
-## change split operations by function
         
         # 1 let's create a data table for all images.
         image_files = list()
         for f in Path(args.input).rglob("*.png"):
-            image_files.append(
-                {
-                    "sample": f.name.split(sample_bp_sep)[0],
-                    "bp": int(
-                        f.name.split(sample_bp_sep)[1]
-                        .split(bp_kmer_sep)[0]
-                        .split("K")[0]
-                    )
-                    * 1000,
-                    "path": f,
-                }
-            )
+            image_files.append(get_metadata_from_img_filename(f))
     
     try: #this will cause an error for train command, so need to catch exception
         if not args.int_folder and inter_dir.is_dir(): 

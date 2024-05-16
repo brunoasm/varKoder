@@ -118,9 +118,9 @@ def process_input(inpath, is_query=False, no_pairs=False):
         else:
             for sample in inpath.iterdir():
                 if sample.resolve().is_dir():
-                    eprint("is_dir")
+                    #eprint("is_dir")
                     for fl in sample.iterdir():
-                        eprint(fl)
+                        #eprint(fl)
                         if (
                             fl.name.endswith("fq")
                             or fl.name.endswith("fastq")
@@ -1204,11 +1204,9 @@ def get_metadata_from_img_filename(img_path):
     return {'sample': sample_name,
             'bp': n_bp,
             'img_kmer_mapping': img_kmer_mapping,
-            'img_kmer_size': img_kmer_size
+            'img_kmer_size': img_kmer_size,
+            'path':img_path
            }
-    n_bp = int(n_bp[:-1])*1000
-    img_kmer_size = int(img_kmer_size[:-1])
-    
     
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
 def get_varKoder_quality_weigths(img_path):
