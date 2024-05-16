@@ -134,7 +134,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                     "files": sample / fl.name,
                                 }
                             )
-            eprint(files_records)
+            #eprint(files_records)
 
         files_table = (
             pd.DataFrame(files_records)
@@ -1187,6 +1187,28 @@ def get_varKoder_freqsd(img_path):
 # Function: retrieve mapping
 def get_varKoder_mapping(img_path):
     return str(Image.open(img_path).info.get("varkoderMapping"))
+
+# Function: retrieve kmer size and kmer mapping method from image file name
+def get_metadata_from_img_filename(img_path):
+    sample_name, split2 = Path(img_path).name.removesuffix('.png').split(sample_bp_sep)
+    try:
+        n_bp, img_kmer_mapping, img_kmer_size = split2.split(bp_kmer_sep)
+    except ValueError: #backwards compatible with varKoder v0.X
+        n_bp, img_kmer_size = split2.split(bp_kmer_sep)
+        img_kmer_mapping = 'varKode'
+        
+    n_bp = int(n_bp[:-1])*1000
+    img_kmer_size = int(img_kmer_size[1:])
+
+
+    return {'sample': sample_name,
+            'bp': n_bp,
+            'img_kmer_mapping': img_kmer_mapping,
+            'img_kmer_size': img_kmer_size
+           }
+    n_bp = int(n_bp[:-1])*1000
+    img_kmer_size = int(img_kmer_size[:-1])
+    
     
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
 def get_varKoder_quality_weigths(img_path):

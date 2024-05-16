@@ -396,6 +396,29 @@ def main():
         default=64,
     )
 
+    # create parser for convert command
+    parser_cvt = subparsers.add_parser(
+        "convert",
+        parents=[parent_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        help="Convert images between different kmer mappings.",
+    )
+    parser_cvt.add_argument(
+        "-k","--kmer-size", help="size of kmers used to produce original images. Will be inferred from file names if omitted.", type=int, default=7,choices = [5,6,7,8,9]
+    )
+    parser_cvt.add_argument(
+        "-p","--input_mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
+    )
+    parser_cvt.add_argument(
+        "output_mapping", help="kmer mapping of output images.", choices = mapping_choices
+    )
+    parser_cvt.add_argument(
+        "input", help="path to folder with png images files to be converted."
+    )
+    parser_cvt.add_argument(
+        "outdir", help="path to the folder where results will be saved."
+    )
+
     # execution
     args = main_parser.parse_args()
 
@@ -549,7 +572,14 @@ def main():
 
         img_paths = [img for img in images_d.rglob("*.png")]
 
+        #get metadata
         actual_labels = []
+        qual_flags = []
+        freq_sds = []
+        sample_ids = []
+        query_bp = []
+        query_klen = []
+        query_mapping = []
         for p in img_paths:
             try:
                 labs = ";".join(get_varKoder_labels(p))
@@ -566,17 +596,31 @@ def main():
             except AttributeError:
                 freq_sd = np.nan
 
-            try:
-                q_kmer_mapping = get_varKoder_mapping(p)
-            except AttributeError:
-                p_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
-                properties = p_basename.split(sample_bp_sep)[-1].split(bp_kmer_sep)
-                q_kmer_mapping = properties[1] if len(properties) == 3 and properties[1] in ['varKode', 'cgr', 'cgrc'] else np.nan
+            img_metadatada = get_metadata_from_img_filename(p)
 
-
-
+            
+            sample_ids.append(img_metadatada['sample'])
+            query_bp.append(img_metadatada['bp'])
+            query_klen.append(img_metadatada['img_kmer_size'])
+            query_mapping.append(img_metadatada['img_kmer_mapping'])
             actual_labels.append(labs)
+            qual_flags.append(qual_flag)
+            freq_sds.append(freq_sd)
 
+        # Start output dataframe
+        common_data = {
+            "varKode_image_path": img_paths,
+            "sample_id": sample_ids,
+            "query_basepairs": query_bp,
+            "query_kmer_len": query_klen,
+            "query_mapping": query_mapping,
+            "trained_model_path": str(args.model),
+            "actual_labels": actual_labels,
+            "possible_low_quality": qual_flags,
+            "basefrequency_sd": freq_sds,
+        }
+            
+        #Decide how to compute predictions, start learner
         n_images = len(img_paths)
 
         try:
@@ -597,28 +641,8 @@ def main():
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=args.max_batch_size)
 
-        # Predicting and construction output dataframe
-        common_data = {
-            "varKode_image_path": img_paths,
-            "sample_id": [
-                img.with_suffix("").name.split(sample_bp_sep)[0].split(label_sample_sep)[-1]
-                for img in img_paths
-            ],
-            "query_basepairs": [
-                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[0]
-                for img in img_paths
-            ],
-            "query_kmer_len": [
-                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[-1]
-                for img in img_paths
-            ],
-            "query_mapping": q_kmer_mapping,
-            "trained_model_path": str(args.model),
-            "actual_labels": actual_labels,
-            "possible_low_quality": qual_flag,
-            "basefrequency_sd": freq_sd,
-        }
         
+        #make predictions and add to output dataframe
         if "MultiLabel" in str(learn.loss_func):
             eprint(
                 "This is a multilabel classification model, each input may have 0 or more predictions."
@@ -870,6 +894,31 @@ def main():
         image_files.to_csv(outdir / "input_data.csv",index=False)
 
         eprint("Model, labels, and data table saved to directory", str(outdir))
+
+
+    
+    ###################
+    # convert command
+    ###################
+    if args.command == "convert":
+############ARsfgdfhsdgjfhk
+## change split operations by function
+        
+        # 1 let's create a data table for all images.
+        image_files = list()
+        for f in Path(args.input).rglob("*.png"):
+            image_files.append(
+                {
+                    "sample": f.name.split(sample_bp_sep)[0],
+                    "bp": int(
+                        f.name.split(sample_bp_sep)[1]
+                        .split(bp_kmer_sep)[0]
+                        .split("K")[0]
+                    )
+                    * 1000,
+                    "path": f,
+                }
+            )
     
     try: #this will cause an error for train command, so need to catch exception
         if not args.int_folder and inter_dir.is_dir(): 
