@@ -719,13 +719,13 @@ def get_cgr(kmer_size, include_rc = True):
                       'y': coords[:, 1]
                       }, index=sequences_str)
 
-    # Replace coords with integer numbers and 1-indexed for compatibility with varKodes
+    # Replace coords with integer numbers
     # sq_side is needed in case we are skipping reverse complements
     n_kmers = df.shape[0]
     sq_side = math.ceil(math.sqrt(n_kmers))
     df = (df.sort_values(by=['x', 'y'])
-              .assign(x=lambda w: np.repeat(np.arange(sq_side), sq_side)[:len(w)] + 1,
-                      y=lambda w: np.tile(np.arange(sq_side), sq_side)[:len(w)] + 1)
+              .assign(x=lambda w: np.repeat(np.arange(sq_side), sq_side)[:len(w)],
+                      y=lambda w: np.tile(np.arange(sq_side), sq_side)[:len(w)])
          )
     
 
@@ -755,12 +755,6 @@ def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
         raise Exception('method must be "varKode", "cgr" or "cgrc"')
 
     return kmer_mapping
-
-
-
-
-
-
 
 
 # given an input dsk hdf5 file, make an image with kmer counts
@@ -844,12 +838,12 @@ def make_image(
         counts.loc[:, "count"] = counts["count"].fillna(0)
 
         # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
-        array_width = kmer_mapping["x"].max()
-        array_height = kmer_mapping["y"].max()
+        array_width = kmer_mapping["x"].max() + 1
+        array_height = kmer_mapping["y"].max() + 1
 
         # Now let's create the image:
         kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[array_height - counts["y"], counts["x"] - 1] = (
+        kmer_array[array_height - 1 - counts["y"], counts["x"]] = (
             counts["count"] + 1
         )  # we do +1 so empty cells are different from zero-count
         bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
@@ -1428,4 +1422,7 @@ def train_nn(
             learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
 
     return learn
+
+
+
 
