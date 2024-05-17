@@ -13,7 +13,7 @@ de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Ande
 With *varKoder*, we use very low coverage whole genome sequencing to produce images that represent the genome composition of a sample. These images look like this, for example:
 | Beetle | Bacteria | Mushroom |
 | ----- |  ----- | ----- |
-| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+k7.png)  |  
+| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+varKode+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+varKode+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+varKode+k7.png)  |   
 
 We then use well-established image classification models to train a neural network using these images so it can learn to associate *varKodes* with labels associated with them. Often, these labels will be the known taxonomic identification of a sample, such as its species or genus. However, our approach is very general and the labels could include any other features of interest.
 
@@ -155,18 +155,21 @@ varKoder is installed to your conda environment using the instructions above and
 varKoder -h
 ```
 
-There are three commands available (`image`, `train` and `query`) and you can also get help on each command by using `-h`:
+There are three commands available (`image`, `train`, `query` and `convert`) and you can also get help on each command by using `-h`:
 ```bash
 varKoder image -h
 varKoder train -h
 varKoder query -h
+varKoder convert -h
 ```
 
 Follow these links for detailed information for each command:
 
 1. [Creating varKodes with `varKoder.py image`](docs/image.md)
 2. [Training an image classification model `varKoder.py train`](docs/train.md)
-3. [Identifying and unknown sample with `varKoder.py query`](docs/query.md)
+3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
+3. [Converting between varKodes and Chaos Game Representation with `varKoder.py convert`](docs/convert.md)
+
 
 
 ## TLDR
