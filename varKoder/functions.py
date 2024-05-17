@@ -686,6 +686,7 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
 # If compact is True, they will both map to a single pixel, for a more compact representation
 def get_cgr(kmer_size):
 
+    #following corners from Jeffrey, using cartesian coords
     corners = np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)
 
     nucleotides = np.array([0, 1, 2, 3], dtype=np.uint8)  # A, C, G, T
@@ -835,7 +836,9 @@ def make_image(
 
         # Now let's create the image:
         kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[counts["x"], array_height - 1 - counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
+        kmer_array[counts["x"],counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
+        kmer_array = kmer_array.transpose() #PIL images have flipped x and y coords
+        kmer_array = np.flip(kmer_array,0) #In PIL images, 0 is top in vertical axis (axis 0 after transposed)
 
         
         bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
@@ -843,8 +846,6 @@ def make_image(
         
         kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode="L")
-
-        kmer_array = np.array(img)
 
         # Now let's add the labels and other metadata:
         metadata = PngInfo()
