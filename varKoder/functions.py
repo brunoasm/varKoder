@@ -5,6 +5,8 @@ import pkg_resources
 import traceback
 from pathlib import Path
 from collections import OrderedDict, defaultdict
+from tqdm import tqdm
+from functools import partial
 
 from io import StringIO
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
@@ -49,7 +51,7 @@ labels_sep = ";"
 bp_kmer_sep = "+"
 sample_bp_sep = "@"
 qual_thresh = 0.01
-mapping_choices = ['varKode', 'cgr', 'cgrc']
+mapping_choices = ['varKode', 'cgr']
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
@@ -680,10 +682,9 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
 
 # This function returns the coordinates of kmers according to chaos game representation
 # for a given kmer_size
-# If include_rc is False, then only canonical kmers are included, 
-#### reverse complements are skipped and the representation is
-#### reduced in size to the smallest square needed
-def get_cgr(kmer_size, include_rc = True):
+# By default, both a canonical kmer and its reverse complement map to 2 pixels
+# If compact is True, they will both map to a single pixel, for a more compact representation
+def get_cgr(kmer_size):
 
     corners = np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)
 
@@ -693,18 +694,6 @@ def get_cgr(kmer_size, include_rc = True):
     rev_sequences = all_sequences[:, ::-1]  # Reverse the sequences
     rev_complement = 3 - rev_sequences      # Compute reverse complement
 
-    less_than = all_sequences < rev_complement
-    greater_than = all_sequences > rev_complement
-    diff = less_than | greater_than
-    first_diff_index = np.argmax(diff, axis=1)
-    is_lex_less = less_than[np.arange(len(all_sequences)), first_diff_index]
- 
-    canonical_sequences = np.where(is_lex_less[:, np.newaxis], all_sequences, rev_complement)
-    
-    if not include_rc:
-        canonical_sequences,can_idx = np.unique(canonical_sequences, axis=0, return_index = True)
-        all_sequences = all_sequences[can_idx]
-        
 
     # Calculate CGR coordinates using vectorized operations
     coords = np.full((all_sequences.shape[0], 2), 0.5)  # Start coordinates (x, y) at the center
@@ -712,22 +701,26 @@ def get_cgr(kmer_size, include_rc = True):
         coords = (coords + corners[all_sequences[:, i]]) / 2
 
     # Convert integer sequences back to string for display
+    # Join sequences and reverse complements to the mapping
+
     nucleotide_map = np.array(['A', 'C', 'G', 'T'])
-    sequences_str = [''.join(nucleotide_map[seq]) for seq in canonical_sequences]
-    df = pd.DataFrame({
+    df = pd.concat([pd.DataFrame({
                       'x': coords[:, 0],
                       'y': coords[:, 1]
-                      }, index=sequences_str)
+                      }, index=[''.join(nucleotide_map[seq]) 
+                                for seq in all_sequences]),
+                    pd.DataFrame({
+                      'x': coords[:, 0],
+                      'y': coords[:, 1]
+                      }, index=[''.join(nucleotide_map[seq]) 
+                                for seq in rev_complement])
+                   ])
 
     # Replace coords with integer numbers
-    # sq_side is needed in case we are skipping reverse complements
-    n_kmers = df.shape[0]
-    sq_side = math.ceil(math.sqrt(n_kmers))
-    df = (df.sort_values(by=['x', 'y'])
-              .assign(x=lambda w: np.repeat(np.arange(sq_side), sq_side)[:len(w)],
-                      y=lambda w: np.tile(np.arange(sq_side), sq_side)[:len(w)])
-         )
-    
+    sq_side = len(df['x'].drop_duplicates())
+    df['x'] = (sq_side*(df['x'] - df['x'].min())).astype(int)
+    df['y'] = (sq_side*(df['y'] - df['y'].min())).astype(int)
+
 
     return df
 
@@ -736,9 +729,8 @@ def get_cgr(kmer_size, include_rc = True):
 
 # This function returns a table mapping specific kmers of size kmer-size to
 # a x and y coordinates in a square grid
-# method options: varkode, cgr, cgrc
-# cgr: chaos game representation (duplicating canonical to include reverse complements)
-# cgrc: chaos game representation canonical, skipping reverse complements
+# method options: varkode, cgr
+# cgr: chaos game representation
 def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
 
 
@@ -748,11 +740,9 @@ def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
         )
         kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
     elif method == 'cgr':
-        kmer_mapping = get_cgr(kmer_size, include_rc = True)
-    elif method == 'cgrc':
-        kmer_mapping = get_cgr(kmer_size, include_rc = False)
+        kmer_mapping = get_cgr(kmer_size)
     else:
-        raise Exception('method must be "varKode", "cgr" or "cgrc"')
+        raise Exception('method must be "varKode" or "cgr"')
 
     return kmer_mapping
 
@@ -834,7 +824,9 @@ def make_image(
         counts = pd.read_csv(
             StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
         )
-        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("sum").reset_index()
+        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("mean").reset_index()
+
+
         counts.loc[:, "count"] = counts["count"].fillna(0)
 
         # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
@@ -843,13 +835,16 @@ def make_image(
 
         # Now let's create the image:
         kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[array_height - 1 - counts["y"], counts["x"]] = (
-            counts["count"] + 1
-        )  # we do +1 so empty cells are different from zero-count
+        kmer_array[counts["x"], array_height - 1 - counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
+
+        
         bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
         kmer_array = np.digitize(kmer_array, bins, right=False) - 1
+        
         kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode="L")
+
+        kmer_array = np.array(img)
 
         # Now let's add the labels and other metadata:
         metadata = PngInfo()
@@ -1199,7 +1194,7 @@ def get_metadata_from_img_filename(img_path):
             'bp': n_bp,
             'img_kmer_mapping': img_kmer_mapping,
             'img_kmer_size': img_kmer_size,
-            'path':img_path
+            'path':Path(img_path)
            }
     
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
@@ -1423,6 +1418,69 @@ def train_nn(
 
     return learn
 
+##Function: get the reverse complement of a sequence string
+def rc(seq):
+    complement = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+    reverse_complement = "".join(complement[base] for base in reversed(seq))
+    return reverse_complement
+
+
+
+## Function: remap an image
+## in_mapping and out_mapping should be one of the supported kmer_mapping 
+def remap(img, k, in_mapping, out_mapping):
+    if (not in_mapping in mapping_choices) or (not out_mapping in mapping_choices):
+        raise Exception('Input and output mapping must be one of: ' + str(mapping_choices))
+        
+    in_mp = get_kmer_mapping(k,in_mapping)
+    out_mp = get_kmer_mapping(k,out_mapping)
+
+    merged = in_mp.merge(out_mp, how='inner',left_index=True, right_index=True,suffixes=['_in', '_out'])
+    merged['y_in'] = merged['y_in'].max()-merged['y_in']
+    merged['y_out'] = merged['y_out'].max()-merged['y_out']
+
+    new_img = img.resize((merged['x_out'].max()+1,merged['y_out'].max()+1),
+                    resample=Image.NEAREST)
+    new_img_array = np.zeros(np.array(new_img).shape,dtype=np.uint8)
+
+    x_out = merged['x_out'].values
+    y_out = merged['y_out'].values
+    x_in = merged['x_in'].values
+    y_in = merged['y_in'].values
+    new_img_array[x_out,y_out] = np.array(img)[x_in,y_in]
+
+    new_img.putdata(new_img_array.flatten())
+
+    return(new_img)
+
+#Function: processes one image for remapping
+def process_remapping(f_data, output_mapping):
+    # Open the image
+    image = Image.open(f_data['path'])
+    
+    # Remap the image
+    new_img = remap(image, f_data['img_kmer_size'], f_data['img_kmer_mapping'], output_mapping)
+    
+    # Create a PngInfo object and add the necessary info
+    pnginfo = PngInfo()
+    for k, v in new_img.info.items():
+        if k == 'VarkoderMapping':
+            pnginfo.add_text(k, f_data['img_kmer_mapping'])
+        else:
+            pnginfo.add_text(k, str(v))
+    
+    # Create the necessary directories
+    f_data['outfile_path'].parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save the new image
+    new_img.save(f_data['outfile_path'], optimize=True, pnginfo=pnginfo)
+        
+
+
+
+
+
+   
 
 
 

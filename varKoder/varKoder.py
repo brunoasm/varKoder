@@ -404,10 +404,17 @@ def main():
         help="Convert images between different kmer mappings.",
     )
     parser_cvt.add_argument(
+        "-n",
+        "--n-threads",
+        help="number of threads to process images in parallel.",
+        default=1,
+        type=int,
+    )
+    parser_cvt.add_argument(
         "-k","--kmer-size", help="size of kmers used to produce original images. Will be inferred from file names if omitted.", type=int, default=7,choices = [5,6,7,8,9]
     )
     parser_cvt.add_argument(
-        "-p","--input_mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
+        "-p","--input-mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
     )
     parser_cvt.add_argument(
         "output_mapping", help="kmer mapping of output images.", choices = mapping_choices
@@ -890,13 +897,65 @@ def main():
     # convert command
     ###################
     if args.command == "convert":
+
+        if not args.overwrite:
+            if Path(args.outdir).exists():
+                raise Exception(
+                    "Output directory exists, use --overwrite if you want to overwrite it."
+                )
         
         # 1 let's create a data table for all images.
+
         image_files = list()
         for f in Path(args.input).rglob("*.png"):
-            image_files.append(get_metadata_from_img_filename(f))
-    
-    try: #this will cause an error for train command, so need to catch exception
+            try:
+                img_metadata = get_metadata_from_img_filename(f)
+                if args.input_mapping: #if input mapping passed as argument, it has priority
+                    img_metadata['img_kmer_mapping'] = args.input_mapping
+                if args.kmer_size: #if input kmer size passed as argument, it has priority
+                    img_metadata['img_kmer_size'] = args.kmer_size
+
+
+            except:
+                img_metadata = {'sample': None,
+                                'bp': None,
+                                'img_kmer_mapping': args.input_mapping,
+                                'img_kmer_size': args.kmer_size,
+                                'path':f}
+
+
+            if img_metadata['sample'] and img_metadata['bp']:
+                fname = (
+                         f"{img_metadata['sample']}{sample_bp_sep}"
+                         f"{int(img_metadata['bp'] / 1000):08d}K{bp_kmer_sep}"
+                         f"{args.output_mapping}{bp_kmer_sep}"
+                         f"k{img_metadata['img_kmer_size']}.png"
+                        )
+                img_metadata['outfile_path'] = (Path(args.outdir)/
+                                                Path(*img_metadata['path'].parent.parts[1:])/
+                                                fname)
+            else:
+                img_metadata['outfile_path'] = Path(args.outdir)/Path(*img_metadata['path'].parts[1:])
+                
+            image_files.append(img_metadata)
+
+        eprint(f"Found {len(image_files)} to convert.")
+        eprint(f"Converted images will be written to {args.outdir}")
+
+        if args.n_threads > 1:
+            with multiprocessing.Pool(args.n_threads) as pool:
+                process_partial = partial(process_remapping, output_mapping=args.output_mapping)
+                results = list(tqdm(pool.imap(process_partial, image_files), total=len(image_files), desc="Processing images"))
+        
+        else:
+            for f_data in tqdm(image_files, desc="Processing images"):
+                process_remapping(f_data, args.output_mapping)
+
+
+
+
+    #delete any temporary directory created during execution
+    try: #this will cause an error for train and convert commands, so need to catch exception
         if not args.int_folder and inter_dir.is_dir(): 
             shutil.rmtree(inter_dir)
     except:
