@@ -13,8 +13,10 @@ These two images represent the same kmer counts, with individual kmers mapping t
 
 | representation | Beetle | Bacteria | Mushroom |
 | ----- | ----- |  ----- | ----- |
-| varKodes | ![Beetle varKode](Animalia_Cerambycidae_SRR15249224@00010000K+varKode+k7.png) | ![Bacteria varKode](Bacteria_Mycoplasma_SRR2101396@00200000K+varKode+k7.png) |  ![Mushroom varKode](Fungi_Amanitaceae_SRR15292413@00010000K+varKode+k7.png)  |  
+| varKode | ![Beetle varKode](Animalia_Cerambycidae_SRR15249224@00010000K+varKode+k7.png) | ![Bacteria varKode](Bacteria_Mycoplasma_SRR2101396@00200000K+varKode+k7.png) |  ![Mushroom varKode](Fungi_Amanitaceae_SRR15292413@00010000K+varKode+k7.png)  |  
 | CGR | ![Beetle CGR](Animalia_Cerambycidae_SRR15249224@00010000K+cgr+k7.png) | ![Bacteria CGR](Bacteria_Mycoplasma_SRR2101396@00200000K+cgr+k7.png) |  ![Mushroom CGR](Fungi_Amanitaceae_SRR15292413@00010000K+cgr+k7.png)  | 
+
+In general, CGR tend to show fractal patterns while varKodes cluster similar kmers together, showing smoother gradients.
 
 ## Arguments
 
