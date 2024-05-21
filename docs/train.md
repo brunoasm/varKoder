@@ -44,7 +44,7 @@ There are two modes of training:
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 25) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See https://huggingface.co/docs/hub/timm for possible options. Prepend 'hf_hub:' to model name to pull from Hugging Face Hub (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) |
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA)|
 | -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
 | -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
@@ -52,6 +52,41 @@ There are two modes of training:
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms (default: 0.75) |
 | -l MAX_LIGHTING, --max-lighting MAX_LIGHTING | maximum scale of lighting transform. See https://docs. fast.ai/vision.augment.html#aug_transforms (default: 0.25) |
 | -g, --no-logging  | hide fastai progress bar and logging during training. These are shown by default. | 
+
+## Model architecture
+
+We support three possible inputs here:
+
+1. Models supported by the timm library
+
+You can use as input the name of a model supported by the timm library (see https://huggingface.co/docs/timm/quickstart for details). For example, this will use timm library to train a model using the resnet50 architecture pulled from timm library:
+
+`varKoder train --architecture resnet50 input_dir output_dir`
+
+2. Models from Hugging Face hub
+
+The timm library allows downloading models from Hugging face hub directly. See
+https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf_hub:' to the model repository on Hugging Face Hub. For example, the following will use the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data:
+`varKoder train --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
+
+3. Models previously used with chaos game representations
+
+We implemented two models previously applied to chaos game representations. In both cases, images are linearized instead of being treated as 2D images. 
+
+To use the model employed by [DeLUCS](https://github.com/Kari-Genomics-Lab/iDeLUCS), use option `arias2022`:
+`varKoder train --architecture idelucs input_dir output_dir`
+
+To use the model employed by Fiannaca (2018), use option `fiannaca2018`:
+`varKoder train --architecture fiannaca input_dir output_dir`
+
+In both cases, there are no pretrained models available, you will have to train starting from random weights.
+
+These are the references for both models:
+
+1. Arias PM, Alipour F, Hill KA, Kari L (2022) DeLUCS: Deep learning for unsupervised clustering of DNA sequences. PLOS ONE, 17(1):e0261531. https://doi.org/10.1371/journal.pone.0261531
+
+2. Fiannaca A, La Paglia L, La Rosa M, Lo Bosco G, Renda G, Rizzo R, Gaglio S, Urso A (2018) Deep learning models for bacteria taxonomic classification of metagenomic data. BMC Bioinformatics, 19(Suppl 7)https://doi.org/10.1186/s12859-018-2182-6
+
 
 ## Train command tips
 

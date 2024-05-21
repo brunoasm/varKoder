@@ -180,7 +180,7 @@ def main():
     parser_train.add_argument(
         "-c",
         "--architecture",
-        help="model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.",
+        help="model architecture. Options include all those supported by timm library  plus 'idelucs' and 'fiannaca2018'. See documentation for more info. ",
         default="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA",
     )
     parser_train.add_argument(
@@ -869,7 +869,7 @@ def main():
             freeze_epochs=args.freeze_epochs,
             normalize=True,
             pretrained=pretrained,
-            callbacks=[callback],
+            callbacks=callback,
             max_lighting=args.max_lighting,
             p_lighting=args.p_lighting,
             loss_fn=loss,

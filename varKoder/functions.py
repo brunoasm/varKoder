@@ -27,6 +27,7 @@ from fastai.vision.all import (
     MultiCategoryBlock,
     CategoryBlock,
     vision_learner,
+    parent_label
 )
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
@@ -52,6 +53,7 @@ bp_kmer_sep = "+"
 sample_bp_sep = "@"
 qual_thresh = 0.01
 mapping_choices = ['varKode', 'cgr']
+custom_archs = ['fiannaca2018', 'arias2022']
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
@@ -1294,7 +1296,92 @@ def get_varKoder_quality_weigths(img_path):
 #
 #        return -loss.sum()
 
+# Function: build a custom model for linearized varKodes or CGRs based on prior work
+def build_custom_model(architecture, dls):
+    global CustomBody, CustomHead, CustomModel
+    if architecture == 'arias2022':
+        class CustomHead(nn.Module):
+            def __init__(self):
+                super(CustomHead, self).__init__()
+                self.head = nn.Sequential(
+                    nn.LazyLinear(512),
+                    nn.ReLU(),
+                    nn.Dropout(0.5),
+                    nn.Linear(512, 64),
+                    nn.ReLU(),
+                    nn.Dropout(0.5),
+                    nn.Linear(64, len(dls.vocab))  
+                )
+        
+            def forward(self, x):
+                return self.head(x)
+                
+    elif architecture == 'fiannaca2018':
+        class CustomHead(nn.Module):
+            def __init__(self):
+                super(CustomHead, self).__init__()
+                self.head = nn.Sequential(
+                    nn.Conv1d(1, 10, kernel_size=5),  # First convolutional layer
+                    nn.ReLU(),
+                    nn.MaxPool1d(kernel_size=2),  # Pooling layer
+                    
+                    nn.Conv1d(10, 20, kernel_size=5),  # Second convolutional layer
+                    nn.ReLU(),
+                    nn.MaxPool1d(kernel_size=2),  # Pooling layer
+                    
+                    nn.Flatten(),
+                    nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
+                    nn.ReLU(),
+                    nn.Linear(500, len(dls.vocab))  # Final output layer with 2 output features
+                )
+        
+            def forward(self, x):
+                x = x.unsqueeze(1)  # Add channel dimension for convolution layers
+                return self.head(x)
 
+    else:
+        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
+
+    class CustomBody(nn.Module):
+        def __init__(self):
+            super(CustomBody, self).__init__()
+            self.flatten = nn.Flatten()
+    
+        def forward(self, x):
+            x = x[:, 0, :, :]  # Use only the first channel
+            x = self.flatten(x)
+            return x
+
+    # Create an instance of the custom body and head
+    custom_body = CustomBody()
+    custom_head = CustomHead()
+    
+    # Define a complete custom model that integrates the body and the head
+    class CustomModel(nn.Module):
+        def __init__(self, body, head):
+            super(CustomModel, self).__init__()
+            self.body = body
+            self.head = head
+    
+        def forward(self, x):
+            x = self.body(x)
+            x = self.head(x)
+            return x
+    
+    # Create an instance of the new model
+    custom_model = CustomModel(custom_body, custom_head)
+
+    # Initiallize LazyLinear with dummy batch
+    xb, yb = dls.one_batch()
+    input_image_size = xb.shape[-2:]  
+    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
+    custom_model(dummy_batch)
+
+
+    return custom_model
+    
+
+# Function: build dataloaders, learners and train
 def train_nn(
     df,
     architecture,
@@ -1327,22 +1414,23 @@ def train_nn(
         sptr = RandomSplitter(valid_pct=valid_pct)
 
     # check if item resizing is necessary
-    default_cfg = create_model(architecture, pretrained=False).default_cfg
-    if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-        item_transforms = Resize(
-            size=default_cfg["input_size"][1:],
-            method=ResizeMethod.Squish,
-            resamples=(Resampling.BOX, Resampling.BOX),
-        )
-        eprint(
-            "Model architecture",
-            architecture,
-            "requires image resizing to",
-            str(default_cfg["input_size"][1:]),
-        )
-        eprint("This will be done automatically.")
-    else:
-        item_transforms = None
+    item_transforms = None
+    if not architecture in custom_archs:
+        default_cfg = create_model(architecture, pretrained=False).default_cfg
+        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
+            item_transforms = Resize(
+                size=default_cfg["input_size"][1:],
+                method=ResizeMethod.Squish,
+                resamples=(Resampling.BOX, Resampling.BOX),
+            )
+            eprint(
+                "Model architecture",
+                architecture,
+                "requires image resizing to",
+                str(default_cfg["input_size"][1:]),
+            )
+            eprint("This will be done automatically.")
+            
 
     # set batch transforms
     transforms = aug_transforms(
@@ -1390,15 +1478,27 @@ def train_nn(
     else:
         metrics = accuracy
 
-    learn = vision_learner(
-        dls,
-        architecture,
-        metrics=metrics,
-        normalize=normalize,
-        pretrained=pretrained,
-        cbs=callbacks,
-        loss_func=loss_fn,
-    ).to_fp16()
+    if architecture in custom_archs:
+        #build model
+        custom_model = build_custom_model(architecture, dls)
+        
+        learn = Learner(dls, 
+                        custom_model, 
+                        metrics=metrics, 
+                        cbs=callbacks,
+                        loss_func=loss_fn
+                       ).to_fp16()
+        
+    else:
+        learn = vision_learner(dls,
+                               architecture,
+                               metrics=metrics,
+                               normalize=normalize,
+                               pretrained=pretrained,
+                               cbs=callbacks,
+                               loss_func=loss_fn,
+                            ).to_fp16()
+   
 
     # if there a pretrained model body weights, replace them
     if model_state_dict:
