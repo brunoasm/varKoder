@@ -1529,7 +1529,7 @@ def rc(seq):
 
 ## Function: remap an image
 ## in_mapping and out_mapping should be one of the supported kmer_mapping 
-def remap(img, k, in_mapping, out_mapping):
+def remap(img, k, in_mapping, out_mapping, sum_rc=False):
     if (not in_mapping in mapping_choices) or (not out_mapping in mapping_choices):
         raise Exception('Input and output mapping must be one of: ' + str(mapping_choices))
         
@@ -1537,30 +1537,42 @@ def remap(img, k, in_mapping, out_mapping):
     out_mp = get_kmer_mapping(k,out_mapping)
 
     merged = in_mp.merge(out_mp, how='inner',left_index=True, right_index=True,suffixes=['_in', '_out'])
+    #x and y are reversed for PIL images
     merged['y_in'] = merged['y_in'].max()-merged['y_in']
     merged['y_out'] = merged['y_out'].max()-merged['y_out']
 
-    new_img = img.resize((merged['x_out'].max()+1,merged['y_out'].max()+1),
+    new_img = img.resize((merged['y_out'].max()+1,merged['x_out'].max()+1),
                     resample=Image.NEAREST)
     new_img_array = np.zeros(np.array(new_img).shape,dtype=np.uint8)
+
+    old_img_array = np.array(img)
 
     x_out = merged['x_out'].values
     y_out = merged['y_out'].values
     x_in = merged['x_in'].values
     y_in = merged['y_in'].values
-    new_img_array[x_out,y_out] = np.array(img)[x_in,y_in]
+    if sum_rc:
+        np.add.at(new_img_array, (y_out, x_out), old_img_array[y_in, x_in])
+        new_img_array = np.uint8((new_img_array-new_img_array.min())/new_img_array.max()*255)
+    else:
+        new_img_array[y_out,x_out] = old_img_array[y_in,x_in]
 
-    new_img.putdata(new_img_array.flatten())
+    new_img.putdata(new_img_array.flatten('A'))
 
     return(new_img)
 
 #Function: processes one image for remapping
-def process_remapping(f_data, output_mapping):
+def process_remapping(f_data, output_mapping, sum_rc):
     # Open the image
     image = Image.open(f_data['path'])
     
     # Remap the image
-    new_img = remap(image, f_data['img_kmer_size'], f_data['img_kmer_mapping'], output_mapping)
+    new_img = remap(image, 
+                    f_data['img_kmer_size'], 
+                    f_data['img_kmer_mapping'], 
+                    output_mapping,
+                    sum_rc
+                   )
     
     # Create a PngInfo object and add the necessary info
     pnginfo = PngInfo()

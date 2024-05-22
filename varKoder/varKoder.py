@@ -417,6 +417,10 @@ def main():
         "-p","--input-mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
     )
     parser_cvt.add_argument(
+        "-r","--sum-reverse-complements", help="When converting from CGR to varKode, add together counts from canonical kmers and their reverse complements.", action = 'store_true'
+    )
+
+    parser_cvt.add_argument(
         "output_mapping", help="kmer mapping of output images.", choices = mapping_choices
     )
     parser_cvt.add_argument(
@@ -425,6 +429,8 @@ def main():
     parser_cvt.add_argument(
         "outdir", help="path to the folder where results will be saved."
     )
+
+    
 
     # execution
     args = main_parser.parse_args()
@@ -949,7 +955,7 @@ def main():
         
         else:
             for f_data in tqdm(image_files, desc="Processing images"):
-                process_remapping(f_data, args.output_mapping)
+                process_remapping(f_data, args.output_mapping, args.sum_reverse_complements)
 
 
 
