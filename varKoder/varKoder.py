@@ -950,7 +950,9 @@ def main():
 
         if args.n_threads > 1:
             with multiprocessing.Pool(args.n_threads) as pool:
-                process_partial = partial(process_remapping, output_mapping=args.output_mapping)
+                process_partial = partial(process_remapping, 
+                                          output_mapping=args.output_mapping,
+                                          sum_rc=args.sum_reverse_complements)
                 results = list(tqdm(pool.imap(process_partial, image_files), total=len(image_files), desc="Processing images"))
         
         else:
