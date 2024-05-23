@@ -1296,87 +1296,97 @@ def get_varKoder_quality_weigths(img_path):
 #
 #        return -loss.sum()
 
-# Function: build a custom model for linearized varKodes or CGRs based on prior work
-def build_custom_model(architecture, dls):
-    global CustomBody, CustomHead, CustomModel
-    if architecture == 'arias2022':
-        class CustomHead(nn.Module):
-            def __init__(self):
-                super(CustomHead, self).__init__()
-                self.head = nn.Sequential(
-                    nn.LazyLinear(512),
-                    nn.ReLU(),
-                    nn.Dropout(0.5),
-                    nn.Linear(512, 64),
-                    nn.ReLU(),
-                    nn.Dropout(0.5),
-                    nn.Linear(64, len(dls.vocab))  
-                )
-        
-            def forward(self, x):
-                return self.head(x)
-                
-    elif architecture == 'fiannaca2018':
-        class CustomHead(nn.Module):
-            def __init__(self):
-                super(CustomHead, self).__init__()
-                self.head = nn.Sequential(
-                    nn.Conv1d(1, 10, kernel_size=5),  # First convolutional layer
-                    nn.ReLU(),
-                    nn.MaxPool1d(kernel_size=2),  # Pooling layer
-                    
-                    nn.Conv1d(10, 20, kernel_size=5),  # Second convolutional layer
-                    nn.ReLU(),
-                    nn.MaxPool1d(kernel_size=2),  # Pooling layer
-                    
-                    nn.Flatten(),
-                    nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
-                    nn.ReLU(),
-                    nn.Linear(500, len(dls.vocab))  # Final output layer with 2 output features
-                )
-        
-            def forward(self, x):
-                x = x.unsqueeze(1)  # Add channel dimension for convolution layers
-                return self.head(x)
+# Function: build a custom models for linearized varKodes or CGRs based on prior work
+# Define classes for custom models
 
+class Arias2022Head(nn.Module):
+    def __init__(self, n_classes):
+        super(Arias2022Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(64, n_classes))
+    def forward(self, x):
+        return self.head(x)
+
+class Arias2022Body(nn.Module):
+    def __init__(self):
+        super(Arias2022Body, self).__init__()
+        self.body = nn.Sequential(
+                nn.Flatten(), #reshape to 1D array
+                nn.LazyLinear(512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 64),
+                nn.ReLU(),
+                nn.Dropout(0.5))
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Head(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(500, n_classes))
+
+    def forward(self, x):
+        #x = x.unsqueeze(1)  # Add channel dimension for convolution layers
+        return self.head(x)
+
+class Fiannaca2018Body(nn.Module):
+    def __init__(self):
+        super(Fiannaca2018Body, self).__init__()
+        self.flatten = nn.Flatten()
+        self.body = nn.Sequential(
+            nn.Conv1d(1, 5, kernel_size=5),  # First convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Flatten(),
+            nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
+            nn.ReLU())
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.flatten(x)
+        x = x.unsqueeze(1)
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Model, self).__init__()
+        self.model = nn.Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+class Arias2022Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Arias2022Model, self).__init__()
+        self.model = nn.Sequential(Arias2022Body(),Arias2022Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+def build_custom_model(architecture, dls):
+    if architecture == 'arias2022':
+        custom_model = Arias2022Model(len(dls.vocab))
+    elif architecture == 'fiannaca2018':
+        custom_model = Fiannaca2018Model(len(dls.vocab))
     else:
         raise Exception('Custom models must be one of: fiannaca2018 arias2022')
-
-    class CustomBody(nn.Module):
-        def __init__(self):
-            super(CustomBody, self).__init__()
-            self.flatten = nn.Flatten()
-    
-        def forward(self, x):
-            x = x[:, 0, :, :]  # Use only the first channel
-            x = self.flatten(x)
-            return x
-
-    # Create an instance of the custom body and head
-    custom_body = CustomBody()
-    custom_head = CustomHead()
-    
-    # Define a complete custom model that integrates the body and the head
-    class CustomModel(nn.Module):
-        def __init__(self, body, head):
-            super(CustomModel, self).__init__()
-            self.body = body
-            self.head = head
-    
-        def forward(self, x):
-            x = self.body(x)
-            x = self.head(x)
-            return x
-    
-    # Create an instance of the new model
-    custom_model = CustomModel(custom_body, custom_head)
 
     # Initiallize LazyLinear with dummy batch
     xb, yb = dls.one_batch()
     input_image_size = xb.shape[-2:]  
     dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
     custom_model(dummy_batch)
-
 
     return custom_model
     
@@ -1499,7 +1509,6 @@ def train_nn(
                                loss_func=loss_fn,
                             ).to_fp16()
    
-
     # if there a pretrained model body weights, replace them
     if model_state_dict:
         old_state_dict = learn.state_dict()

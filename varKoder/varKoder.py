@@ -596,17 +596,17 @@ def main():
         for p in img_paths:
             try:
                 labs = ";".join(get_varKoder_labels(p))
-            except AttributeError:
+            except (AttributeError, TypeError):
                 labs = np.nan
 
             try:
                 qual_flag = get_varKoder_qual(p)
-            except AttributeError:
+            except (AttributeError, TypeError):
                 qual_flag = np.nan
 
             try:
                 freq_sd = get_varKoder_freqsd(p)
-            except AttributeError:
+            except (AttributeError,TypeError):
                 freq_sd = np.nan
 
             img_metadatada = get_metadata_from_img_filename(p)
