@@ -1201,7 +1201,7 @@ def get_metadata_from_img_filename(img_path):
            }
     
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
-def get_varKoder_quality_weigths(img_path):
+def get_varKoder_quality_weights(img_path):
     base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
     weight = 2 / (1 + math.exp(20 * base_sd))
     return weight
@@ -1229,7 +1229,7 @@ def get_varKoder_quality_weigths(img_path):
 #        # Zero the gradients
 #        opt.zero_grad()
 #
-##Callback to add sample weigths
+##Callback to add sample weights
 # class CustomWeightedTrainingCallback(Callback):
 #    def __init__(self, sample_weights):
 #        self.sample_weights = sample_weights
@@ -1237,7 +1237,7 @@ def get_varKoder_quality_weigths(img_path):
 #    def before_fit(self):
 #        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
 #
-## Modified AsymmetricLossMultiLabel from timm library to include sample weigths
+## Modified AsymmetricLossMultiLabel from timm library to include sample weights
 # class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
 #    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
 #        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()

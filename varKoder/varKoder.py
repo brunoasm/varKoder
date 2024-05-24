@@ -180,7 +180,7 @@ def main():
     parser_train.add_argument(
         "-c",
         "--architecture",
-        help="model architecture. Options include all those supported by timm library  plus 'idelucs' and 'fiannaca2018'. See documentation for more info. ",
+        help="model architecture. Options include all those supported by timm library  plus 'arias2022' and 'fiannaca2018'. See documentation for more info. ",
         default="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA",
     )
     parser_train.add_argument(
@@ -218,8 +218,8 @@ def main():
     )
     parser_train.add_argument(
         "-w",
-        "--random-weigths",
-        help="start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
+        "--random-weights",
+        help="start training with random weights. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
         action="store_true",
     )
     parser_train.add_argument(
@@ -230,7 +230,7 @@ def main():
         help="Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label.",
     )
     # parser_train.add_argument('-i','--downweight-quality',
-    #                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
+    #                          help = 'use a modified loss function that downweights samples based on DNA quality. Ignored if used with --single-label.',
     #                          action = 'store_true'
     #                         )
     parser_train.add_argument(
@@ -731,10 +731,10 @@ def main():
                 possible_low_quality=lambda x: x["path"].apply(get_varKoder_qual),
             )
 
-        # add quality-based sample weigths
+        # add quality-based sample weights
         # if args.downweight_quality:
         #    image_files = image_files.assign(
-        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weights)
         #        )
         # else:
         #    image_files['sample_weights'] = 1
@@ -811,13 +811,13 @@ def main():
             pretrained = False
             del past_learn
 
-        elif not args.random_weigths:
+        elif not args.random_weights and not args.architecture in ('arias2022', 'fiannaca2018'):
             pretrained = True
             eprint("Starting model with pretrained weights from timm library.")
 
         else:
             pretrained = False
-            eprint("Starting model with random weigths.")
+            eprint("Starting model with random weights.")
             
         # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
