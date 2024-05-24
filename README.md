@@ -85,7 +85,7 @@ arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
 
 #### dsk
 
-Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
+Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and clean:
 ```bash
 conda activate varKoder
 wget https://github.com/GATB/dsk/releases/download/v2.3.3/dsk-v2.3.3-bin-Darwin.tar.gz

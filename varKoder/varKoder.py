@@ -180,7 +180,7 @@ def main():
     parser_train.add_argument(
         "-c",
         "--architecture",
-        help="model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.",
+        help="model architecture. Options include all those supported by timm library  plus 'arias2022' and 'fiannaca2018'. See documentation for more info. ",
         default="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA",
     )
     parser_train.add_argument(
@@ -218,8 +218,8 @@ def main():
     )
     parser_train.add_argument(
         "-w",
-        "--random-weigths",
-        help="start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
+        "--random-weights",
+        help="start training with random weights. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
         action="store_true",
     )
     parser_train.add_argument(
@@ -230,7 +230,7 @@ def main():
         help="Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label.",
     )
     # parser_train.add_argument('-i','--downweight-quality',
-    #                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
+    #                          help = 'use a modified loss function that downweights samples based on DNA quality. Ignored if used with --single-label.',
     #                          action = 'store_true'
     #                         )
     parser_train.add_argument(
@@ -417,6 +417,10 @@ def main():
         "-p","--input-mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
     )
     parser_cvt.add_argument(
+        "-r","--sum-reverse-complements", help="When converting from CGR to varKode, add together counts from canonical kmers and their reverse complements.", action = 'store_true'
+    )
+
+    parser_cvt.add_argument(
         "output_mapping", help="kmer mapping of output images.", choices = mapping_choices
     )
     parser_cvt.add_argument(
@@ -425,6 +429,8 @@ def main():
     parser_cvt.add_argument(
         "outdir", help="path to the folder where results will be saved."
     )
+
+    
 
     # execution
     args = main_parser.parse_args()
@@ -590,17 +596,17 @@ def main():
         for p in img_paths:
             try:
                 labs = ";".join(get_varKoder_labels(p))
-            except AttributeError:
+            except (AttributeError, TypeError):
                 labs = np.nan
 
             try:
                 qual_flag = get_varKoder_qual(p)
-            except AttributeError:
+            except (AttributeError, TypeError):
                 qual_flag = np.nan
 
             try:
                 freq_sd = get_varKoder_freqsd(p)
-            except AttributeError:
+            except (AttributeError,TypeError):
                 freq_sd = np.nan
 
             img_metadatada = get_metadata_from_img_filename(p)
@@ -725,10 +731,10 @@ def main():
                 possible_low_quality=lambda x: x["path"].apply(get_varKoder_qual),
             )
 
-        # add quality-based sample weigths
+        # add quality-based sample weights
         # if args.downweight_quality:
         #    image_files = image_files.assign(
-        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weights)
         #        )
         # else:
         #    image_files['sample_weights'] = 1
@@ -805,13 +811,13 @@ def main():
             pretrained = False
             del past_learn
 
-        elif not args.random_weigths:
+        elif not args.random_weights and not args.architecture in ('arias2022', 'fiannaca2018'):
             pretrained = True
             eprint("Starting model with pretrained weights from timm library.")
 
         else:
             pretrained = False
-            eprint("Starting model with random weigths.")
+            eprint("Starting model with random weights.")
             
         # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
@@ -869,7 +875,7 @@ def main():
             freeze_epochs=args.freeze_epochs,
             normalize=True,
             pretrained=pretrained,
-            callbacks=[callback],
+            callbacks=callback,
             max_lighting=args.max_lighting,
             p_lighting=args.p_lighting,
             loss_fn=loss,
@@ -944,12 +950,14 @@ def main():
 
         if args.n_threads > 1:
             with multiprocessing.Pool(args.n_threads) as pool:
-                process_partial = partial(process_remapping, output_mapping=args.output_mapping)
+                process_partial = partial(process_remapping, 
+                                          output_mapping=args.output_mapping,
+                                          sum_rc=args.sum_reverse_complements)
                 results = list(tqdm(pool.imap(process_partial, image_files), total=len(image_files), desc="Processing images"))
         
         else:
             for f_data in tqdm(image_files, desc="Processing images"):
-                process_remapping(f_data, args.output_mapping)
+                process_remapping(f_data, args.output_mapping, args.sum_reverse_complements)
 
 
 

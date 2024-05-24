@@ -27,6 +27,7 @@ from fastai.vision.all import (
     MultiCategoryBlock,
     CategoryBlock,
     vision_learner,
+    parent_label
 )
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
@@ -52,6 +53,7 @@ bp_kmer_sep = "+"
 sample_bp_sep = "@"
 qual_thresh = 0.01
 mapping_choices = ['varKode', 'cgr']
+custom_archs = ['fiannaca2018', 'arias2022']
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
@@ -1199,7 +1201,7 @@ def get_metadata_from_img_filename(img_path):
            }
     
 # Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
-def get_varKoder_quality_weigths(img_path):
+def get_varKoder_quality_weights(img_path):
     base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
     weight = 2 / (1 + math.exp(20 * base_sd))
     return weight
@@ -1227,7 +1229,7 @@ def get_varKoder_quality_weigths(img_path):
 #        # Zero the gradients
 #        opt.zero_grad()
 #
-##Callback to add sample weigths
+##Callback to add sample weights
 # class CustomWeightedTrainingCallback(Callback):
 #    def __init__(self, sample_weights):
 #        self.sample_weights = sample_weights
@@ -1235,7 +1237,7 @@ def get_varKoder_quality_weigths(img_path):
 #    def before_fit(self):
 #        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
 #
-## Modified AsymmetricLossMultiLabel from timm library to include sample weigths
+## Modified AsymmetricLossMultiLabel from timm library to include sample weights
 # class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
 #    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
 #        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
@@ -1294,7 +1296,102 @@ def get_varKoder_quality_weigths(img_path):
 #
 #        return -loss.sum()
 
+# Function: build a custom models for linearized varKodes or CGRs based on prior work
+# Define classes for custom models
 
+class Arias2022Head(nn.Module):
+    def __init__(self, n_classes):
+        super(Arias2022Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(64, n_classes))
+    def forward(self, x):
+        return self.head(x)
+
+class Arias2022Body(nn.Module):
+    def __init__(self):
+        super(Arias2022Body, self).__init__()
+        self.body = nn.Sequential(
+                nn.Flatten(), #reshape to 1D array
+                nn.LazyLinear(512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 64),
+                nn.ReLU(),
+                nn.Dropout(0.5))
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Head(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(500, n_classes))
+
+    def forward(self, x):
+        #x = x.unsqueeze(1)  # Add channel dimension for convolution layers
+        return self.head(x)
+
+class Fiannaca2018Body(nn.Module):
+    def __init__(self):
+        super(Fiannaca2018Body, self).__init__()
+        self.flatten = nn.Flatten()
+        self.body = nn.Sequential(
+            nn.Conv1d(1, 5, kernel_size=5),  # First convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Flatten(),
+            nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
+            nn.ReLU())
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.flatten(x)
+        x = x.unsqueeze(1)
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Model, self).__init__()
+        self.model = nn.Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+class Arias2022Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Arias2022Model, self).__init__()
+        self.model = nn.Sequential(Arias2022Body(),Arias2022Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+def build_custom_model(architecture, dls):
+    if architecture == 'arias2022':
+        custom_model = Arias2022Model(len(dls.vocab))
+    elif architecture == 'fiannaca2018':
+        custom_model = Fiannaca2018Model(len(dls.vocab))
+    else:
+        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
+
+    # Initiallize LazyLinear with dummy batch
+    xb, yb = dls.one_batch()
+    input_image_size = xb.shape[-2:]  
+    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
+    custom_model(dummy_batch)
+
+    return custom_model
+    
+
+# Function: build dataloaders, learners and train
 def train_nn(
     df,
     architecture,
@@ -1327,22 +1424,23 @@ def train_nn(
         sptr = RandomSplitter(valid_pct=valid_pct)
 
     # check if item resizing is necessary
-    default_cfg = create_model(architecture, pretrained=False).default_cfg
-    if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-        item_transforms = Resize(
-            size=default_cfg["input_size"][1:],
-            method=ResizeMethod.Squish,
-            resamples=(Resampling.BOX, Resampling.BOX),
-        )
-        eprint(
-            "Model architecture",
-            architecture,
-            "requires image resizing to",
-            str(default_cfg["input_size"][1:]),
-        )
-        eprint("This will be done automatically.")
-    else:
-        item_transforms = None
+    item_transforms = None
+    if not architecture in custom_archs:
+        default_cfg = create_model(architecture, pretrained=False).default_cfg
+        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
+            item_transforms = Resize(
+                size=default_cfg["input_size"][1:],
+                method=ResizeMethod.Squish,
+                resamples=(Resampling.BOX, Resampling.BOX),
+            )
+            eprint(
+                "Model architecture",
+                architecture,
+                "requires image resizing to",
+                str(default_cfg["input_size"][1:]),
+            )
+            eprint("This will be done automatically.")
+            
 
     # set batch transforms
     transforms = aug_transforms(
@@ -1390,16 +1488,27 @@ def train_nn(
     else:
         metrics = accuracy
 
-    learn = vision_learner(
-        dls,
-        architecture,
-        metrics=metrics,
-        normalize=normalize,
-        pretrained=pretrained,
-        cbs=callbacks,
-        loss_func=loss_fn,
-    ).to_fp16()
-
+    if architecture in custom_archs:
+        #build model
+        custom_model = build_custom_model(architecture, dls)
+        
+        learn = Learner(dls, 
+                        custom_model, 
+                        metrics=metrics, 
+                        cbs=callbacks,
+                        loss_func=loss_fn
+                       ).to_fp16()
+        
+    else:
+        learn = vision_learner(dls,
+                               architecture,
+                               metrics=metrics,
+                               normalize=normalize,
+                               pretrained=pretrained,
+                               cbs=callbacks,
+                               loss_func=loss_fn,
+                            ).to_fp16()
+   
     # if there a pretrained model body weights, replace them
     if model_state_dict:
         old_state_dict = learn.state_dict()
@@ -1429,7 +1538,7 @@ def rc(seq):
 
 ## Function: remap an image
 ## in_mapping and out_mapping should be one of the supported kmer_mapping 
-def remap(img, k, in_mapping, out_mapping):
+def remap(img, k, in_mapping, out_mapping, sum_rc=False):
     if (not in_mapping in mapping_choices) or (not out_mapping in mapping_choices):
         raise Exception('Input and output mapping must be one of: ' + str(mapping_choices))
         
@@ -1437,30 +1546,42 @@ def remap(img, k, in_mapping, out_mapping):
     out_mp = get_kmer_mapping(k,out_mapping)
 
     merged = in_mp.merge(out_mp, how='inner',left_index=True, right_index=True,suffixes=['_in', '_out'])
+    #x and y are reversed for PIL images
     merged['y_in'] = merged['y_in'].max()-merged['y_in']
     merged['y_out'] = merged['y_out'].max()-merged['y_out']
 
-    new_img = img.resize((merged['x_out'].max()+1,merged['y_out'].max()+1),
+    new_img = img.resize((merged['y_out'].max()+1,merged['x_out'].max()+1),
                     resample=Image.NEAREST)
     new_img_array = np.zeros(np.array(new_img).shape,dtype=np.uint8)
+
+    old_img_array = np.array(img)
 
     x_out = merged['x_out'].values
     y_out = merged['y_out'].values
     x_in = merged['x_in'].values
     y_in = merged['y_in'].values
-    new_img_array[x_out,y_out] = np.array(img)[x_in,y_in]
+    if sum_rc:
+        np.add.at(new_img_array, (y_out, x_out), old_img_array[y_in, x_in])
+        new_img_array = np.uint8((new_img_array-new_img_array.min())/new_img_array.max()*255)
+    else:
+        new_img_array[y_out,x_out] = old_img_array[y_in,x_in]
 
-    new_img.putdata(new_img_array.flatten())
+    new_img.putdata(new_img_array.flatten('A'))
 
     return(new_img)
 
 #Function: processes one image for remapping
-def process_remapping(f_data, output_mapping):
+def process_remapping(f_data, output_mapping, sum_rc):
     # Open the image
     image = Image.open(f_data['path'])
     
     # Remap the image
-    new_img = remap(image, f_data['img_kmer_size'], f_data['img_kmer_mapping'], output_mapping)
+    new_img = remap(image, 
+                    f_data['img_kmer_size'], 
+                    f_data['img_kmer_mapping'], 
+                    output_mapping,
+                    sum_rc
+                   )
     
     # Create a PngInfo object and add the necessary info
     pnginfo = PngInfo()
