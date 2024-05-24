@@ -14,7 +14,7 @@ dependencies:
   - pytorch=2.1.0
   - humanfriendly=10
   - fastai=2.7.13
-  - timm
+  - timm=1.0
   - bbmap=38.18
   - wget
 #  - fastp=0.23.4

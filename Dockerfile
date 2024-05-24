@@ -13,7 +13,7 @@ RUN echo 'channels:' > /docker.yml && \
     echo 'dependencies:' >> /docker.yml && \
     echo '  - fastai::fastai=2.7.13' >> /docker.yml && \
     echo '  - conda-forge::huggingface_hub' >> /docker.yml && \
-    echo '  - conda-forge::timm' >> /docker.yml && \
+    echo '  - conda-forge::timm=1.0' >> /docker.yml && \
     echo '  - conda-forge::pyarrow>=14.0.1' >> /docker.yml && \
     echo '  - conda-forge::pandas' >> /docker.yml && \
     echo '  - conda-forge::humanfriendly' >> /docker.yml && \
