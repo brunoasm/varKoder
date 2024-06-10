@@ -598,6 +598,10 @@ def split_fastq(
                 "samplebasestarget=" + str(bp),
                 "sampleseed=" + str(int(seed) + i),
                 "breaklength=500",
+                "ignorebadquality=t",
+                "quantize=t", 
+                "iupacToN=t",
+                "qin=33", #maybe not always true, but crashes sometimes if auto
                 "in=" + str(infile),
                 "out=" + str(outfile),
                 "overwrite=true",
