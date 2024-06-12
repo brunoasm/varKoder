@@ -5,8 +5,8 @@ from timm import create_model
 import copy
 
 #push to fastai
-learn = load_learner("huggingface/vit_SL/trained_model.pkl")
-#push_to_hub_fastai(learner=learn, repo_id="vit_large_patch32_224.NCBI_SRA")
+learn = load_learner("varkoder_trained_model_ML/trained_model.pkl")
+push_to_hub_fastai(learner=learn, repo_id="vit_large_patch32_224.NCBI_SRA")
 
 #start a timm model from scratch and update parameters based on fastai model
 pretrained_cfg = {'hf_hub_id': 'brunoasm/vit_large_patch32_224.NCBI_SRA', 'source': 'hf-hub', 'architecture': 'hf-hub:timm/vit_large_patch32_224', 'tag': 'NCBI_SRA', 'custom_load': False, 'input_size': [3, 224, 224], 'fixed_input_size': True, 'interpolation': 'nearest', 'crop_pct': 1, 'crop_mode': 'center', 'mean': [0.5, 0.5, 0.5], 'std': [0.5, 0.5, 0.5], 'num_classes': 0, 'pool_size': None, 'first_conv': 'patch_embed.proj', 'classifier': 'head'}
