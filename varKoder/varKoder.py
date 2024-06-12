@@ -938,7 +938,7 @@ def main():
                          f"k{img_metadata['img_kmer_size']}.png"
                         )
                 img_metadata['outfile_path'] = (Path(args.outdir)/
-                                                Path(*img_metadata['path'].parent.parts[1:])/
+                                                Path(*img_metadata['path'].relative_to(Path(args.input)).parent.parts[1:])/
                                                 fname)
             else:
                 img_metadata['outfile_path'] = Path(args.outdir)/Path(*img_metadata['path'].parts[1:])
