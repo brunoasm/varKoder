@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="varKoder",
-    version="1.0.0b",
+    version="1.0.0.c",
     packages=find_packages(),
     url="https://github.com/brunoasm/varKoder",
     license="GNU General Public License",
