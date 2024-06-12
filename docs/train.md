@@ -87,6 +87,14 @@ These are the references for both models:
 
 2. Fiannaca A, La Paglia L, La Rosa M, Lo Bosco G, Renda G, Rizzo R, Gaglio S, Urso A (2018) Deep learning models for bacteria taxonomic classification of metagenomic data. BMC Bioinformatics, 19(Suppl 7)https://doi.org/10.1186/s12859-018-2182-6
 
+## GPU usage
+
+If your system has more than one NVIDIA GPU, varKoder will by default use all available GPUs for training. If this behavior is undesirable, you need to set the visible GPUs before starting varKoder (see https://developer.nvidia.com/blog/cuda-pro-tip-control-gpu-visibility-cuda_visible_devices/). For example, the following command will call varKoder with a single visible GPU:
+
+```bash
+export CUDA_VISIBLE_DEVICES=0
+varKoder train images_folder outfolder 
+```
 
 ## Train command tips
 

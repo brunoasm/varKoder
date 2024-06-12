@@ -2,6 +2,7 @@
 
 # imports used for all commands
 import pkg_resources
+import contextlib
 import traceback
 from pathlib import Path
 from collections import OrderedDict, defaultdict
@@ -30,6 +31,7 @@ from fastai.vision.all import (
     parent_label
 )
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
+from fastai.distributed import to_parallel, detach_parallel
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed, default_device
@@ -1523,12 +1525,21 @@ def train_nn(
         }
         learn.model.load_state_dict(new_state_dict, strict=False)
 
-    # train
-    if verbose:
+    # Check for multiple GPUs and parallelize if available
+    is_parallel = torch.backends.cuda.is_built() and torch.cuda.device_count() > 1
+    if is_parallel:
+        learn.to_parallel()
+
+    # Train the model with or without verbose output
+    training_context = learn.no_bar() if not verbose else contextlib.nullcontext()
+    logging_context = learn.no_logging() if not verbose else contextlib.nullcontext()
+
+    with training_context, logging_context:
         learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
-    else:
-        with learn.no_bar(), learn.no_logging():
-            learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
+
+    # Detach parallelization if it was used
+    if is_parallel:
+        learn.detach_parallel()
 
     return learn
 
