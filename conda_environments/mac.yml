@@ -10,6 +10,7 @@ dependencies:
   - pyarrow>=14.0.1
   - huggingface_hub
   - pigz
+  - conda-forge::accelerate
   - tenacity
   - pytorch=2.1.0
   - humanfriendly=10
