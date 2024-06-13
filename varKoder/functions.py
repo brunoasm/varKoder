@@ -551,13 +551,12 @@ def split_fastq(
     elif is_query or int(nsites) > min_bp:
         sites_per_file = [min(int(nsites), int(max_bp))]
     else:
-        raise Exception(
-            "Input file "
+        eprint( "Input file "
             + str(infile)
             + " has less than "
             + str(min_bp)
-            + "bp, remove sample or raise min_bp."
-        )
+            + "bp, raise --min_bp if you want to produce an image.")
+        raise Exception("Input file has less than minimum data.")
 
     if not is_query:
         while sites_per_file[-1] > min_bp:
@@ -610,7 +609,6 @@ def split_fastq(
                 "verifypaired=f",
                 "int=f"
             ]
-        #eprint(' '.join(command))
         p = subprocess.run(
             command,
             stderr=subprocess.PIPE,
