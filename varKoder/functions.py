@@ -140,7 +140,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                     "files": sample / fl.name,
                                 }
                             )
-            #eprint(files_records)
+        #eprint(files_records)
 
         files_table = (
             pd.DataFrame(files_records)
@@ -607,7 +607,10 @@ def split_fastq(
                 "in=" + str(infile),
                 "out=" + str(outfile),
                 "overwrite=true",
+                "verifypaired=f",
+                "int=f"
             ]
+        #eprint(' '.join(command))
         p = subprocess.run(
             command,
             stderr=subprocess.PIPE,
