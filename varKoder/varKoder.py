@@ -470,6 +470,13 @@ def main():
             inter_dir = Path(args.int_folder)
         except TypeError:
             inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+            
+        # check if output directory exists
+        if not args.overwrite and Path(args.outdir).exists():
+            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
+        else:
+            if Path(args.outdir).is_dir():
+                shutil.rmtree(Path(args.outdir))
 
         # set directory to save images
         if args.command == "image":
@@ -483,11 +490,7 @@ def main():
             else:
                 images_d = inter_dir / "images"
 
-        if not args.overwrite and Path(args.outdir).exists():
-            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
-        else:
-            if Path(args.outdir).is_dir():
-                shutil.rmtree(Path(args.outdir))
+
 
         eprint("varKoder",version)
         eprint("Kmer size:", str(args.kmer_size))
