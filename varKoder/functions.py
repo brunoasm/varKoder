@@ -37,7 +37,7 @@ from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed, default_device
 from fastai.callback.mixup import CutMix, MixUp
 from fastai.losses import CrossEntropyLossFlat  # , BCEWithLogitsLossFlat
-from fastai.callback.core import Callback
+from fastai.callback.core import Callback, CancelValidException
 from fastai.torch_core import set_seed
 
 from torch import nn
@@ -1397,6 +1397,11 @@ def build_custom_model(architecture, dls):
 
     return custom_model
     
+# Define callback to skip validation
+class SkipValidationCallback(Callback):
+    def before_validate(self):
+        raise CancelValidException
+
 
 # Function: build dataloaders, learners and train
 def train_nn(
@@ -1418,8 +1423,17 @@ def train_nn(
     metrics_threshold=0.7,
     gamma_neg=4,
     verbose=True,
-    num_workers = 0
+    num_workers = 0,
+    no_metrics = False
 ):
+    # if skipping validation metrics, add NoValidation callback
+    if no_metrics:
+        if isinstance(callbacks,list):
+            callbacks.append(SkipValidationCallback())
+        else:
+            callbacks=[callbacks,SkipValidationCallback()]
+
+
     # find a batch size that is a power of 2 and splits the dataset in about 10 batches
     batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
     batch_size = min(batch_size, max_bs)
@@ -1541,6 +1555,9 @@ def train_nn(
     # Detach parallelization if it was used
     if is_parallel:
         learn.detach_parallel()
+
+    # Remove skip validation callback if used
+    learn.remove_cb(SkipValidationCallback)
 
     return learn
 

@@ -23,6 +23,13 @@ def main():
     parent_parser.add_argument(
         "-x", "--overwrite", help="overwrite existing results.", action="store_true"
     )
+    parent_parser.add_argument(
+        "-v",
+        "--verbose",
+        help="verbose output to stderr to help in debugging.",
+        action="store_true",
+        default=False,
+    )
     parent_parser.add_argument("-vv", "--version", action='version', version=f'%(prog)s {version}', help="prints varKoder version installed")
     # create parser for image command
     parser_img = subparsers.add_parser(
@@ -30,13 +37,6 @@ def main():
         parents=[parent_parser],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         help="Preprocess reads and prepare images for Neural Network training.",
-    )
-    parser_img.add_argument(
-        "-v",
-        "--verbose",
-        help="show output for fastp, dsk and bbtools.",
-        action="store_true",
-        default=False,
     )
     parser_img.add_argument(
         "input",
@@ -268,6 +268,13 @@ def main():
         action="store_true",
         default=False,
     )
+    parser_train.add_argument(
+        "-M",
+        "--no-metrics",
+        help="skip calculation of validation loss and metrics during training.",
+        action="store_true",
+        default=False,
+    )
 
     # create parser for query command
     parser_query = subparsers.add_parser(
@@ -289,13 +296,6 @@ def main():
         help="path pickle file with exported trained model or name of HuggingFace hub model",
         default="brunoasm/vit_large_patch32_224.NCBI_SRA"
         )
-    parser_query.add_argument(
-        "-v",
-        "--verbose",
-        help="show output for fastp, dsk and bbtools.",
-        action="store_true",
-        default=False,
-    )
     parser_query.add_argument(
         "-1",
         "--no-pairs",
@@ -715,17 +715,29 @@ def main():
 
         # 1 let's create a data table for all images.
         image_files = list()
+        f_counter = 0
         for f in Path(args.input).rglob("*.png"):
             image_files.append(get_metadata_from_img_filename(f))
+            f_counter += 1
+            if f_counter % 1000 == 0:
+                eprint(f"\rFound {f_counter} image files", end='', flush=True)
+        eprint(f"\rFound {f_counter} image files", flush=True)
+
+
         if args.label_table_path:
-            image_files = pd.DataFrame(image_files).merge(
+            n_image_files = pd.DataFrame(image_files).merge(
                 pd.read_csv(args.label_table_path)[
                      ["sample", "labels"]
                     #["sample", "labels", "possible_low_quality"]
                 ],
                 on="sample",
-                how="left",
+                how="inner",
             )
+            excluded_samples = set([x["sample"] for x in image_files]) - set(n_image_files["sample"])
+            eprint(len(excluded_samples),"samples excluded due to absence in provided label table.")
+            if args.verbose:
+                eprint('Samples excluded:\n','\n'.join(excluded_samples))
+            image_files = n_image_files
         else:
             image_files = pd.DataFrame(image_files).assign(
                 labels=lambda x: x["path"].apply(
@@ -779,7 +791,6 @@ def main():
 
         # 3 prepare input to training function based on options
         eprint("Setting up neural network model for training.")
-        eprint("Model architecture:", args.architecture)
 
         callback = {"MixUp": MixUp, "CutMix": CutMix, "None": None}[
             args.mix_augmentation
@@ -817,10 +828,12 @@ def main():
         elif not args.random_weights and not args.architecture in ('arias2022', 'fiannaca2018'):
             pretrained = True
             eprint("Starting model with pretrained weights from timm library.")
+            eprint("Model architecture:", args.architecture)
 
         else:
             pretrained = False
             eprint("Starting model with random weights.")
+            eprint("Model architecture:", args.architecture)
             
         # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
@@ -886,6 +899,7 @@ def main():
             verbose=not args.no_logging,
             is_multilabel=not args.single_label,
             num_workers=args.num_workers,
+            no_metrics=args.no_metrics,
             **extra_params
         )
 
@@ -948,7 +962,7 @@ def main():
                 
             image_files.append(img_metadata)
 
-        eprint(f"Found {len(image_files)} to convert.")
+        eprint(f"Found {len(image_files)} files to convert.")
         eprint(f"Converted images will be written to {args.outdir}")
 
         if args.n_threads > 1:

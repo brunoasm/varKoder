@@ -34,7 +34,7 @@ There are two modes of training:
 | -x , --overwrite | overwrite existing results. |
 | `-vv`, `--version` |  shows varKoder version. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |
-| -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. This table must have columns `sample` and `labels`. Labels are passed as a string, with multiple labels separated by `;`. By default, varKoder will attempt to read labels from image metadata instead of a label table. |
+| -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. This table must have columns `sample` and `labels`. Labels are passed as a string, with multiple labels separated by `;`. By default, varKoder will attempt to read labels from image metadata instead of a label table, providing a label table overrides this behavior. Samples not present in label table will be ignored for training and validation. |
 | -S, --single-label  |  Train as a single-label image classification model. This option must be combined with --ignore-quality. By default, models are trained as multi-label. |
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
@@ -47,6 +47,7 @@ There are two modes of training:
 | -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA)|
 | -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
 | -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
+| -M, --no-metrics | skip calculation of validation loss and metrics (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms (default: 0.75) |
