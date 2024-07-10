@@ -9,8 +9,8 @@ dependencies:
   - pytorch::pytorch=2.1
   - pytorch::pytorch-cuda=11.8
   - fastai::fastai=2.7.13
-  - conda-forge::huggingface_hub
-  - conda-forge::accelerate
+  - conda-forge::huggingface_hub=0.23
+  - conda-forge::accelerate=0.31
   - conda-forge::timm=1.0
   - conda-forge::pyarrow>=14.0.1
   - conda-forge::pandas

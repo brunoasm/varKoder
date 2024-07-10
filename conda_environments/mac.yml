@@ -8,9 +8,9 @@ channels:
 dependencies:
   - python>=3.9
   - pyarrow>=14.0.1
-  - huggingface_hub
+  - huggingface_hub=0.23
   - pigz
-  - conda-forge::accelerate
+  - conda-forge::accelerate=0.31
   - tenacity
   - pytorch=2.1.0
   - humanfriendly=10
