@@ -19,7 +19,7 @@ fi
 
 IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
 T1_CMD="train --seed 2 -e 0 -z 5 ./images ./trained_pretrained"
-T2_CMD="train --architecture resnet18 --seed 3 --random-weigths -e 5 -z 5 --overwrite ./images ./trained_random"
+T2_CMD="train --architecture resnet18 --seed 3 --random-weights -e 5 -z 5 --overwrite ./images ./trained_random"
 Q1_CMD="query --include-probs --seed 4 --overwrite -k 7 -c 1 -M 20M --keep-images --model trained_pretrained/trained_model.pkl fastq_query/ inferences_Bembidion"
 Q2_CMD="query --threshold 0.5 --seed 5 --overwrite -k 7 -c 1 -M 20M -I inferences_Bembidion/query_images inferences_SRA"
 
