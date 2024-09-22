@@ -53,7 +53,7 @@ set_cuda_visible_devices() {
 }
 
 SING_PREFIX="singularity exec --no-home --cleanenv --nv -B ${TMPDIR}:/tmp -B ${PWD}:/home --pwd /home"
-DOCKER_PREFIX="docker run --platform linux/amd64 -v $TMPDIR:/tmp -v $PWD:/home"
+DOCKER_PREFIX="docker run --platform linux/amd64 -v $TMPDIR:/tmp -v $PWD:/home brunoasm/varkoder:latest"
 
 # Function to update prefixes based on GPU selection (only for non-Mac ARM systems)
 update_prefixes() {
@@ -61,16 +61,16 @@ update_prefixes() {
         local gpu_index="$1"
         if [ -n "$gpu_index" ]; then
             SING_PREFIX="$SING_PREFIX --env CUDA_VISIBLE_DEVICES=$gpu_index varKoder.sif varKoder"
-            DOCKER_PREFIX="$DOCKER_PREFIX --gpus device=$gpu_index brunoasm/varkoder:latest varKoder"
+            DOCKER_PREFIX="$DOCKER_PREFIX --gpus device=$gpu_index"
             LOCAL_PREFIX="CUDA_VISIBLE_DEVICES=$gpu_index varKoder"
         else
             SING_PREFIX="$SING_PREFIX varKoder.sif varKoder"
-            DOCKER_PREFIX="$DOCKER_PREFIX brunoasm/varkoder:latest varKoder"
+            DOCKER_PREFIX="$DOCKER_PREFIX"
             LOCAL_PREFIX="varKoder"
         fi
     else
         SING_PREFIX="$SING_PREFIX varKoder.sif varKoder"
-        DOCKER_PREFIX="$DOCKER_PREFIX brunoasm/varkoder:latest varKoder"
+        DOCKER_PREFIX="$DOCKER_PREFIX"
         LOCAL_PREFIX="varKoder"
     fi
 }
