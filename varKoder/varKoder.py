@@ -23,6 +23,13 @@ def main():
     parent_parser.add_argument(
         "-x", "--overwrite", help="overwrite existing results.", action="store_true"
     )
+    parent_parser.add_argument(
+        "-v",
+        "--verbose",
+        help="verbose output to stderr to help in debugging.",
+        action="store_true",
+        default=False,
+    )
     parent_parser.add_argument("-vv", "--version", action='version', version=f'%(prog)s {version}', help="prints varKoder version installed")
     # create parser for image command
     parser_img = subparsers.add_parser(
@@ -32,19 +39,16 @@ def main():
         help="Preprocess reads and prepare images for Neural Network training.",
     )
     parser_img.add_argument(
-        "-v",
-        "--verbose",
-        help="show output for fastp, dsk and bbtools.",
-        action="store_true",
-        default=False,
-    )
-    parser_img.add_argument(
         "input",
         help="path to either the folder with fastq files or csv file relating file paths to samples. See online manual for formats.",
     )
     parser_img.add_argument(
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
+    parser_img.add_argument(
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
+    )
+    
     parser_img.add_argument(
         "-n",
         "--n-threads",
@@ -176,7 +180,7 @@ def main():
     parser_train.add_argument(
         "-c",
         "--architecture",
-        help="model architecture to download from timm library. See https://github.com/rwightman/pytorch-image-models for possible options.",
+        help="model architecture. Options include all those supported by timm library  plus 'arias2022' and 'fiannaca2018'. See documentation for more info. ",
         default="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA",
     )
     parser_train.add_argument(
@@ -214,8 +218,8 @@ def main():
     )
     parser_train.add_argument(
         "-w",
-        "--random-weigths",
-        help="start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
+        "--random-weights",
+        help="start training with random weights. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models.",
         action="store_true",
     )
     parser_train.add_argument(
@@ -226,7 +230,7 @@ def main():
         help="Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label.",
     )
     # parser_train.add_argument('-i','--downweight-quality',
-    #                          help = 'use a modified loss function that downweigths samples based on DNA quality. Ignored if used with --single-label.',
+    #                          help = 'use a modified loss function that downweights samples based on DNA quality. Ignored if used with --single-label.',
     #                          action = 'store_true'
     #                         )
     parser_train.add_argument(
@@ -264,6 +268,13 @@ def main():
         action="store_true",
         default=False,
     )
+    parser_train.add_argument(
+        "-M",
+        "--no-metrics",
+        help="skip calculation of validation loss and metrics during training.",
+        action="store_true",
+        default=False,
+    )
 
     # create parser for query command
     parser_query = subparsers.add_parser(
@@ -286,14 +297,7 @@ def main():
         default="brunoasm/vit_large_patch32_224.NCBI_SRA"
         )
     parser_query.add_argument(
-        "-v",
-        "--verbose",
-        help="show output for fastp, dsk and bbtools.",
-        action="store_true",
-        default=False,
-    )
-    parser_query.add_argument(
-        "-p",
+        "-1",
         "--no-pairs",
         help="prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample",
         action="store_true",
@@ -307,6 +311,10 @@ def main():
     parser_query.add_argument(
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
+    parser_query.add_argument(
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
+    )
+    
     parser_query.add_argument(
         "-n",
         "--n-threads",
@@ -388,6 +396,42 @@ def main():
         default=64,
     )
 
+    # create parser for convert command
+    parser_cvt = subparsers.add_parser(
+        "convert",
+        parents=[parent_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        help="Convert images between different kmer mappings.",
+    )
+    parser_cvt.add_argument(
+        "-n",
+        "--n-threads",
+        help="number of threads to process images in parallel.",
+        default=1,
+        type=int,
+    )
+    parser_cvt.add_argument(
+        "-k","--kmer-size", help="size of kmers used to produce original images. Will be inferred from file names if omitted.", type=int, default=7,choices = [5,6,7,8,9]
+    )
+    parser_cvt.add_argument(
+        "-p","--input-mapping", help="kmer mapping of input images. Will be inferred from file names if omitted.", choices = mapping_choices
+    )
+    parser_cvt.add_argument(
+        "-r","--sum-reverse-complements", help="When converting from CGR to varKode, add together counts from canonical kmers and their reverse complements.", action = 'store_true'
+    )
+
+    parser_cvt.add_argument(
+        "output_mapping", help="kmer mapping of output images.", choices = mapping_choices
+    )
+    parser_cvt.add_argument(
+        "input", help="path to folder with png images files to be converted."
+    )
+    parser_cvt.add_argument(
+        "outdir", help="path to the folder where results will be saved."
+    )
+
+    
+
     # execution
     args = main_parser.parse_args()
 
@@ -426,6 +470,13 @@ def main():
             inter_dir = Path(args.int_folder)
         except TypeError:
             inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+            
+        # check if output directory exists
+        if not args.overwrite and Path(args.outdir).exists():
+            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
+        else:
+            if Path(args.outdir).is_dir():
+                shutil.rmtree(Path(args.outdir))
 
         # set directory to save images
         if args.command == "image":
@@ -439,11 +490,7 @@ def main():
             else:
                 images_d = inter_dir / "images"
 
-        if not args.overwrite and Path(args.outdir).exists():
-            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
-        else:
-            if Path(args.outdir).is_dir():
-                shutil.rmtree(Path(args.outdir))
+
 
         eprint("varKoder",version)
         eprint("Kmer size:", str(args.kmer_size))
@@ -471,11 +518,8 @@ def main():
                     pd.read_csv(stats_path, index_col=[0],dtype={0:str},low_memory=False).to_dict(orient="index")
             )
 
-        ### the same kmer mapping will be used for all files, so we will use it as a global variable
-        map_path = pkg_resources.resource_filename(
-            "varKoder", f"kmer_mapping/{args.kmer_size}mer_mapping.parquet"
-        )
-        kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
+        ### the same kmer mapping will be used for all files, so we will use it as a global variable to decrease overhead
+        kmer_mapping = get_kmer_mapping(args.kmer_size, args.kmer_mapping)
 
         # check if we will need multiple subfolder levels
         # this will ensure we have about 1000 samples per subfolder
@@ -544,25 +588,55 @@ def main():
 
         img_paths = [img for img in images_d.rglob("*.png")]
 
+        #get metadata
         actual_labels = []
+        qual_flags = []
+        freq_sds = []
+        sample_ids = []
+        query_bp = []
+        query_klen = []
+        query_mapping = []
         for p in img_paths:
             try:
                 labs = ";".join(get_varKoder_labels(p))
-            except AttributeError:
+            except (AttributeError, TypeError):
                 labs = np.nan
 
             try:
                 qual_flag = get_varKoder_qual(p)
-            except AttributeError:
+            except (AttributeError, TypeError):
                 qual_flag = np.nan
 
             try:
                 freq_sd = get_varKoder_freqsd(p)
-            except AttributeError:
+            except (AttributeError,TypeError):
                 freq_sd = np.nan
 
-            actual_labels.append(labs)
+            img_metadatada = get_metadata_from_img_filename(p)
 
+            
+            sample_ids.append(img_metadatada['sample'])
+            query_bp.append(img_metadatada['bp'])
+            query_klen.append(img_metadatada['img_kmer_size'])
+            query_mapping.append(img_metadatada['img_kmer_mapping'])
+            actual_labels.append(labs)
+            qual_flags.append(qual_flag)
+            freq_sds.append(freq_sd)
+
+        # Start output dataframe
+        common_data = {
+            "varKode_image_path": img_paths,
+            "sample_id": sample_ids,
+            "query_basepairs": query_bp,
+            "query_kmer_len": query_klen,
+            "query_mapping": query_mapping,
+            "trained_model_path": str(args.model),
+            "actual_labels": actual_labels,
+            "possible_low_quality": qual_flags,
+            "basefrequency_sd": freq_sds,
+        }
+            
+        #Decide how to compute predictions, start learner
         n_images = len(img_paths)
 
         try:
@@ -583,27 +657,8 @@ def main():
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=args.max_batch_size)
 
-        # Predicting and construction output dataframe
-        common_data = {
-            "varKode_image_path": img_paths,
-            "sample_id": [
-                img.with_suffix("").name.split(sample_bp_sep)[0].split(label_sample_sep)[-1]
-                for img in img_paths
-            ],
-            "query_basepairs": [
-                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[0]
-                for img in img_paths
-            ],
-            "query_kmer_len": [
-                img.with_suffix("").name.split(sample_bp_sep)[-1].split(bp_kmer_sep)[-1]
-                for img in img_paths
-            ],
-            "trained_model_path": str(args.model),
-            "actual_labels": actual_labels,
-            "possible_low_quality": qual_flag,
-            "basefrequency_sd": freq_sd,
-        }
         
+        #make predictions and add to output dataframe
         if "MultiLabel" in str(learn.loss_func):
             eprint(
                 "This is a multilabel classification model, each input may have 0 or more predictions."
@@ -660,28 +715,29 @@ def main():
 
         # 1 let's create a data table for all images.
         image_files = list()
+        f_counter = 0
         for f in Path(args.input).rglob("*.png"):
-            image_files.append(
-                {
-                    "sample": f.name.split(sample_bp_sep)[0],
-                    "bp": int(
-                        f.name.split(sample_bp_sep)[1]
-                        .split(bp_kmer_sep)[0]
-                        .split("K")[0]
-                    )
-                    * 1000,
-                    "path": f,
-                }
-            )
+            image_files.append(get_metadata_from_img_filename(f))
+            f_counter += 1
+            if f_counter % 1000 == 0:
+                eprint(f"\rFound {f_counter} image files", end='', flush=True)
+        eprint(f"\rFound {f_counter} image files", flush=True)
+
+
         if args.label_table_path:
-            image_files = pd.DataFrame(image_files).merge(
+            n_image_files = pd.DataFrame(image_files).merge(
                 pd.read_csv(args.label_table_path)[
                      ["sample", "labels"]
                     #["sample", "labels", "possible_low_quality"]
                 ],
                 on="sample",
-                how="left",
+                how="inner",
             )
+            excluded_samples = set([x["sample"] for x in image_files]) - set(n_image_files["sample"])
+            eprint(len(excluded_samples),"samples excluded due to absence in provided label table.")
+            if args.verbose:
+                eprint('Samples excluded:\n','\n'.join(excluded_samples))
+            image_files = n_image_files
         else:
             image_files = pd.DataFrame(image_files).assign(
                 labels=lambda x: x["path"].apply(
@@ -690,10 +746,10 @@ def main():
                 possible_low_quality=lambda x: x["path"].apply(get_varKoder_qual),
             )
 
-        # add quality-based sample weigths
+        # add quality-based sample weights
         # if args.downweight_quality:
         #    image_files = image_files.assign(
-        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weigths)
+        #            sample_weights = lambda x: x['path'].apply(get_varKoder_quality_weights)
         #        )
         # else:
         #    image_files['sample_weights'] = 1
@@ -735,7 +791,6 @@ def main():
 
         # 3 prepare input to training function based on options
         eprint("Setting up neural network model for training.")
-        eprint("Model architecture:", args.architecture)
 
         callback = {"MixUp": MixUp, "CutMix": CutMix, "None": None}[
             args.mix_augmentation
@@ -770,13 +825,15 @@ def main():
             pretrained = False
             del past_learn
 
-        elif not args.random_weigths:
+        elif not args.random_weights and not args.architecture in ('arias2022', 'fiannaca2018'):
             pretrained = True
             eprint("Starting model with pretrained weights from timm library.")
+            eprint("Model architecture:", args.architecture)
 
         else:
             pretrained = False
-            eprint("Starting model with random weigths.")
+            eprint("Starting model with random weights.")
+            eprint("Model architecture:", args.architecture)
             
         # Check for label types and warn if there seems to be a mismatch
         if args.single_label:
@@ -834,7 +891,7 @@ def main():
             freeze_epochs=args.freeze_epochs,
             normalize=True,
             pretrained=pretrained,
-            callbacks=[callback],
+            callbacks=callback,
             max_lighting=args.max_lighting,
             p_lighting=args.p_lighting,
             loss_fn=loss,
@@ -842,6 +899,7 @@ def main():
             verbose=not args.no_logging,
             is_multilabel=not args.single_label,
             num_workers=args.num_workers,
+            no_metrics=args.no_metrics,
             **extra_params
         )
 
@@ -856,8 +914,77 @@ def main():
 
         eprint("Model, labels, and data table saved to directory", str(outdir))
 
-    if not args.int_folder and inter_dir.is_dir(): 
-        shutil.rmtree(inter_dir)
+
+    
+    ###################
+    # convert command
+    ###################
+    if args.command == "convert":
+
+        if not args.overwrite:
+            if Path(args.outdir).exists():
+                raise Exception(
+                    "Output directory exists, use --overwrite if you want to overwrite it."
+                )
+        
+        # 1 let's create a data table for all images.
+
+        image_files = list()
+        for f in Path(args.input).rglob("*.png"):
+            try:
+                img_metadata = get_metadata_from_img_filename(f)
+                if args.input_mapping: #if input mapping passed as argument, it has priority
+                    img_metadata['img_kmer_mapping'] = args.input_mapping
+                if args.kmer_size: #if input kmer size passed as argument, it has priority
+                    img_metadata['img_kmer_size'] = args.kmer_size
+
+
+            except:
+                img_metadata = {'sample': None,
+                                'bp': None,
+                                'img_kmer_mapping': args.input_mapping,
+                                'img_kmer_size': args.kmer_size,
+                                'path':f}
+
+
+            if img_metadata['sample'] and img_metadata['bp']:
+                fname = (
+                         f"{img_metadata['sample']}{sample_bp_sep}"
+                         f"{int(img_metadata['bp'] / 1000):08d}K{bp_kmer_sep}"
+                         f"{args.output_mapping}{bp_kmer_sep}"
+                         f"k{img_metadata['img_kmer_size']}.png"
+                        )
+                img_metadata['outfile_path'] = (Path(args.outdir)/
+                                                Path(*img_metadata['path'].relative_to(Path(args.input)).parent.parts[1:])/
+                                                fname)
+            else:
+                img_metadata['outfile_path'] = Path(args.outdir)/Path(*img_metadata['path'].parts[1:])
+                
+            image_files.append(img_metadata)
+
+        eprint(f"Found {len(image_files)} files to convert.")
+        eprint(f"Converted images will be written to {args.outdir}")
+
+        if args.n_threads > 1:
+            with multiprocessing.Pool(args.n_threads) as pool:
+                process_partial = partial(process_remapping, 
+                                          output_mapping=args.output_mapping,
+                                          sum_rc=args.sum_reverse_complements)
+                results = list(tqdm(pool.imap(process_partial, image_files), total=len(image_files), desc="Processing images"))
+        
+        else:
+            for f_data in tqdm(image_files, desc="Processing images"):
+                process_remapping(f_data, args.output_mapping, args.sum_reverse_complements)
+
+
+
+
+    #delete any temporary directory created during execution
+    try: #this will cause an error for train and convert commands, so need to catch exception
+        if not args.int_folder and inter_dir.is_dir(): 
+            shutil.rmtree(inter_dir)
+    except:
+        pass
     eprint("DONE")
 
 

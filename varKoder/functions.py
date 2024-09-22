@@ -1,14 +1,19 @@
 #!/usr/bin/env python
 
 # imports used for all commands
+import pkg_resources
+import contextlib
+import traceback
 from pathlib import Path
 from collections import OrderedDict, defaultdict
+from tqdm import tqdm
+from functools import partial
 
 from io import StringIO
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
 from sklearn.exceptions import UndefinedMetricWarning
 
-import pandas as pd, numpy as np, tempfile, shutil, subprocess, functools, hashlib
+import pandas as pd, numpy as np, itertools, tempfile, shutil, subprocess, functools, hashlib
 import pandas.errors
 import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
 from math import log
@@ -23,14 +28,16 @@ from fastai.vision.all import (
     MultiCategoryBlock,
     CategoryBlock,
     vision_learner,
+    parent_label
 )
 from fastai.vision.all import aug_transforms, Resize, ResizeMethod
+from fastai.distributed import to_parallel, detach_parallel
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
 from fastai.learner import Learner, load_learner
 from fastai.torch_core import set_seed, default_device
 from fastai.callback.mixup import CutMix, MixUp
 from fastai.losses import CrossEntropyLossFlat  # , BCEWithLogitsLossFlat
-from fastai.callback.core import Callback
+from fastai.callback.core import Callback, CancelValidException
 from fastai.torch_core import set_seed
 
 from torch import nn
@@ -41,17 +48,17 @@ from timm import create_model
 from timm.loss import AsymmetricLossMultiLabel
 from huggingface_hub import from_pretrained_fastai
 
-
 # define filename separators
 label_sample_sep = "+"
 labels_sep = ";"
 bp_kmer_sep = "+"
 sample_bp_sep = "@"
 qual_thresh = 0.01
+mapping_choices = ['varKode', 'cgr']
+custom_archs = ['fiannaca2018', 'arias2022']
 
 # ignore sklearn warning during training
 from sklearn.exceptions import UndefinedMetricWarning
-
 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
 
 
@@ -117,9 +124,9 @@ def process_input(inpath, is_query=False, no_pairs=False):
         else:
             for sample in inpath.iterdir():
                 if sample.resolve().is_dir():
-                    eprint("is_dir")
+                    #eprint("is_dir")
                     for fl in sample.iterdir():
-                        eprint(fl)
+                        #eprint(fl)
                         if (
                             fl.name.endswith("fq")
                             or fl.name.endswith("fastq")
@@ -133,7 +140,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                     "files": sample / fl.name,
                                 }
                             )
-            eprint(files_records)
+        #eprint(files_records)
 
         files_table = (
             pd.DataFrame(files_records)
@@ -544,13 +551,12 @@ def split_fastq(
     elif is_query or int(nsites) > min_bp:
         sites_per_file = [min(int(nsites), int(max_bp))]
     else:
-        raise Exception(
-            "Input file "
+        eprint( "Input file "
             + str(infile)
             + " has less than "
             + str(min_bp)
-            + "bp, remove sample or raise min_bp."
-        )
+            + "bp, raise --min_bp if you want to produce an image.")
+        raise Exception("Input file has less than minimum data.")
 
     if not is_query:
         while sites_per_file[-1] > min_bp:
@@ -593,9 +599,15 @@ def split_fastq(
                 "samplebasestarget=" + str(bp),
                 "sampleseed=" + str(int(seed) + i),
                 "breaklength=500",
+                "ignorebadquality=t",
+                "quantize=t", 
+                "iupacToN=t",
+                "qin=33", #maybe not always true, but crashes sometimes if auto
                 "in=" + str(infile),
                 "out=" + str(outfile),
                 "overwrite=true",
+                "verifypaired=f",
+                "int=f"
             ]
         p = subprocess.run(
             command,
@@ -677,24 +689,104 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
 
     return stats
 
+# This function returns the coordinates of kmers according to chaos game representation
+# for a given kmer_size
+# By default, both a canonical kmer and its reverse complement map to 2 pixels
+# If compact is True, they will both map to a single pixel, for a more compact representation
+def get_cgr(kmer_size):
+
+    #following corners from Jeffrey, using cartesian coords
+    corners = np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)
+
+    nucleotides = np.array([0, 1, 2, 3], dtype=np.uint8)  # A, C, G, T
+    all_sequences = np.array(np.meshgrid(*[nucleotides]*kmer_size)).T.reshape(-1, kmer_size)
+
+    rev_sequences = all_sequences[:, ::-1]  # Reverse the sequences
+    rev_complement = 3 - rev_sequences      # Compute reverse complement
+
+
+    # Calculate CGR coordinates using vectorized operations
+    coords = np.full((all_sequences.shape[0], 2), 0.5)  # Start coordinates (x, y) at the center
+    for i in range(kmer_size):
+        coords = (coords + corners[all_sequences[:, i]]) / 2
+
+    # Convert integer sequences back to string for display
+    # Join sequences and reverse complements to the mapping
+
+    nucleotide_map = np.array(['A', 'C', 'G', 'T'])
+    df = pd.concat([pd.DataFrame({
+                      'x': coords[:, 0],
+                      'y': coords[:, 1]
+                      }, index=[''.join(nucleotide_map[seq]) 
+                                for seq in all_sequences]),
+                    pd.DataFrame({
+                      'x': coords[:, 0],
+                      'y': coords[:, 1]
+                      }, index=[''.join(nucleotide_map[seq]) 
+                                for seq in rev_complement])
+                   ])
+
+    # Replace coords with integer numbers
+    sq_side = len(df['x'].drop_duplicates())
+    df['x'] = (sq_side*(df['x'] - df['x'].min())).astype(int)
+    df['y'] = (sq_side*(df['y'] - df['y'].min())).astype(int)
+
+
+    return df
+
+
+
+
+# This function returns a table mapping specific kmers of size kmer-size to
+# a x and y coordinates in a square grid
+# method options: varkode, cgr
+# cgr: chaos game representation
+def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
+
+
+    if method == 'varKode':
+        map_path = pkg_resources.resource_filename(
+            "varKoder", f"kmer_mapping/{kmer_size}mer_mapping.parquet"
+        )
+        kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
+    elif method == 'cgr':
+        kmer_mapping = get_cgr(kmer_size)
+    else:
+        raise Exception('method must be "varKode" or "cgr"')
+
+    return kmer_mapping
+
 
 # given an input dsk hdf5 file, make an image with kmer counts
-# mapping is the path to the table in parquet format that relates kmers to their positions in the image
+# kmer_mapping is the instruction of which mapping to use:
+### * k+
 # we do not need to save the ascii dsk kmer counts to disk, but the program requires a file
 # so we will create a temporary file and delete it
 def make_image(
     infile,
     outfolder,
-    kmers,
+    kmer_mapping,
     threads=1,
     overwrite=False,
     verbose=False,
     labels=[],
     base_sd=0,
     base_sd_thresh=qual_thresh,
-    subfolder_levels=0
+    subfolder_levels=0,
+    mapping_code='varKode',
 ):
-    outfile = Path(infile).name.removesuffix("".join(Path(infile).suffixes)) + ".png"
+    
+    
+    in_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
+    in_base1, in_k = in_basename.split(bp_kmer_sep)
+
+    outfile = (in_base1 +
+               bp_kmer_sep +
+               mapping_code +
+               bp_kmer_sep +
+               in_k +
+               ".png"
+              )
     if subfolder_levels:
         hsh = list(hashlib.md5(outfile.encode("UTF-8")).hexdigest())
         for i in range(subfolder_levels):
@@ -707,7 +799,7 @@ def make_image(
         return OrderedDict()
 
     start_time = time.time()
-    kmer_size = len(kmers.index[0])
+    kmer_size = len(kmer_mapping.index[0])
 
     with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
         # first, dump dsk results as ascii, save in a pandas df and merge with mapping
@@ -742,28 +834,34 @@ def make_image(
         counts = pd.read_csv(
             StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
         )
-        counts = kmers.join(counts).groupby(["x", "y"]).agg("sum").reset_index()
+        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("mean").reset_index()
+
+
         counts.loc[:, "count"] = counts["count"].fillna(0)
 
         # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
-        array_width = kmers["x"].max()
-        array_height = kmers["y"].max()
+        array_width = kmer_mapping["x"].max() + 1
+        array_height = kmer_mapping["y"].max() + 1
 
         # Now let's create the image:
         kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[array_height - counts["y"], counts["x"] - 1] = (
-            counts["count"] + 1
-        )  # we do +1 so empty cells are different from zero-count
+        kmer_array[counts["x"],counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
+        kmer_array = kmer_array.transpose() #PIL images have flipped x and y coords
+        kmer_array = np.flip(kmer_array,0) #In PIL images, 0 is top in vertical axis (axis 0 after transposed)
+
+        
         bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
         kmer_array = np.digitize(kmer_array, bins, right=False) - 1
+        
         kmer_array = np.uint8(kmer_array)
         img = Image.fromarray(kmer_array, mode="L")
 
-        # Now let's add the labels:
+        # Now let's add the labels and other metadata:
         metadata = PngInfo()
         metadata.add_text("varkoderKeywords", labels_sep.join(labels))
         metadata.add_text("varkoderBaseFreqSd", str(base_sd))
         metadata.add_text("varkoderLowQualityFlag", str(base_sd > qual_thresh))
+        metadata.add_text("varkoderMapping", mapping_code)
 
         # finally, save the image
         img.save(Path(outfolder) / outfile, optimize=True, pnginfo=metadata)
@@ -937,22 +1035,27 @@ def run_clean2img(
                 Path(inter_dir, "clean_reads").glob(str(x["sample"]) + "_fastp_*.json")
             )
             stats[str(x["sample"])]["base_frequencies_sd"] = base_sd
+            kmer_mapping = get_kmer_mapping(
+                kmer_size = args.kmer_size,
+                method = args.kmer_mapping)     
             try:
                 img_stats = make_image(
                     infile=infile,
                     outfolder=images_d,
-                    kmers=kmer_mapping,
+                    kmer_mapping=kmer_mapping,
                     overwrite=args.overwrite,
                     threads=cores_per_process,
                     verbose=args.verbose,
                     labels=x["labels"],
                     base_sd=base_sd,
-                    subfolder_levels=subfolder_levels
+                    subfolder_levels=subfolder_levels,
+                    mapping_code = args.kmer_mapping
                 )
-            except (IndexError, pandas.errors.ParserError) as e:
+            except (IndexError, pd.errors.ParserError) as e:
                 eprint("IMAGE FAIL:", infile)
                 if args.verbose:
                     eprint(e)
+                    traceback.print_exc(file=sys.stdout)
                 eprint("SKIPPING IMAGE")
                 stats[str(x["sample"])].update({"failed_step": "image"})
                 continue
@@ -1080,6 +1183,36 @@ def get_varKoder_qual(img_path):
 def get_varKoder_freqsd(img_path):
     return float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
 
+# Function: retrieve mapping
+def get_varKoder_mapping(img_path):
+    return str(Image.open(img_path).info.get("varkoderMapping"))
+
+# Function: retrieve kmer size and kmer mapping method from image file name
+def get_metadata_from_img_filename(img_path):
+    sample_name, split2 = Path(img_path).name.removesuffix('.png').split(sample_bp_sep)
+    try:
+        n_bp, img_kmer_mapping, img_kmer_size = split2.split(bp_kmer_sep)
+    except ValueError: #backwards compatible with varKoder v0.X
+        n_bp, img_kmer_size = split2.split(bp_kmer_sep)
+        img_kmer_mapping = 'varKode'
+        
+    n_bp = int(n_bp[:-1])*1000
+    img_kmer_size = int(img_kmer_size[1:])
+
+
+    return {'sample': sample_name,
+            'bp': n_bp,
+            'img_kmer_mapping': img_kmer_mapping,
+            'img_kmer_size': img_kmer_size,
+            'path':Path(img_path)
+           }
+    
+# Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
+def get_varKoder_quality_weights(img_path):
+    base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
+    weight = 2 / (1 + math.exp(20 * base_sd))
+    return weight
+
 
 # Custom training loop for fastai to use sample weights
 # def custom_weighted_training_loop(learn, sample_weights):
@@ -1103,7 +1236,7 @@ def get_varKoder_freqsd(img_path):
 #        # Zero the gradients
 #        opt.zero_grad()
 #
-##Callback to add sample weigths
+##Callback to add sample weights
 # class CustomWeightedTrainingCallback(Callback):
 #    def __init__(self, sample_weights):
 #        self.sample_weights = sample_weights
@@ -1111,7 +1244,7 @@ def get_varKoder_freqsd(img_path):
 #    def before_fit(self):
 #        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
 #
-## Modified AsymmetricLossMultiLabel from timm library to include sample weigths
+## Modified AsymmetricLossMultiLabel from timm library to include sample weights
 # class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
 #    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
 #        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
@@ -1170,7 +1303,107 @@ def get_varKoder_freqsd(img_path):
 #
 #        return -loss.sum()
 
+# Function: build a custom models for linearized varKodes or CGRs based on prior work
+# Define classes for custom models
 
+class Arias2022Head(nn.Module):
+    def __init__(self, n_classes):
+        super(Arias2022Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(64, n_classes))
+    def forward(self, x):
+        return self.head(x)
+
+class Arias2022Body(nn.Module):
+    def __init__(self):
+        super(Arias2022Body, self).__init__()
+        self.body = nn.Sequential(
+                nn.Flatten(), #reshape to 1D array
+                nn.LazyLinear(512),
+                nn.ReLU(),
+                nn.Dropout(0.5),
+                nn.Linear(512, 64),
+                nn.ReLU(),
+                nn.Dropout(0.5))
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Head(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Head, self).__init__()
+        self.head = nn.Sequential(nn.Linear(500, n_classes))
+
+    def forward(self, x):
+        #x = x.unsqueeze(1)  # Add channel dimension for convolution layers
+        return self.head(x)
+
+class Fiannaca2018Body(nn.Module):
+    def __init__(self):
+        super(Fiannaca2018Body, self).__init__()
+        self.flatten = nn.Flatten()
+        self.body = nn.Sequential(
+            nn.Conv1d(1, 5, kernel_size=5),  # First convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2),  # Pooling layer
+
+            nn.Flatten(),
+            nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
+            nn.ReLU())
+
+    def forward(self, x):
+        x = x[:, 0, :, :] #keep only one channel
+        x = self.flatten(x)
+        x = x.unsqueeze(1)
+        x = self.body(x)
+        return x
+
+class Fiannaca2018Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Fiannaca2018Model, self).__init__()
+        self.model = nn.Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+class Arias2022Model(nn.Module):
+    def __init__(self,n_classes):
+        super(Arias2022Model, self).__init__()
+        self.model = nn.Sequential(Arias2022Body(),Arias2022Head(n_classes))
+
+    def forward(self, x):
+        x = self.model(x)
+        return x
+
+def build_custom_model(architecture, dls):
+    if architecture == 'arias2022':
+        custom_model = Arias2022Model(len(dls.vocab))
+    elif architecture == 'fiannaca2018':
+        custom_model = Fiannaca2018Model(len(dls.vocab))
+    else:
+        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
+
+    # Initiallize LazyLinear with dummy batch
+    xb, yb = dls.one_batch()
+    input_image_size = xb.shape[-2:]  
+    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
+    custom_model(dummy_batch)
+
+    return custom_model
+    
+# Define callback to skip validation
+class SkipValidationCallback(Callback):
+    def before_validate(self):
+        raise CancelValidException
+
+
+# Function: build dataloaders, learners and train
 def train_nn(
     df,
     architecture,
@@ -1190,8 +1423,17 @@ def train_nn(
     metrics_threshold=0.7,
     gamma_neg=4,
     verbose=True,
-    num_workers = 0
+    num_workers = 0,
+    no_metrics = False
 ):
+    # if skipping validation metrics, add NoValidation callback
+    if no_metrics:
+        if isinstance(callbacks,list):
+            callbacks.append(SkipValidationCallback())
+        else:
+            callbacks=[callbacks,SkipValidationCallback()]
+
+
     # find a batch size that is a power of 2 and splits the dataset in about 10 batches
     batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
     batch_size = min(batch_size, max_bs)
@@ -1203,22 +1445,23 @@ def train_nn(
         sptr = RandomSplitter(valid_pct=valid_pct)
 
     # check if item resizing is necessary
-    default_cfg = create_model(architecture, pretrained=False).default_cfg
-    if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-        item_transforms = Resize(
-            size=default_cfg["input_size"][1:],
-            method=ResizeMethod.Squish,
-            resamples=(Resampling.BOX, Resampling.BOX),
-        )
-        eprint(
-            "Model architecture",
-            architecture,
-            "requires image resizing to",
-            str(default_cfg["input_size"][1:]),
-        )
-        eprint("This will be done automatically.")
-    else:
-        item_transforms = None
+    item_transforms = None
+    if not architecture in custom_archs:
+        default_cfg = create_model(architecture, pretrained=False).default_cfg
+        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
+            item_transforms = Resize(
+                size=default_cfg["input_size"][1:],
+                method=ResizeMethod.Squish,
+                resamples=(Resampling.BOX, Resampling.BOX),
+            )
+            eprint(
+                "Model architecture",
+                architecture,
+                "requires image resizing to",
+                str(default_cfg["input_size"][1:]),
+            )
+            eprint("This will be done automatically.")
+            
 
     # set batch transforms
     transforms = aug_transforms(
@@ -1266,16 +1509,27 @@ def train_nn(
     else:
         metrics = accuracy
 
-    learn = vision_learner(
-        dls,
-        architecture,
-        metrics=metrics,
-        normalize=normalize,
-        pretrained=pretrained,
-        cbs=callbacks,
-        loss_func=loss_fn,
-    ).to_fp16()
-
+    if architecture in custom_archs:
+        #build model
+        custom_model = build_custom_model(architecture, dls)
+        
+        learn = Learner(dls, 
+                        custom_model, 
+                        metrics=metrics, 
+                        cbs=callbacks,
+                        loss_func=loss_fn
+                       ).to_fp16()
+        
+    else:
+        learn = vision_learner(dls,
+                               architecture,
+                               metrics=metrics,
+                               normalize=normalize,
+                               pretrained=pretrained,
+                               cbs=callbacks,
+                               loss_func=loss_fn,
+                            ).to_fp16()
+   
     # if there a pretrained model body weights, replace them
     if model_state_dict:
         old_state_dict = learn.state_dict()
@@ -1286,17 +1540,102 @@ def train_nn(
         }
         learn.model.load_state_dict(new_state_dict, strict=False)
 
-    # train
-    if verbose:
+    # Check for multiple GPUs and parallelize if available
+    is_parallel = torch.backends.cuda.is_built() and torch.cuda.device_count() > 1
+    if is_parallel:
+        learn.to_parallel()
+
+    # Train the model with or without verbose output
+    training_context = learn.no_bar() if not verbose else contextlib.nullcontext()
+    logging_context = learn.no_logging() if not verbose else contextlib.nullcontext()
+
+    with training_context, logging_context:
         learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
-    else:
-        with learn.no_bar(), learn.no_logging():
-            learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
+
+    # Detach parallelization if it was used
+    if is_parallel:
+        learn.detach_parallel()
+
+    # Remove skip validation callback if used
+    learn.remove_cb(SkipValidationCallback)
 
     return learn
 
-# Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
-def get_varKoder_quality_weigths(img_path):
-    base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
-    weight = 2 / (1 + math.exp(20 * base_sd))
-    return weight
+##Function: get the reverse complement of a sequence string
+def rc(seq):
+    complement = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
+    reverse_complement = "".join(complement[base] for base in reversed(seq))
+    return reverse_complement
+
+
+
+## Function: remap an image
+## in_mapping and out_mapping should be one of the supported kmer_mapping 
+def remap(img, k, in_mapping, out_mapping, sum_rc=False):
+    if (not in_mapping in mapping_choices) or (not out_mapping in mapping_choices):
+        raise Exception('Input and output mapping must be one of: ' + str(mapping_choices))
+        
+    in_mp = get_kmer_mapping(k,in_mapping)
+    out_mp = get_kmer_mapping(k,out_mapping)
+
+    merged = in_mp.merge(out_mp, how='inner',left_index=True, right_index=True,suffixes=['_in', '_out'])
+    #x and y are reversed for PIL images
+    merged['y_in'] = merged['y_in'].max()-merged['y_in']
+    merged['y_out'] = merged['y_out'].max()-merged['y_out']
+
+    new_img = img.resize((merged['y_out'].max()+1,merged['x_out'].max()+1),
+                    resample=Image.NEAREST)
+    new_img_array = np.zeros(np.array(new_img).shape,dtype=np.uint8)
+
+    old_img_array = np.array(img)
+
+    x_out = merged['x_out'].values
+    y_out = merged['y_out'].values
+    x_in = merged['x_in'].values
+    y_in = merged['y_in'].values
+    if sum_rc:
+        np.add.at(new_img_array, (y_out, x_out), old_img_array[y_in, x_in])
+        new_img_array = np.uint8((new_img_array-new_img_array.min())/new_img_array.max()*255)
+    else:
+        new_img_array[y_out,x_out] = old_img_array[y_in,x_in]
+
+    new_img.putdata(new_img_array.flatten('A'))
+
+    return(new_img)
+
+#Function: processes one image for remapping
+def process_remapping(f_data, output_mapping, sum_rc):
+    # Open the image
+    image = Image.open(f_data['path'])
+    
+    # Remap the image
+    new_img = remap(image, 
+                    f_data['img_kmer_size'], 
+                    f_data['img_kmer_mapping'], 
+                    output_mapping,
+                    sum_rc
+                   )
+    
+    # Create a PngInfo object and add the necessary info
+    pnginfo = PngInfo()
+    for k, v in new_img.info.items():
+        if k == 'VarkoderMapping':
+            pnginfo.add_text(k, f_data['img_kmer_mapping'])
+        else:
+            pnginfo.add_text(k, str(v))
+    
+    # Create the necessary directories
+    f_data['outfile_path'].parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save the new image
+    new_img.save(f_data['outfile_path'], optimize=True, pnginfo=pnginfo)
+        
+
+
+
+
+
+   
+
+
+

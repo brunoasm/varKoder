@@ -8,13 +8,15 @@ channels:
 dependencies:
   - python>=3.9
   - pyarrow>=14.0.1
-  - huggingface_hub
+  - huggingface_hub=0.23
   - pigz
+  - conda-forge::accelerate=0.31
   - tenacity
-  - pytorch=2.1.0
+  - pytorch=2.1.2
   - humanfriendly=10
   - fastai=2.7.13
-  - timm
+  - timm=1.0
   - bbmap=38.18
   - wget
-  - fastp=0.23.4
+  - accelerate
+#  - fastp=0.23.4

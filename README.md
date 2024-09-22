@@ -13,7 +13,7 @@ de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Ande
 With *varKoder*, we use very low coverage whole genome sequencing to produce images that represent the genome composition of a sample. These images look like this, for example:
 | Beetle | Bacteria | Mushroom |
 | ----- |  ----- | ----- |
-| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+k7.png)  |  
+| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+varKode+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+varKode+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+varKode+k7.png)  |   
 
 We then use well-established image classification models to train a neural network using these images so it can learn to associate *varKodes* with labels associated with them. Often, these labels will be the known taxonomic identification of a sample, such as its species or genus. However, our approach is very general and the labels could include any other features of interest.
 
@@ -59,6 +59,7 @@ If this takes too long, you can try using [mamba](https://github.com/mamba-org/m
 
 ### Mac
 
+#### Conda environment
 We tested this program using Macs with ARM processors (M1,M2,etc). Not all dependencies are available using Anaconda, and for that reason the setup takes a few more steps. To start, create an Anaconda environment with the programs that are available through conda and install varKoder to the conda environment:
 ```bash
 git clone https://github.com/brunoasm/varKoder
@@ -68,7 +69,23 @@ conda activate varKoder
 pip install .
 ```
 
-Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and remove the installer:
+#### fastp
+`fastp` is not available for macs with ARM architecture through Anaconda. In that case, the easiest path is to install it with [Homebrew](https://brew.sh). Install homebrew and then use the following instructions. 
+
+In macs with ARM processors (i. e. M1 or M2), you may get an error when installing `fastp`, which was compiled for Intel. To workaround the error, you have to install [Rosetta2](https://support.apple.com/en-us/HT211861) so your Mac can run Intel-based programs. You will also need to  install the Intel version of homebrew. You can accomplish this with the following commands:
+```bash
+## install rosetta to run intel-based programs
+/usr/sbin/softwareupdate --install-rosetta
+## Install intel-version of homebrew
+arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+## install fastp with hombrew
+brew tap brewsci/bio
+arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
+```
+
+#### dsk
+
+Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and clean:
 ```bash
 conda activate varKoder
 wget https://github.com/GATB/dsk/releases/download/v2.3.3/dsk-v2.3.3-bin-Darwin.tar.gz
@@ -78,6 +95,7 @@ cp bin/* $CONDA_PREFIX/bin/
 cd ..
 rm -r dsk-v2.3.3-bin-Darwin.tar.gz dsk-v2.3.3-bin-Darwin
 ```
+#### SRA tools
 
 The latest SRA toolkit is required to run tests and examples, but not for basic varKoder functionality. On Macs, it is currently better to install it with Homebrew. See instructions here: https://formulae.brew.sh/formula/sratoolkit 
 
@@ -137,18 +155,21 @@ varKoder is installed to your conda environment using the instructions above and
 varKoder -h
 ```
 
-There are three commands available (`image`, `train` and `query`) and you can also get help on each command by using `-h`:
+There are three commands available (`image`, `train`, `query` and `convert`) and you can also get help on each command by using `-h`:
 ```bash
 varKoder image -h
 varKoder train -h
 varKoder query -h
+varKoder convert -h
 ```
 
 Follow these links for detailed information for each command:
 
 1. [Creating varKodes with `varKoder.py image`](docs/image.md)
 2. [Training an image classification model `varKoder.py train`](docs/train.md)
-3. [Identifying and unknown sample with `varKoder.py query`](docs/query.md)
+3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
+3. [Converting between varKodes and Chaos Game Representation with `varKoder.py convert`](docs/convert.md)
+
 
 
 ## TLDR

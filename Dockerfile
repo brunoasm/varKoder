@@ -1,9 +1,7 @@
 # Start from the cuda base image
-FROM pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-runtime
 
-# Install dependencies
-#COPY ./conda_environments/docker.yml docker.yml
-
+# Install dependencies with Anaconda
 RUN echo 'channels:' > /docker.yml && \
     echo '  - pytorch' >> /docker.yml && \
     echo '  - nvidia' >> /docker.yml && \
@@ -12,8 +10,9 @@ RUN echo 'channels:' > /docker.yml && \
     echo '  - conda-forge' >> /docker.yml && \
     echo 'dependencies:' >> /docker.yml && \
     echo '  - fastai::fastai=2.7.13' >> /docker.yml && \
-    echo '  - conda-forge::huggingface_hub' >> /docker.yml && \
-    echo '  - conda-forge::timm' >> /docker.yml && \
+    echo '  - conda-forge::huggingface_hub=0.23' >> /docker.yml && \
+    echo '  - conda-forge::accelerate=0.31' >> /docker.yml && \
+    echo '  - conda-forge::timm=1.0' >> /docker.yml && \
     echo '  - conda-forge::pyarrow>=14.0.1' >> /docker.yml && \
     echo '  - conda-forge::pandas' >> /docker.yml && \
     echo '  - conda-forge::humanfriendly' >> /docker.yml && \
@@ -31,7 +30,7 @@ RUN conda update -n base -c defaults conda && \
 # Install varKoder
 COPY . /varKoder
 
-RUN conda run pip install --no-deps --no-cache-dir -e /varKoder
+RUN conda run -n base pip install --no-deps --no-cache-dir /varKoder
 
 #Set workdir
 WORKDIR /home
