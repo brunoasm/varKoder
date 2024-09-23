@@ -40,7 +40,7 @@ These two images represent the same kmer counts, with individual kmers mapping t
 ## Input
 
 There are 3 required inputs:
-1. The pixel mapping you want to convert to (`varKode` or `cgt`)
+1. The pixel mapping you want to convert to (`varKode` or `cgr`)
 2. A folder with input images. It may contain subfolders.
 3. An output folder
 
