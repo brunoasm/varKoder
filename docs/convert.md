@@ -23,7 +23,7 @@ These two images represent the same kmer counts, with individual kmers mapping t
 ### Required arguments
 | argument | description |
 | --- | --- |
-|  kmer_mapping  |         pixel mapping to convert to (`varKode` or `cgt`). |
+|  kmer_mapping  |         pixel mapping to convert to (`varKode` or `cgr`). |
 |  input  |                path to folder with image files to be converted. |
 |  outdir  |               path to the folder where results will be saved. | 
 ### Optional arguments
