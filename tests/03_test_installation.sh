@@ -128,17 +128,17 @@ prepend_text T2 "$prefix $T2_CMD -n $NCORES"
 
 # Check if trained_pretrained/input_data.csv exists before running the loop
 if [ -f "trained_pretrained/input_data.csv" ]; then
+    # Create fastq_query directory if it doesn't exist
+    mkdir -p fastq_query
+    
     while IFS=, read -r sample bp kmer_mapping kmer_size path labels pos_qual is_valid; do
         if [ "$is_valid" = "True" ]; then
-            mkdir -p fastq_query
-            for dir in "./Bembidion/"*"/$sample"; do
-                if [ -d "$dir" ]; then
-                    cd fastq_query
-                    ln -sf .$dir $sample
-                    cd ..
-                    break
-                fi
-            done
+            # Find the source directory
+            source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
+            if [ -n "$source_dir" ]; then
+                # Create relative symlink in fastq_query directory
+                (cd fastq_query && ln -sf "../$source_dir" "$sample")
+            fi
         fi
     done < trained_pretrained/input_data.csv
 else

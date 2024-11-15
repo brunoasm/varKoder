@@ -104,7 +104,7 @@ update_prefixes() {
         if [ -n "$gpu_index" ]; then
             SING_PREFIX="$time_cmd$SING_PREFIX --env CUDA_VISIBLE_DEVICES=$gpu_index varKoder.sif varKoder"
             DOCKER_PREFIX="$time_cmd$DOCKER_PREFIX --gpus device=$gpu_index"
-            LOCAL_PREFIX="$time_cmd CUDA_VISIBLE_DEVICES=$gpu_index varKoder"
+            LOCAL_PREFIX="$time_cmd env CUDA_VISIBLE_DEVICES=$gpu_index varKoder"
         else
             SING_PREFIX="$time_cmd$SING_PREFIX varKoder.sif varKoder"
             DOCKER_PREFIX="$time_cmd$DOCKER_PREFIX"
