@@ -1,5 +1,5 @@
 #!/bin/bash
-#varKoder test constants
+#02_constants.sh
 TESTDIR=Bembidion
 prepend_text() {
     local prefix="$1"
@@ -8,18 +8,42 @@ prepend_text() {
 }
 color=$(tput setaf 1)
 reset=$(tput sgr0)
+
 # Check if TMPDIR is not set
 if [ -z "$TMPDIR" ]; then
-    # TMPDIR is not set, so create a temporary directory and assign it
     TMPDIR=$(dirname $(mktemp -u -t tmp.XXXXXXXXXX))
 fi
+
+# Determine which time command to use
+if [[ "$(uname)" == "Darwin" ]]; then
+    if command -v gtime &> /dev/null; then
+        TIME_CMD="gtime"
+    else
+        TIME_CMD=""
+    fi
+else
+    if command -v /usr/bin/time &> /dev/null; then
+        TIME_CMD="/usr/bin/time"
+    else
+        TIME_CMD=""
+    fi
+fi
+
 IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
-T1_CMD="train --overwrite --seed 2 -e 0 -z 5 ./images ./trained_pretrained"
-T2_CMD="train --overwrite --architecture resnet18 --seed 3 --random-weights -e 5 -z 5 ./images ./trained_random"
+T1_CMD_BASE="train --overwrite --seed 2"
+T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
 Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained/trained_model.pkl fastq_query/ inferences_Bembidion"
 Q2_CMD="query --overwrite --threshold 0.5 --seed 5 -k 7 -c 1 -M 20M -I inferences_Bembidion/query_images inferences_SRA"
 SING_PULL="singularity pull --force varKoder.sif docker://brunoasm/varkoder"
 LOCAL_PREFIX="varKoder"
+
+# Define available architectures
+declare -A ARCHITECTURES=(
+    ["1"]="resnet18"
+    ["2"]="resnet50"
+    ["3"]="resnext101_32x8d"
+    ["4"]="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
+)
 
 # Detect if the system is a Mac ARM
 IS_MAC_ARM=false
@@ -55,22 +79,41 @@ set_cuda_visible_devices() {
 SING_PREFIX="singularity exec --no-home --cleanenv --nv -B ${TMPDIR}:/tmp -B ${PWD}:/home --pwd /home"
 DOCKER_PREFIX="docker run --platform linux/amd64 -v $TMPDIR:/tmp -v $PWD:/home brunoasm/varkoder:latest"
 
-# Function to update prefixes based on GPU selection (only for non-Mac ARM systems)
+# Function to update prefixes based on GPU selection and time profiling choice
 update_prefixes() {
+    local gpu_index="$1"
+    local use_time="$2"
+    local time_cmd=""
+    
+    if [ "$use_time" = "Y" ] || [ "$use_time" = "y" ]; then
+        if [ -z "$TIME_CMD" ]; then
+            if [[ "$(uname)" == "Darwin" ]]; then
+                echo "${color}Error: gtime not found. To use profiling on macOS, please install gnu-time:${reset}"
+                echo "${color}    brew install gnu-time${reset}"
+                echo "${color}Or run this script again without selecting the profiling option.${reset}"
+                exit 1
+            else
+                echo "${color}Error: /usr/bin/time not found. Cannot enable profiling.${reset}"
+                exit 1
+            fi
+        fi
+        time_cmd="$TIME_CMD -v "
+    fi
+
     if [ "$IS_MAC_ARM" = false ]; then
-        local gpu_index="$1"
         if [ -n "$gpu_index" ]; then
-            SING_PREFIX="$SING_PREFIX --env CUDA_VISIBLE_DEVICES=$gpu_index varKoder.sif varKoder"
-            DOCKER_PREFIX="$DOCKER_PREFIX --gpus device=$gpu_index"
-            LOCAL_PREFIX="CUDA_VISIBLE_DEVICES=$gpu_index varKoder"
+            SING_PREFIX="$time_cmd$SING_PREFIX --env CUDA_VISIBLE_DEVICES=$gpu_index varKoder.sif varKoder"
+            DOCKER_PREFIX="$time_cmd$DOCKER_PREFIX --gpus device=$gpu_index"
+            LOCAL_PREFIX="$time_cmd CUDA_VISIBLE_DEVICES=$gpu_index varKoder"
         else
-            SING_PREFIX="$SING_PREFIX varKoder.sif varKoder"
-            DOCKER_PREFIX="$DOCKER_PREFIX"
-            LOCAL_PREFIX="varKoder"
+            SING_PREFIX="$time_cmd$SING_PREFIX varKoder.sif varKoder"
+            DOCKER_PREFIX="$time_cmd$DOCKER_PREFIX"
+            LOCAL_PREFIX="$time_cmd varKoder"
         fi
     else
-        SING_PREFIX="$SING_PREFIX varKoder.sif varKoder"
-        DOCKER_PREFIX="$DOCKER_PREFIX"
-        LOCAL_PREFIX="varKoder"
+        SING_PREFIX="$time_cmd$SING_PREFIX varKoder.sif varKoder"
+        DOCKER_PREFIX="$time_cmd$DOCKER_PREFIX"
+        LOCAL_PREFIX="$time_cmd varKoder"
     fi
 }
+

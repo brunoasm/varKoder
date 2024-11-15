@@ -13,17 +13,17 @@ de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Ande
 With *varKoder*, we use very low coverage whole genome sequencing to produce images that represent the genome composition of a sample. These images look like this, for example:
 | Beetle | Bacteria | Mushroom |
 | ----- |  ----- | ----- |
-| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+varKode+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+varKode+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+varKode+k7.png)  |   
+| ![Beetle varKode](docs/Animalia_Cerambycidae_SRR15249224@00010000K+cgr+k7.png) | ![Bacteria varKode](docs/Bacteria_Mycoplasma_SRR2101396@00200000K+cgr+k7.png) |  ![Mushroom varKode](docs/Fungi_Amanitaceae_SRR15292413@00010000K+cgr+k7.png)  |   
 
-We then use well-established image classification models to train a neural network using these images so it can learn to associate *varKodes* with labels associated with them. Often, these labels will be the known taxonomic identification of a sample, such as its species or genus. However, our approach is very general and the labels could include any other features of interest.
+We then use image classification models to train a neural network using these images so it can learn to associate them with respective labels. Often, these labels will be the known taxonomic identification of a sample, such as its species or genus. However, our approach is very general and the labels could include any other features of interest.
 
-Finally, you can use *varKoder* to predict labels for an unknown sample, starting from sequencing reads or from pre-produced *varKode* images.
+Finally, you can use *varKoder* to predict labels for an unknown sample, starting from sequencing reads or from pre-produced images.
 
 There are two possible strategies for image classification using *varKoder*:
 
-  * Multi-label (default): by default, varKoder uses [multi-label classification](https://en.wikipedia.org/wiki/Multi-label_classification), in which each varKode can be associated with one or more labels. When querying an unknown sample, the response may be one or more of the labels used in training, or none, when the sample is not recognized as anything the model has been trained with. We found that this strategy is particularly useful to train a computer vision model to recognize when a sample was sequenced from low-quality DNA, preventing errors in which low-quality samples are predicted to be similar because of similarity due to contamination and/or DNA damage. For this reason, varKoder automatically adds a flag to potentially low-quality samples when preparing varKodes. Another advantage of multi-label classification is the possibility of adding multiple taxonomic labels for each sample. This enables, for example, correct prediction of a higher taxonomic level even if a lower level (for example, species) is uncertain.
+  * Multi-label (default): by default, varKoder uses [multi-label classification](https://en.wikipedia.org/wiki/Multi-label_classification), in which each image can be associated with one or more labels. When querying an unknown sample, the response may be one or more of the labels used in training, or none, when the sample is not recognized as anything the model has been trained with. We found that this strategy is particularly useful to train a computer vision model to recognize when a sample was sequenced from low-quality DNA, preventing errors in which low-quality samples are predicted to be similar because of similarity due to contamination and/or DNA damage. For this reason, varKoder automatically adds a flag to potentially low-quality samples when preparing varKodes. Another advantage of multi-label classification is the possibility of adding multiple taxonomic labels for each sample. This enables, for example, correct prediction of a higher taxonomic level even if a lower level (for example, species) is uncertain.
   
-  * Single-label: in this strategy, each varKode is associated with a single label. Instead of predicting the confidence in each label independently, *varKoder* will output which of the labels used in training is the best one for a given query sample. This may be more straightforward to handle, since there will always be a response. But we found it to be more prone to errors. Evaluating the confidence in a particular prediction is also less straigthforward.
+  * Single-label: in this strategy, each image is associated with a single label. Instead of predicting the confidence in each label independently, *varKoder* will output which of the labels used in training is the best one for a given query sample. This may be more straightforward to handle, since there will always be a response. But we found it to be more prone to errors. Evaluating the confidence in a particular prediction is also less straigthforward.
 
 See options below in [Usage](#Usage) section on how to implement each strategy.
 
@@ -140,7 +140,7 @@ conda activate varKoder
 bash 01_download_fastqs.sh && bash 03_test_installation.sh
 ```
 
-This will download 50k paired-end reads for species of *Bembidion* from NCBI SRA and run the tests on them.
+This will download 100k paired-end reads for species of *Bembidion* from NCBI SRA and run the tests on them.
 
 The test data was originally published by:
 
@@ -163,12 +163,12 @@ varKoder query -h
 varKoder convert -h
 ```
 
-Follow these links for detailed information for each command:
+Follow these links for detailed information for each command. The help for the convert command includes details on the two kinds of images that varKoder can use(varKodes and rfCGRs)
 
-1. [Creating varKodes with `varKoder.py image`](docs/image.md)
+1. [Creating varKodes or rfCGRs with `varKoder.py image`](docs/image.md)
 2. [Training an image classification model `varKoder.py train`](docs/train.md)
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
-3. [Converting between varKodes and Chaos Game Representation with `varKoder.py convert`](docs/convert.md)
+4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
 
 
 

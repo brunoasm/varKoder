@@ -1,12 +1,14 @@
 #!/bin/bash
+# 03_test_installation.sh
 source 02_constants.sh
 
 echo "$color What would you like to test? Please choose an option by typing the number:"
-echo "1. local conda installation"
+echo "1. local conda installation (default)"
 echo "2. docker image"
-echo "3. singularity image$reset"
-# Read user input
-read -p "Enter your choice (1/2/3): " choice
+echo "3. singularity image"
+echo "Press Enter to use default [1] or type your choice:$reset"
+read -p "Enter your choice [1]: " choice
+choice=${choice:-1}
 
 # GPU selection (skip for Mac ARM)
 if [ "$IS_MAC_ARM" = false ]; then
@@ -15,17 +17,76 @@ if [ "$IS_MAC_ARM" = false ]; then
         echo "Enter the index of the GPU you want to use, or press Enter to use CPU:$reset"
         read -p "GPU index: " gpu_index
         set_cuda_visible_devices "$gpu_index"
-        update_prefixes "$gpu_index"
     else
         echo "$color No NVIDIA GPUs detected. Using CPU.$reset"
+        gpu_index=""
     fi
 else
     echo "$color Mac ARM system detected. GPU selection is not applicable.$reset"
+    gpu_index=""
 fi
+
+# Ask about time profiling
+echo "$color Would you like to profile resource usage with /usr/bin/time?"
+echo "Press Enter for default [N] or type Y for yes:$reset"
+read -p "Use time profiling? [N]: " use_time
+use_time=${use_time:-N}
+
+# Ask about neural network architecture
+echo "$color Choose neural network architecture:"
+echo "1. resnet18 (default)"
+echo "2. resnet50"
+echo "3. resnext101_32x8d"
+echo "4. hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
+echo "Press Enter to use default [1] or type your choice (1-4):$reset"
+read -p "Enter choice [1]: " arch_choice
+arch_choice=${arch_choice:-1}
+
+ARCH1="resnet18"
+ARCH2="resnet50"
+ARCH3="resnext101_32x8d"
+ARCH4="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
+
+case $arch_choice in
+    1|"")
+        ARCHITECTURE=$ARCH1
+        ;;
+    2)
+        ARCHITECTURE=$ARCH2
+        ;;
+    3)
+        ARCHITECTURE=$ARCH3
+        ;;
+    4)
+        ARCHITECTURE=$ARCH4
+        ;;
+    *)
+        echo "Invalid choice. Using default resnet18"
+        ARCHITECTURE=$ARCH1
+        ;;
+esac
+
+# Ask about epochs
+echo "$color Enter number of pretraining epochs"
+echo "Press Enter to use default [5] or type a number:$reset"
+read -p "Pretraining epochs [5]: " pretrain_epochs
+pretrain_epochs=${pretrain_epochs:-5}
+
+echo "$color Enter number of fine-tuning epochs"
+echo "Press Enter to use default [5] or type a number:$reset"
+read -p "Fine-tuning epochs [5]: " finetune_epochs
+finetune_epochs=${finetune_epochs:-5}
+
+# Update training commands with chosen parameters
+T1_CMD="$T1_CMD_BASE --architecture $ARCHITECTURE -e 0 -z $finetune_epochs ./images ./trained_pretrained"
+T2_CMD="$T2_CMD_BASE --architecture $ARCHITECTURE -e $pretrain_epochs -z $finetune_epochs ./images ./trained_random"
+
+# Update prefixes with both GPU and time profiling settings
+update_prefixes "$gpu_index" "$use_time"
 
 # Set the prefix based on the choice
 case $choice in
-    1)
+    1|"")
         prefix=$LOCAL_PREFIX
         ;;
     2)
@@ -41,10 +102,21 @@ case $choice in
         ;;
 esac
 
-echo "$color How many cores you have available for computing? Type the number and hit enter:$reset"
-read -p "Enter number of cores: " NCORES
+# Detect available CPU cores
+AVAILABLE_CORES=$(nproc)
+if [ $AVAILABLE_CORES -eq 1 ]; then
+    DEFAULT_CORES=1
+else
+    DEFAULT_CORES=$((AVAILABLE_CORES - 1))
+fi
 
-# Test installation with image, train and query commands
+echo "$color How many CPU cores would you like to use for computing?"
+echo "System has $AVAILABLE_CORES cores available"
+echo "Press Enter to use recommended default [$DEFAULT_CORES] or type a number:$reset"
+read -p "Enter number of cores [$DEFAULT_CORES]: " NCORES
+NCORES=${NCORES:-$DEFAULT_CORES}
+
+# Rest of the script (image generation, training, query commands)
 echo "$color$prefix $IM_CMD -n $NCORES$reset"
 prepend_text IM "$prefix $IM_CMD -n $NCORES"
 
@@ -56,8 +128,7 @@ prepend_text T2 "$prefix $T2_CMD -n $NCORES"
 
 # Check if trained_pretrained/input_data.csv exists before running the loop
 if [ -f "trained_pretrained/input_data.csv" ]; then
-    #create a query folder with validation samples
-    while IFS=, read -r sample *   *is_valid; do
+    while IFS=, read -r sample bp kmer_mapping kmer_size path labels pos_qual is_valid; do
         if [ "$is_valid" = "True" ]; then
             mkdir -p fastq_query
             for dir in "./Bembidion/"*"/$sample"; do
@@ -74,7 +145,6 @@ else
     echo "${color}Warning: trained_pretrained/input_data.csv not found. Skipping query folder creation.$reset"
 fi
 
-# Check if required directories exist before running query commands
 if [ -d "fastq_query" ] && [ -f "trained_pretrained/trained_model.pkl" ]; then
     echo -e "$color$prefix $Q1_CMD -n $NCORES$reset"
     prepend_text Q1 "$prefix $Q1_CMD -n $NCORES"

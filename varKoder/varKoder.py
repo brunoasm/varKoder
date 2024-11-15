@@ -46,7 +46,7 @@ def main():
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
     parser_img.add_argument(
-        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='cgr', choices = mapping_choices
     )
     
     parser_img.add_argument(
@@ -312,7 +312,7 @@ def main():
         "-k", "--kmer-size", help="size of kmers to count (5–9)", type=int, default=7
     )
     parser_query.add_argument(
-        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='varKode', choices = mapping_choices
+        "-p", "--kmer-mapping", help="method to map kmers. See online documentation for an explanation.", type=str, default='cgr', choices = mapping_choices
     )
     
     parser_query.add_argument(

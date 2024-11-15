@@ -7,7 +7,7 @@ echo working on $line
 accession=$(echo $line | cut -d , -f 1)
 taxid=$(echo $line | cut -d , -f 2) 
 
-fastq-dump -N 10000 -X 60000 --skip-technical --gzip --read-filter pass --readids --split-spot --split-files --outdir ./Bembidion/$taxid/$accession $accession
+fastq-dump -N 10000 -X 110000 --skip-technical --gzip --read-filter pass --readids --split-spot --split-files --outdir ./Bembidion/$taxid/$accession $accession
 done
 
 echo DONE

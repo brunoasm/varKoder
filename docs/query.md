@@ -31,9 +31,10 @@ If the input folder contains images in the `png` format and the option `--images
 | `-vv`, `--version` |  shows varKoder version. |
 | `-l MODEL`, `--model MODEL` | either to path pickle file with exported trained model or name of HuggingFace hub model to pull (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
-| `-p`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
+| `-1`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
+| `-p KMER_MAPPING`, `--kmer-mapping KMER_MAPPING` | method to map kmers to pixels if input data is sequences. This sets the correspondence between specific kmers and coordinates in the image produced. The possible values are: `varKode`, which produces varKodes; `cgr` (default), which produces a rfCGR. See the [convert command documentation](convert.md) for more details.|
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips in `image` command on usage. (default: 1) |
 | `-c CPUS_PER_THREAD`, `--cpus-per-thread CPUS_PER_THREAD` | number of cpus to use for preprocessing each sample. See tips in `image` command on usage (default: 1) |
 | `-f STATS_FILE`, `--stats-file STATS_FILE`} | path to file where sample statistics will be saved. See *Output* below for details (default: stats.csv) |
