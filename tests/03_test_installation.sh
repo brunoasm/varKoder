@@ -67,19 +67,19 @@ case $arch_choice in
 esac
 
 # Ask about epochs
-echo "$color Enter number of pretraining epochs"
+echo "$color Enter number of pretraining epochs (i. e. from scratch)"
 echo "Press Enter to use default [5] or type a number:$reset"
 read -p "Pretraining epochs [5]: " pretrain_epochs
 pretrain_epochs=${pretrain_epochs:-5}
 
-echo "$color Enter number of fine-tuning epochs"
+echo "$color Enter number of fine-tuning epochs (i. e. from a trained model)"
 echo "Press Enter to use default [5] or type a number:$reset"
 read -p "Fine-tuning epochs [5]: " finetune_epochs
 finetune_epochs=${finetune_epochs:-5}
 
 # Update training commands with chosen parameters
 T1_CMD="$T1_CMD_BASE --architecture $ARCHITECTURE -e 0 -z $finetune_epochs ./images ./trained_pretrained"
-T2_CMD="$T2_CMD_BASE --architecture $ARCHITECTURE -e $pretrain_epochs -z $finetune_epochs ./images ./trained_random"
+T2_CMD="$T2_CMD_BASE --architecture $ARCHITECTURE -e $pretrain_epochs -z 0 ./images ./trained_random"
 
 # Update prefixes with both GPU and time profiling settings
 update_prefixes "$gpu_index" "$use_time"
