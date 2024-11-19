@@ -38,12 +38,10 @@ SING_PULL="singularity pull --force varKoder.sif docker://brunoasm/varkoder"
 LOCAL_PREFIX="varKoder"
 
 # Define available architectures
-declare -A ARCHITECTURES=(
-    ["1"]="resnet18"
-    ["2"]="resnet50"
-    ["3"]="resnext101_32x8d"
-    ["4"]="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
-)
+ARCH1="resnet18"
+ARCH2="resnet50"
+ARCH3="resnext101_32x8d"
+ARCH4="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
 
 # Detect if the system is a Mac ARM
 IS_MAC_ARM=false

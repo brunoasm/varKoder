@@ -42,11 +42,6 @@ echo "Press Enter to use default [1] or type your choice (1-4):$reset"
 read -p "Enter choice [1]: " arch_choice
 arch_choice=${arch_choice:-1}
 
-ARCH1="resnet18"
-ARCH2="resnet50"
-ARCH3="resnext101_32x8d"
-ARCH4="hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA"
-
 case $arch_choice in
     1|"")
         ARCHITECTURE=$ARCH1
