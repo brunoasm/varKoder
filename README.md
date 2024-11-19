@@ -68,21 +68,6 @@ conda env create --file conda_environments/mac.yml
 conda activate varKoder
 pip install .
 ```
-
-#### fastp
-`fastp` is not available for macs with ARM architecture through Anaconda. In that case, the easiest path is to install it with [Homebrew](https://brew.sh). Install homebrew and then use the following instructions. 
-
-In macs with ARM processors (i. e. M1 or M2), you may get an error when installing `fastp`, which was compiled for Intel. To workaround the error, you have to install [Rosetta2](https://support.apple.com/en-us/HT211861) so your Mac can run Intel-based programs. You will also need to  install the Intel version of homebrew. You can accomplish this with the following commands:
-```bash
-## install rosetta to run intel-based programs
-/usr/sbin/softwareupdate --install-rosetta
-## Install intel-version of homebrew
-arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
-## install fastp with hombrew
-brew tap brewsci/bio
-arch -x86_64 /usr/local/Homebrew/bin/brew install fastp
-```
-
 #### dsk
 
 Currently, `dsk` for macs is not available through Anaconda. It can be obtained as a binary executable and installed to your conda environment. This code will download, install and clean:
