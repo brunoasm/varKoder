@@ -6,11 +6,11 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - pytorch::pytorch=2.1.2
+  - pytorch::pytorch=2.4
   - pytorch::pytorch-cuda=11.8
-  - fastai::fastai=2.7.13
-  - conda-forge::huggingface_hub=0.23
-  - conda-forge::accelerate=0.31
+  - fastai::fastai=2.7.17
+  - conda-forge::huggingface_hub=0.26
+  - conda-forge::accelerate=1.1.1
   - conda-forge::timm=1.0
   - conda-forge::pyarrow>=14.0.1
   - conda-forge::pandas
@@ -18,6 +18,6 @@ dependencies:
   - conda-forge::pigz
   - conda-forge::tenacity
   - bioconda::bbmap
-  - bioconda::dsk=2.3.3
-  - bioconda::fastp=0.23
+  - bioconda::dsk=2.3.3=h43eeafb_4
+  - bioconda::fastp=0.24
   - bioconda::sra-tools>=3
