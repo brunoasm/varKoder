@@ -75,10 +75,16 @@ def process_input(inpath, is_query=False, no_pairs=False):
     if inpath.is_dir() and not is_query:
         files_records = list()
 
+        seen_samples = set()
         for taxon in inpath.iterdir():
             if taxon.is_dir():
                 for sample in taxon.iterdir():
                     if sample.is_dir():
+                        if sample.name in seen_samples:
+                            raise Exception(
+                                f"Duplicate sample name '{sample.name}' detected. Each sample must have a unique name across all taxa."
+                            )
+                            seen_samples.add(sample.name)
                         for fl in sample.iterdir():
                             files_records.append(
                                 {
@@ -87,13 +93,18 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                     "files": taxon / sample.name / fl.name,
                                 }
                             )
-
-        files_table = (
-            pd.DataFrame(files_records)
-            .groupby(["labels", "sample"])
-            .agg(list)
-            .reset_index()
-        )
+        try:
+            files_table = (
+                pd.DataFrame(files_records)
+                .groupby(["labels", "sample"])
+                .agg(list)
+                .reset_index()
+            )
+        except KeyError as e:
+            if str(e) == "'labels'":
+                raise Exception("Folder input could not be parsed. Check the github documentation for input format.") from e
+            else:
+                raise
 
         if not files_table.shape[0]:
             raise Exception("Folder detected, but no records read. Check format.")
