@@ -90,7 +90,8 @@ def main():
     parser_img.add_argument(
         "-M",
         "--max-bp",
-        help="maximum number of post-cleaning basepairs to make an image.",
+        help="maximum number of post-cleaning basepairs to make an image. Use '0' to use all of the available data.",
+        default="200M"
     )
     parser_img.add_argument(
         "-t",
@@ -386,7 +387,8 @@ def main():
     parser_query.add_argument(
         "-M",
         "--max-bp",
-        help="number of post-cleaning basepairs to use for making image. If not provided, all data will be used.",
+        help="number of post-cleaning basepairs to use for making image. Use '0' to use all of the available data.",
+        default="200M"
     )
     parser_query.add_argument(
         "-b",
@@ -434,6 +436,10 @@ def main():
 
     # execution
     args = main_parser.parse_args()
+    
+    # parse max_bp (for compatibility with previous versions of the code)
+    if args.max_bp is not None and args.max_bp == 0:
+        args.max_bp = None
 
     # check if input directory exists
     
