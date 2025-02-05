@@ -16,6 +16,7 @@ from sklearn.exceptions import UndefinedMetricWarning
 import pandas as pd, numpy as np, itertools, tempfile, shutil, subprocess, functools, hashlib
 import pandas.errors
 import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
+from concurrent.futures import ThreadPoolExecutor
 from math import log
 
 from PIL import Image
@@ -227,6 +228,219 @@ def get_basefrequency_sd(file_list):
 
         return np.mean(base_sd)
 
+#helper function to preprocess files        
+def estimate_read_lengths(filename, sample_size=10000):
+    """
+    Estimate average read length by sampling the first sample_size reads from a file.
+    
+    Args:
+        filename: Path to the FASTQ file (can be gzipped)
+        sample_size: Number of reads to sample for estimation
+    
+    Returns:
+        float: Average read length
+        int: Total number of reads sampled
+    """
+    
+    total_length = 0
+    reads_counted = 0
+    
+    opener = gzip.open if filename.endswith('gz') else open
+    with opener(filename, 'rb') as f:
+        for i, line in enumerate(f):
+            if i % 4 == 1:  # Sequence line
+                total_length += len(line.strip())
+                reads_counted += 1
+            if reads_counted >= sample_size:
+                break
+    
+    return total_length / reads_counted if reads_counted > 0 else 0, reads_counted
+
+#helper function to preprocess files
+def count_total_reads(filename):
+    """Count total number of reads in a FASTQ file using system tools for efficiency."""
+    
+    # Convert to absolute path
+    abs_path = str(Path(filename).resolve())
+    
+    try:
+        if filename.endswith('gz'):
+            # Try using gunzip -c instead of zcat for better compatibility
+            cmd = f"gunzip -c '{abs_path}' | wc -l"
+        else:
+            cmd = f"wc -l '{abs_path}'"
+        
+        result = subprocess.run(
+            cmd, 
+            shell=True, 
+            capture_output=True, 
+            text=True,
+            check=True  # This will raise an exception if the command fails
+        )
+        
+        line_count = int(result.stdout.strip().split()[0])  # Handle potential leading spaces
+        read_count = line_count // 4
+        
+        
+        if read_count == 0:
+            # Double check using Python if system command returns 0
+            with gzip.open(abs_path, 'rb') if filename.endswith('gz') else open(abs_path, 'rb') as f:
+                line_count = sum(1 for _ in f)
+                read_count = line_count // 4
+                eprint(f"Python count found {read_count} reads")
+        
+        return read_count
+        
+    except Exception as e:
+        eprint(f"Error counting reads in {filename}: {str(e)}")
+        eprint("Falling back to Python-based counting...")
+        
+        try:
+            # Fallback to pure Python counting if system command fails
+            with gzip.open(abs_path, 'rb') if filename.endswith('gz') else open(abs_path, 'rb') as f:
+                line_count = sum(1 for _ in f)
+                return line_count // 4
+        except Exception as e:
+            eprint(f"Failed to count reads: {str(e)}")
+            raise
+
+#helper function to preprocess files
+def calculate_reads_needed(files_info, max_bp):
+    """
+    Calculate how many reads to take from each file to achieve target coverage.
+    
+    Args:
+        files_info: Dictionary containing file information including average read lengths
+        max_bp: Target base pair count
+    
+    Returns:
+        Dictionary with number of reads to take from each file
+    """
+    reads_to_take = {}
+    remaining_bp = 5 * max_bp  # We want 5x coverage
+    
+    # First allocate from unpaired files
+    for file_info in files_info['unpaired']:
+        bp_per_read = file_info['avg_length']
+        max_possible_reads = file_info['total_reads']
+        reads_needed = min(
+            max_possible_reads,
+            int(remaining_bp / bp_per_read)
+        )
+        reads_to_take[file_info['file']] = reads_needed
+        remaining_bp -= reads_needed * bp_per_read
+    
+    # Then allocate from paired files (R1 and R2)
+    if remaining_bp > 0:
+        for r1_info, r2_info in zip(files_info['R1'], files_info['R2']):
+            bp_per_pair = r1_info['avg_length'] + r2_info['avg_length']
+            max_possible_pairs = min(r1_info['total_reads'], r2_info['total_reads'])
+            pairs_needed = min(
+                max_possible_pairs,
+                int(remaining_bp / bp_per_pair)
+            )
+            reads_to_take[r1_info['file']] = pairs_needed
+            reads_to_take[r2_info['file']] = pairs_needed
+            remaining_bp -= pairs_needed * bp_per_pair
+    
+    return reads_to_take
+
+#helper function to preprocess files
+def extract_reads(filename, num_reads, output_file):
+    """
+    Extract a specified number of reads from a FASTQ file using pure Python.
+    This function handles both gzipped and plain text files efficiently.
+    
+    Args:
+        filename: Path to input FASTQ file (can be gzipped)
+        num_reads: Number of reads to extract
+        output_file: Path to output file where reads will be written
+    """
+    
+    # Convert to absolute paths for clarity and consistency
+    abs_input = str(Path(filename).resolve())
+    abs_output = str(Path(output_file).resolve())
+    
+    # Calculate number of lines to extract (4 lines per read in FASTQ format)
+    num_lines = num_reads * 4
+    
+    try:
+        # Open input file with appropriate opener (gzip or regular)
+        opener = gzip.open if filename.endswith('gz') else open
+        with opener(abs_input, 'rb') as infile, open(abs_output, 'ab') as outfile:
+            # Use itertools.islice for memory-efficient iteration
+            for line in itertools.islice(infile, num_lines):
+                # Write each line to the output file
+                # Note: we're preserving the original line endings here
+                outfile.write(line)
+        
+        # Verify the output file was created and contains data
+        if not Path(output_file).exists():
+            raise Exception(f"Failed to create output file: {output_file}")
+        
+        file_size = Path(output_file).stat().st_size
+        if file_size == 0:
+            raise Exception(f"Output file is empty: {output_file}")
+            
+        
+    except Exception as e:
+        eprint(f"Error during read extraction: {str(e)}")
+        raise  # Re-raise the exception to handle it in the calling function
+
+#helper function to preprocess files
+def concatenate_reads(reads, basename, max_bp, work_dir, verbose):
+    """
+    Main function to concatenate reads with optimized sampling approach.
+    Returns an integer count of total base pairs.
+    """
+    # First, gather information about all input files
+    files_info = {'unpaired': [], 'R1': [], 'R2': []}
+    
+    for category in ['unpaired', 'R1', 'R2']:
+        for readf in sorted(reads[category]):
+            # Round the average length to the nearest integer since we can't have fractional base pairs
+            avg_length, _ = estimate_read_lengths(readf)
+            avg_length = round(avg_length)  # Convert to integer
+            total_reads = count_total_reads(readf)
+            if verbose: eprint(f"File: {readf}")
+            if verbose: eprint(f"Average read length (rounded): {avg_length}")
+            if verbose: eprint(f"Total reads: {total_reads}")
+            
+            files_info[category].append({
+                'file': readf,
+                'avg_length': avg_length,  # Now storing as integer
+                'total_reads': total_reads
+            })
+    
+    # Calculate how many reads we need from each file
+    reads_to_take = calculate_reads_needed(files_info, max_bp)
+    if verbose: eprint(f"Reads to take from each file: {reads_to_take}")
+    
+    # Create output files
+    output_files = {
+        'unpaired': Path(work_dir) / f"{basename}_unpaired.fq",
+        'R1': Path(work_dir) / f"{basename}_R1.fq",
+        'R2': Path(work_dir) / f"{basename}_R2.fq"
+    }
+    
+    # Clear output files if they exist
+    for outfile in output_files.values():
+        outfile.unlink(missing_ok=True)
+    
+    # Extract and concatenate reads
+    total_bp = 0  # This will now be an integer
+    for category in ['unpaired', 'R1', 'R2']:
+        for file_info in files_info[category]:
+            readf = file_info['file']
+            if readf in reads_to_take:
+                num_reads = reads_to_take[readf]
+                if num_reads > 0:
+                    extract_reads(readf, num_reads, output_files[category])
+                    # Calculate exact integer number of base pairs
+                    total_bp += num_reads * file_info['avg_length']
+    
+    return total_bp
+
 
 # cleans illumina reads and saves results as a single merged fastq file to outpath
 # cleaning includes:
@@ -281,74 +495,13 @@ def clean_reads(
             del reads["R2"][reads["R2"].index(r)]
 
     eprint("Concatenating input files:", reads)
-    # let's check if destination files exist, and skip them if we can
 
     # from now on we will manipulate files in a temporary folder that will be deleted at the end of this function
-    # with tempfile.TemporaryDirectory(prefix='barcoding_clean_' + basename) as work_dir:
+    #with tempfile.TemporaryDirectory(prefix='barcoding_clean_' + basename) as work_dir:
     work_dir = tempfile.mkdtemp(prefix="barcoding_clean_" + basename)
-    # if True:
 
-    # first, concatenate forward, reverse and unpaired reads
-    # we will also store the number of basepairs for statistics
-    initial_bp = {"unpaired": 0, "R1": 0, "R2": 0}
-    lines_concat = {"unpaired": dict(), "R1": dict(), "R2": dict()}
-
-    write_out = True
-
-    for k in ["unpaired", "R1", "R2"]:
-        readfiles = reads[k]
-
-        if len(readfiles):
-            with open(Path(work_dir) / (basename + "_" + k + ".fq"), "wb") as outfile:
-                for i_f, readf in enumerate(sorted(readfiles)):
-                    # initializes count of number of lines written out for this file
-                    lines_concat[k][i_f] = 0
-
-                    # opens file
-                    if readf.endswith("gz"):
-                        infile = gzip.open(readf, "rb")
-                    else:
-                        infile = open(readf, "rb")
-
-                    # reads file
-                    for line_n, line in enumerate(infile):
-                        if line_n % 4 == 1:
-                            # counts number of lines in file originally
-                            initial_bp[k] += len(line) - 1
-
-                        # if we reach a bp count 5 times as large as max_bp,
-                        # this should be sufficient even after deduplication,
-                        # cleaning, etc
-                        # so we stop writing out to decrease processing time
-                        # in case this happens while reading R1, we will record how many lines we read
-                        # and read the same number of lines in corresponding R2
-
-                        if write_out is True:
-                            bp_read = initial_bp["unpaired"] + 2 * initial_bp["R1"]
-                            if (
-                                (line_n % 4 == 0)
-                                and (max_bp is not None)
-                                and (bp_read > (5 * max_bp))
-                            ):
-                                write_out = False
-                            else:
-                                outfile.write(line)
-                                lines_concat[k][i_f] = line_n
-
-                        elif (
-                            k == "R2" and lines_concat[k][i_f] < lines_concat["R1"][i_f]
-                        ):
-                            bp_read = sum([v for k, v in initial_bp.items()])
-                            outfile.write(line)
-                            lines_concat[k][i_f] = line_n
-
-                    infile.close()
-
-    if (
-        write_out
-    ):  # if we reach the end and are still writing out, count how many bp retained
-        bp_read = sum([v for k, v in initial_bp.items()])
-    retained_bp = bp_read
+    retained_bp = concatenate_reads(reads, basename, max_bp, work_dir, verbose)
+    
 
     act_list = []
     extra_command = []
@@ -411,6 +564,7 @@ def clean_reads(
                 )
                 if verbose:
                     eprint(p.stderr.decode())
+                    traceback.print_exc(file=sys.stdout)
                 (Path(work_dir) / (basename + "_paired.fq")).unlink(missing_ok=True)
         except subprocess.CalledProcessError as e:
             eprint(f"{basename}: fastp failed with paired reads, treating them as unpaired")
@@ -457,6 +611,7 @@ def clean_reads(
 
             if verbose:
                 eprint(p.stderr.decode())
+                traceback.print_exc(file=sys.stdout)
 
         except subprocess.CalledProcessError as e:
             eprint(f"{basename}: fastp failed with unpaired reads")
@@ -514,7 +669,6 @@ def clean_reads(
 
     stats = OrderedDict()
     done_time = time.time()
-    stats["start_basepairs"] = initial_bp
     stats["clean_basepairs"] = clean_bp
     stats["cleaning_time"] = done_time - start_time
     # eprint([x for x in Path(work_dir).glob(basename + '_fastp_*.json')])
@@ -525,6 +679,53 @@ def clean_reads(
 
     return stats
 
+#Helper function to parallelize reformat.sh execution
+def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=None):
+    # Create list of commands and their arguments
+    commands = []
+    for i, bp in enumerate(sites_per_file):
+        command = [
+            "reformat.sh",
+            "samplebasestarget=" + str(bp),
+            "sampleseed=" + str(int(seed) + i),
+            "breaklength=500",
+            "ignorebadquality=t",
+            "quantize=t", 
+            "iupacToN=t",
+            "qin=33",
+            "in=" + str(infile),
+            "out=" + str(outfs[i]),
+            "overwrite=true",
+            "verifypaired=f",
+            "int=f"
+        ]
+        commands.append((command, i))
+
+    def run_single_command(args):
+        command, i = args
+        try:
+            p = subprocess.run(
+                command,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                check=True,
+            )
+            if verbose:
+                eprint(p.stderr.decode())
+            return True
+        except subprocess.CalledProcessError as e:
+            if verbose:
+                eprint(f"Error in subprocess {i}: {e}")
+            return False
+
+    # Use ThreadPoolExecutor instead of ProcessPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all jobs and wait for completion
+        results = list(executor.map(run_single_command, commands))
+
+    # Check if all processes succeeded
+    if not all(results):
+        raise RuntimeError("One or more reformat processes failed")
 
 # function takes a fastq file as input and splits it into several files
 # to be saved in outfolder with outprefix as prefix in the file name
@@ -545,6 +746,7 @@ def split_fastq(
     seed=None,
     overwrite=False,
     verbose=False,
+    n_threads=1
 ):
     start_time = time.time()
 
@@ -603,32 +805,7 @@ def split_fastq(
             eprint("Files exist. Skipping subsampling for file:", str(infile))
             return OrderedDict()
 
-    for i, bp in enumerate(sites_per_file):
-        outfile = outfs[i] 
-        command = [
-                "reformat.sh",
-                "samplebasestarget=" + str(bp),
-                "sampleseed=" + str(int(seed) + i),
-                "breaklength=500",
-                "ignorebadquality=t",
-                "quantize=t", 
-                "iupacToN=t",
-                "qin=33", #maybe not always true, but crashes sometimes if auto
-                "in=" + str(infile),
-                "out=" + str(outfile),
-                "overwrite=true",
-                "verifypaired=f",
-                "int=f"
-            ]
-        p = subprocess.run(
-            command,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            check=True,
-        )
-
-        if verbose:
-            eprint(p.stderr.decode())
+    run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=n_threads)
 
     done_time = time.time()
 
@@ -841,6 +1018,7 @@ def make_image(
                 )
         if verbose:
             eprint(dsk_out.stderr.decode())
+            
         dsk_out = dsk_out.stdout.decode("UTF-8")
         counts = pd.read_csv(
             StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
@@ -972,6 +1150,7 @@ def run_clean2img(
                 overwrite=args.overwrite,
                 verbose=args.verbose,
                 seed=str(it_row[0]) + str(np_rng.integers(low=0, high=2**32)),
+                n_threads=cores_per_process
             )
         except Exception as e:
             eprint("SPLIT FAIL:", clean_reads_f)
@@ -991,6 +1170,7 @@ def run_clean2img(
                 overwrite=args.overwrite,
                 verbose=args.verbose,
                 seed=str(it_row[0]) + str(np_rng.integers(low=0, high=2**32)),
+                n_threads = cores_per_process
             )
         except Exception as e:
             eprint("SPLIT FAIL:", clean_reads_f)
