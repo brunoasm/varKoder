@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varKoder"
-version = "1.1.0"
+version = "1.2.0"
 description = "A tool that uses variation in K-mer frequencies as DNA barcodes."
 authors = [
     {name = "Bruno de Medeiros", email = "bdemedeiros@fieldmuseum.org"},
 ]
 license = {text = "GNU General Public License"}
 urls = {Homepage = "https://github.com/brunoasm/varKoder"}
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "torch",
     "fastai",

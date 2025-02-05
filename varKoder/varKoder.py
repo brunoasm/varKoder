@@ -438,12 +438,12 @@ def main():
     args = main_parser.parse_args()
     
     # parse max_bp (for compatibility with previous versions of the code)
-    if args.max_bp is not None:
-        if args.max_bp == 0:
+    if hasattr(args, 'max_bp'):
+        if args.max_bp == '0':
             args.max_bp = None
             eprint("All of the data will be used to produce images.")
         else:
-            eprint("Images will be limited to --max-bp:",args.max_bp)
+            eprint(f"Images will be limited to --max-bp: {args.max_bp}b")
 
     # check if input directory exists
     

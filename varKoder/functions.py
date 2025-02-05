@@ -308,15 +308,34 @@ def count_total_reads(filename):
 def calculate_reads_needed(files_info, max_bp):
     """
     Calculate how many reads to take from each file to achieve target coverage.
+    If max_bp is None, returns all available reads from each file.
     
     Args:
         files_info: Dictionary containing file information including average read lengths
-        max_bp: Target base pair count
+        max_bp: Target base pair count. If None, all available reads will be returned
     
     Returns:
         Dictionary with number of reads to take from each file
     """
     reads_to_take = {}
+    
+    # Early return case: when max_bp is None, return all available reads
+    if max_bp is None:
+        # Process unpaired files first
+        for file_info in files_info['unpaired']:
+            reads_to_take[file_info['file']] = file_info['total_reads']
+            
+        # Process paired files (R1 and R2)
+        for r1_info, r2_info in zip(files_info['R1'], files_info['R2']):
+            # For paired files, take all reads available while ensuring we don't take
+            # more reads than are available in either file of the pair
+            max_possible_pairs = min(r1_info['total_reads'], r2_info['total_reads'])
+            reads_to_take[r1_info['file']] = max_possible_pairs
+            reads_to_take[r2_info['file']] = max_possible_pairs
+            
+        return reads_to_take
+    
+    # If max_bp is a number, calculate reads to take
     remaining_bp = 5 * max_bp  # We want 5x coverage
     
     # First allocate from unpaired files
@@ -764,11 +783,11 @@ def split_fastq(
     elif is_query or int(nsites) > min_bp:
         sites_per_file = [min(int(nsites), int(max_bp))]
     else:
-        eprint( "Input file "
+        eprint( "Post-cleaning input file "
             + str(infile)
             + " has less than "
             + str(min_bp)
-            + "bp, raise --min_bp if you want to produce an image.")
+            + "bp, decrease --min_bp if you want to produce an image.")
         raise Exception("Input file has less than minimum data.")
 
     if not is_query:
