@@ -29,7 +29,7 @@ See options below in [Usage](#Usage) section on how to implement each strategy.
 
 ## Installation
 
-To install varKoder, it is best to use Anaconda (or Anaconda and homebrew, for macs) to install dependencies, and then pip to install varKoder itself to your conda environment. Follow the instructions below to accomplish that.
+To install varKoder, it is best to use Anaconda (or Anaconda and homebrew, for macs) to install dependencies, and then pip to install varKoder itself to your conda environment. Follow the instructions below to accomplish that. If [conda](https://anaconda.org) takes more than a few minutes to solve the environment, try using [mamba](https://github.com/mamba-org/mamba) instead.
 
 Python packages required to run `varKoder` can be installed with anaconda (see instructions below for Linux and Mac).
 
@@ -116,7 +116,7 @@ singularity exec --no-home --cleanenv --nv  -B $(pwd):/home -B /tmp:/tmp --pwd /
 
 ### Test installation
 
-This repository has scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). The test script also prints examples of **varKoder** usage for you to get more familiar with the software.
+This repository has scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). The test script also prints examples of **varKoder** usage for you to get more familiar with the software. Using the default options in the test script, the tests should take only a few minutes and produce a series of images, trained models, and predictions.
 
 To run the tests, navigate to the cloned `varKoder` repository in a terminal and run:
 ```bash
@@ -174,4 +174,6 @@ Bruno A. S. de Medeiros (Field Museum of Natural History), starting in 2019.
 
 If using **varKoder**, please cite our publication on the top of this page.
 
+## Notes
 
+We initially tested this software on linux servers with different versions of Ubuntu and CentOS, and ARM mac computers with MacOS v 14-16.
