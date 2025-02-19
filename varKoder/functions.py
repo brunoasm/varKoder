@@ -582,11 +582,15 @@ def clean_reads(
                     stdout=outf,
                 )
                 if verbose:
+                    eprint(' '.join(command))
                     eprint(p.stderr.decode())
-                    traceback.print_exc(file=sys.stdout)
                 (Path(work_dir) / (basename + "_paired.fq")).unlink(missing_ok=True)
         except subprocess.CalledProcessError as e:
             eprint(f"{basename}: fastp failed with paired reads, treating them as unpaired")
+            if verbose:
+                eprint(' '.join(command))
+                eprint(e.stderr.decode())
+                traceback.print_exc()
 
             with open((Path(work_dir) / (basename + "_unpaired.fq")),"a") as unpair_f:
                 with open(Path(work_dir) / (basename + "_R1.fq"),"r") as pair_f:
@@ -629,11 +633,15 @@ def clean_reads(
             )
 
             if verbose:
+                eprint(' '.join(command))
                 eprint(p.stderr.decode())
-                traceback.print_exc(file=sys.stdout)
 
         except subprocess.CalledProcessError as e:
             eprint(f"{basename}: fastp failed with unpaired reads")
+            if verbose:
+                eprint(' '.join(command))
+                eprint(e.stderr.decode())
+                traceback.print_exc()
             raise
 
         (Path(work_dir) / (basename + "_unpaired.fq")).unlink(missing_ok=True)
@@ -662,6 +670,7 @@ def clean_reads(
             check=True,
         )
         if verbose:
+            eprint(' '.join(command))
             eprint(p.stderr.decode())
 
     # copy fastp reports
@@ -726,15 +735,19 @@ def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, m
             p = subprocess.run(
                 command,
                 stderr=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, 
                 check=True,
             )
             if verbose:
-                eprint(p.stderr.decode())
+                eprint(' '.join(command))
+                if p.stderr:
+                    eprint(p.stderr.decode())
             return True
         except subprocess.CalledProcessError as e:
             if verbose:
-                eprint(f"Error in subprocess {i}: {e}")
+                eprint(f"Error in reformat.sh subprocess {i}:", ' '.join(command))
+                if e.stderr:
+                    eprint(e.stderr.decode())
             return False
 
     # Use ThreadPoolExecutor instead of ProcessPoolExecutor
@@ -823,8 +836,8 @@ def split_fastq(
         if not overwrite:
             eprint("Files exist. Skipping subsampling for file:", str(infile))
             return OrderedDict()
-
-    run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=n_threads)
+    
+    run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=verbose, max_workers=n_threads)
 
     done_time = time.time()
 
@@ -861,8 +874,7 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
             wait=wait_random_exponential(multiplier=1, max=60),
         ):
             with attempt:
-                p = subprocess.run(
-                    [
+                command = [
                         "dsk",
                         "-nb-cores",
                         str(threads),
@@ -881,12 +893,15 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
                         #'-out-dir', str(outfolder),
                         "-out",
                         str(outpath),
-                    ],
+                    ]
+                p = subprocess.run(
+                    command,
                     stderr=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
                     check=True,
                 )
                 if verbose:
+                    eprint(' '.join(command))
                     eprint(p.stderr.decode())
 
     done_time = time.time()
@@ -1019,8 +1034,7 @@ def make_image(
             wait=wait_random_exponential(multiplier=1, max=60),
         ):
             with attempt:
-                dsk_out = subprocess.run(
-                    [
+                command = [
                         "dsk2ascii",
                         "-c",
                         "-file",
@@ -1031,11 +1045,14 @@ def make_image(
                         str(Path(outdir) / "dsk.txt"),
                         "-verbose",
                         "0",
-                    ],
+                    ]
+                dsk_out = subprocess.run(
+                    command,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                 )
         if verbose:
+            eprint(' '.join(command))
             eprint(dsk_out.stderr.decode())
             
         dsk_out = dsk_out.stdout.decode("UTF-8")
@@ -1150,6 +1167,7 @@ def run_clean2img(
         eprint("CLEAN FAIL:", x["files"])
         if args.verbose:
             eprint(e)
+            traceback.print_exc()
         eprint("SKIPPING SAMPLE")
         stats[str(x["sample"])].update({"failed_step": "clean"})
         return stats
@@ -1175,6 +1193,7 @@ def run_clean2img(
             eprint("SPLIT FAIL:", clean_reads_f)
             if args.verbose:
                 eprint(e)
+                traceback.print_exc()
             eprint("SKIPPING SAMPLE")
             stats[str(x["sample"])].update({"failed_step": "split"})
             return stats
@@ -1195,6 +1214,7 @@ def run_clean2img(
             eprint("SPLIT FAIL:", clean_reads_f)
             if args.verbose:
                 eprint(e)
+                traceback.print_exc()
             eprint("SKIPPING SAMPLE")
             stats[str(x["sample"])].update({"failed_step": "split"})
             return stats
@@ -1223,6 +1243,7 @@ def run_clean2img(
                 eprint("K-MER COUNTING FAIL, SKIPPING FILE:", infile)
                 if args.verbose:
                     eprint(e)
+                    traceback.print_exc()
                 continue
 
             try:
@@ -1265,7 +1286,7 @@ def run_clean2img(
                 eprint("IMAGE FAIL:", infile)
                 if args.verbose:
                     eprint(e)
-                    traceback.print_exc(file=sys.stdout)
+                    traceback.print_exc()
                 eprint("SKIPPING IMAGE")
                 stats[str(x["sample"])].update({"failed_step": "image"})
                 continue
