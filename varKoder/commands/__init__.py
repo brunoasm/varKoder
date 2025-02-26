@@ -12,4 +12,4 @@ in the varKoder tool:
 - convert: Convert between different k-mer mapping methods
 """
 
-__all__ = ["image"]
+__all__ = ["image", "train", "query", "convert"]
