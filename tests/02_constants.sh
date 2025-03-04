@@ -30,6 +30,7 @@ else
 fi
 
 IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
+C_CMD="convert --overwrite -k 7 varKode ./images ./images_varkode"
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
 Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained/trained_model.pkl fastq_query/ inferences_Bembidion"

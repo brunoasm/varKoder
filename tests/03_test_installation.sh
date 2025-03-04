@@ -2,6 +2,96 @@
 # 03_test_installation.sh
 source 02_constants.sh
 
+# Initialize arrays to track successful commands and profiling data
+successful_commands=()
+
+# Check if bash version supports associative arrays
+if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+    declare -A command_exit_codes
+    declare -A command_wall_times
+    declare -A command_cpu_times
+    declare -A command_memory_usage
+    USE_ASSOC_ARRAYS=true
+else
+    # Fallback for older bash versions (using indexed arrays)
+    command_exit_codes=()
+    command_wall_times=()
+    command_cpu_times=()
+    command_memory_usage=()
+    command_names=()
+    USE_ASSOC_ARRAYS=false
+fi
+
+# Function to run a command and capture its results
+run_command() {
+    local cmd_name="$1"
+    local full_cmd="$2"
+    
+    echo "$color$full_cmd$reset"
+    
+    # Run the command and capture its exit code
+    if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
+        # For profiled commands, capture the stderr separately to parse profiling info
+        time_output_file=$(mktemp)
+        eval "$full_cmd" 2> >(tee "$time_output_file" | while read -r line; do echo "$cmd_name: $line"; done)
+        exit_code=${PIPESTATUS[0]}
+        
+        # Extract profiling data
+        if [ -f "$time_output_file" ]; then
+            wall_time=$(grep "Elapsed (wall clock) time" "$time_output_file" | sed 's/.*: //')
+            cpu_time=$(grep "User time" "$time_output_file" | sed 's/.*: //')
+            memory=$(grep "Maximum resident set size" "$time_output_file" | sed 's/.*: //')
+            
+            # Store command-specific profiling data in arrays using the appropriate method
+            if [ "$USE_ASSOC_ARRAYS" = true ]; then
+                # Use associative arrays
+                command_wall_times[$cmd_name]="$wall_time"
+                command_cpu_times[$cmd_name]="$cpu_time"
+                command_memory_usage[$cmd_name]="$memory"
+            else
+                # Use indexed arrays with command names as reference
+                command_names+=("$cmd_name")
+                command_wall_times+=("$wall_time")
+                command_cpu_times+=("$cpu_time")
+                command_memory_usage+=("$memory")
+            fi
+            
+            rm "$time_output_file"
+        fi
+    else
+        # For non-profiled commands, just run with prepend_text for stderr
+        prepend_text "$cmd_name" "$full_cmd"
+        exit_code=$?
+    fi
+    
+    # Record success/failure
+    if [ "$USE_ASSOC_ARRAYS" = true ]; then
+        command_exit_codes["$cmd_name"]=$exit_code
+    else
+        # For non-associative arrays, add the exit code to the end
+        # If cmd_name already exists, find its index and update
+        found=false
+        for i in "${!command_names[@]}"; do
+            if [[ "${command_names[$i]}" == "$cmd_name" ]]; then
+                command_exit_codes[$i]=$exit_code
+                found=true
+                break
+            fi
+        done
+        # If not found, add it
+        if [ "$found" = false ]; then
+            command_names+=("$cmd_name")
+            command_exit_codes+=($exit_code)
+        fi
+    fi
+    
+    if [ $exit_code -eq 0 ]; then
+        successful_commands+=("$cmd_name")
+    fi
+    
+    return $exit_code
+}
+
 echo "$color What would you like to test? Please choose an option by typing the number:"
 echo "1. local conda installation (default)"
 echo "2. docker image"
@@ -111,15 +201,11 @@ echo "Press Enter to use recommended default [$DEFAULT_CORES] or type a number:$
 read -p "Enter number of cores [$DEFAULT_CORES]: " NCORES
 NCORES=${NCORES:-$DEFAULT_CORES}
 
-# Rest of the script (image generation, training, query commands)
-echo "$color$prefix $IM_CMD -n $NCORES$reset"
-prepend_text IM "$prefix $IM_CMD -n $NCORES"
-
-echo -e "$color$prefix $T1_CMD -n $NCORES$reset"
-prepend_text T1 "$prefix $T1_CMD -n $NCORES"
-
-echo -e "$color$prefix $T2_CMD -n $NCORES$reset"
-prepend_text T2 "$prefix $T2_CMD -n $NCORES"
+# Run commands and track success/failure
+run_command "IM" "$prefix $IM_CMD -n $NCORES"
+run_command "C" "$prefix $C_CMD -n $NCORES"
+run_command "T1" "$prefix $T1_CMD -n $NCORES"
+run_command "T2" "$prefix $T2_CMD -n $NCORES"
 
 # Check if trained_pretrained/input_data.csv exists before running the loop
 if [ -f "trained_pretrained/input_data.csv" ]; then
@@ -141,19 +227,118 @@ else
 fi
 
 if [ -d "fastq_query" ] && [ -f "trained_pretrained/trained_model.pkl" ]; then
-    echo -e "$color$prefix $Q1_CMD -n $NCORES$reset"
-    prepend_text Q1 "$prefix $Q1_CMD -n $NCORES"
+    run_command "Q1" "$prefix $Q1_CMD -n $NCORES"
 else
     echo "${color}Warning: Required files or directories for Q1 command not found. Skipping.$reset"
 fi
 
 if [ -d "inferences_Bembidion/query_images" ]; then
-    echo -e "$color$prefix $Q2_CMD -n $NCORES$reset"
-    prepend_text Q2 "$prefix $Q2_CMD -n $NCORES"
+    run_command "Q2" "$prefix $Q2_CMD -n $NCORES"
 else
     echo "${color}Warning: Required directory for Q2 command not found. Skipping.$reset"
 fi
 
-echo "${color}ALL TESTS CONCLUDED$reset"
+# Print summary
+echo -e "\n${color}===== TEST SUMMARY =====$reset"
+echo -n "${color}Mode: "
+case $choice in
+    1|"") echo "local conda";;
+    2) echo "docker";;
+    3) echo "singularity";;
+    *) echo "unknown";;
+esac
+echo "$reset"
+echo "${color}Architecture: $ARCHITECTURE$reset"
+echo "${color}CPU Cores: $NCORES$reset"
+if [ "$IS_MAC_ARM" = false ] && [ -n "$gpu_index" ]; then
+    echo "${color}GPU: $gpu_index$reset"
+else
+    echo "${color}GPU: None (CPU mode)$reset"
+fi
+
+echo -e "\n${color}Commands completed successfully:$reset"
+if [ ${#successful_commands[@]} -eq 0 ]; then
+    echo "${color}None$reset"
+else
+    for cmd in "${successful_commands[@]}"; do
+        echo -n "${color}- $cmd$reset"
+        # Display command-specific details
+        case $cmd in
+            "IM") echo "${color} (Image generation)$reset" ;;
+            "C") echo "${color} (Image conversion)$reset" ;;
+            "T1") echo "${color} (Training with pre-trained weights, $finetune_epochs epochs)$reset" ;;
+            "T2") echo "${color} (Training from scratch, $pretrain_epochs epochs)$reset" ;;
+            "Q1") echo "${color} (Query from FASTQ)$reset" ;;
+            "Q2") echo "${color} (Query from images)$reset" ;;
+            *) echo "" ;;
+        esac
+    done
+fi
+
+echo -e "\n${color}Commands that failed:$reset"
+failed=false
+for cmd in IM C T1 T2 Q1 Q2; do
+    if [[ " ${successful_commands[*]} " != *" $cmd "* ]]; then
+        # Get the exit code using the appropriate array type
+        exit_code=""
+        if [ "$USE_ASSOC_ARRAYS" = true ]; then
+            exit_code="${command_exit_codes[$cmd]}"
+        else
+            for i in "${!command_names[@]}"; do
+                if [[ "${command_names[$i]}" == "$cmd" ]]; then
+                    exit_code="${command_exit_codes[$i]}"
+                    break
+                fi
+            done
+        fi
+        
+        # Only display if we have an exit code (command was actually run)
+        if [ -n "$exit_code" ]; then
+            echo "${color}- $cmd (Exit code: $exit_code)$reset"
+            failed=true
+        fi
+    fi
+done
+if [ "$failed" = false ]; then
+    echo "${color}None$reset"
+fi
+
+# Display profiling information if it was enabled
+if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
+    echo -e "\n${color}Resource usage (from /usr/bin/time):$reset"
+    printf "${color}%-5s %-20s %-20s %-30s\n$reset" "CMD" "Wall Time" "CPU Time" "Max RSS"
+    echo "${color}-------------------------------------------------------------------$reset"
+    
+    # Loop through commands with the appropriate array method
+    for cmd in IM C T1 T2 Q1 Q2; do
+        wall_time=""
+        cpu_time=""
+        memory=""
+        
+        if [ "$USE_ASSOC_ARRAYS" = true ]; then
+            # Use associative arrays
+            wall_time="${command_wall_times[$cmd]}"
+            cpu_time="${command_cpu_times[$cmd]}"
+            memory="${command_memory_usage[$cmd]}"
+        else
+            # Find the command in the indexed arrays
+            for i in "${!command_names[@]}"; do
+                if [[ "${command_names[$i]}" == "$cmd" ]]; then
+                    wall_time="${command_wall_times[$i]}"
+                    cpu_time="${command_cpu_times[$i]}"
+                    memory="${command_memory_usage[$i]}"
+                    break
+                fi
+            done
+        fi
+        
+        if [ -n "$wall_time" ]; then
+            printf "${color}%-5s %-20s %-20s %-30s\n$reset" \
+                "$cmd" "$wall_time" "$cpu_time" "$memory"
+        fi
+    done
+fi
+
+echo -e "\n${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
-echo "${color}rm -rf varKoder.sif Bembidion fastq_query images inferences* trained* stats.csv$reset"
+echo "${color}rm -rf varKoder.sif Bembidion fastq_query images images_varkode inferences* trained* stats.csv$reset"
