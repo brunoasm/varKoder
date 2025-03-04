@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-varKoder = "varKoder.varKoder:main"
+varKoder = "varKoder.cli:main"
 
 [tool.setuptools]
 packages = ["varKoder"]
