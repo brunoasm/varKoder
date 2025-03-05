@@ -30,6 +30,11 @@ from varKoder.core.utils import (
     get_varKoder_qual, get_varKoder_freqsd, get_metadata_from_img_filename
 )
 
+from varKoder.commands.image import (
+    clean_reads, split_fastq, count_kmers, make_image, 
+    run_clean2img, run_clean2img_wrapper
+)
+
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
@@ -57,65 +62,68 @@ class QueryCommand:
         self.np_rng = np_rng
         self.all_stats = defaultdict(OrderedDict)
         
-        # Validate kmer size if needed
-        if not args.images:
-            if args.kmer_size not in range(5, 9 + 1):
-                raise ValueError("kmer size must be between 5 and 9")
-                
-        # Check if output directory exists and if predictions already exist
+        # Check if kmer size provided is supported
+        if args.kmer_size not in range(5, 9 + 1):
+            raise ValueError("kmer size must be between 5 and 9")
+        
+        # Set up intermediate directory
+        try:
+            self.inter_dir = Path(args.int_folder)
+        except TypeError:
+            self.inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+            
+        # Check if output directory exists
         if not args.overwrite:
             if Path(args.outdir, "predictions.csv").is_file():
                 raise Exception(
                     "Output predictions file exists, use --overwrite if you want to overwrite it."
                 )
         
-        # Set up paths
-        if not args.images:
-            # If no directory provided for intermediate results, create a temporary one
-            try:
-                self.inter_dir = Path(args.int_folder)
-            except TypeError:
-                self.inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
-                
-            # Set up directory to save images if requested
-            if args.keep_images:
-                self.images_d = Path(args.outdir) / "query_images"
-                self.images_d.mkdir(parents=True, exist_ok=True)
-            elif args.int_folder:
-                self.images_d = Path(tempfile.mkdtemp(prefix="barcoding_img_"))
-            else:
-                self.images_d = self.inter_dir / "images"
-        else:
-            # If input is already images, just set the images directory to the input
+        # Set directory to save images
+        if args.images:
             self.images_d = Path(args.input)
-            
-        # Set up kmer mapping if needed
-        if not args.images:
-            self.kmer_mapping = get_kmer_mapping(args.kmer_size, args.kmer_mapping)
-            
-        # Initialize stats
-        self.stats_path = Path(args.stats_file)
-        if self.stats_path.exists():
-            self.all_stats.update(
-                pd.read_csv(self.stats_path, index_col=[0], dtype={0:str}, low_memory=False).to_dict(orient="index")
-            )
+        elif args.keep_images:
+            self.images_d = Path(args.outdir) / "query_images"
+            self.images_d.mkdir(parents=True, exist_ok=True)
+        elif args.int_folder:
+            self.images_d = Path(tempfile.mkdtemp(prefix="barcoding_img_"))
+        else:
+            self.images_d = self.inter_dir / "images"
+        
+        # Set up kmer mapping
+        self.kmer_mapping = get_kmer_mapping(args.kmer_size, args.kmer_mapping)
     
-    def process_samples(self, condensed_files: pd.DataFrame) -> None:
+    def prepare_images(self) -> List[Path]:
         """
-        Process samples to generate images.
+        Prepare images for querying.
         
-        This method is called only when the input is raw sequences, not images.
+        If the input is raw reads, process them into images.
+        If the input is already images, just collect them.
         
-        Args:
-            condensed_files: DataFrame with file information
+        Returns:
+            List of image paths
         """
-        from varKoder.commands.image import (
-            run_clean2img, run_clean2img_wrapper, process_stats
+        if self.args.images:
+            # Input is already images, just collect them
+            return [img for img in self.images_d.rglob("*.png")]
+        
+        # Input is raw reads, process them into images
+        eprint("Processing reads and preparing images")
+        eprint("Reading input data")
+        
+        # Parse input and create a table relating reads files to samples and taxa
+        inpath = Path(self.args.input)
+        condensed_files = process_input(
+            inpath, 
+            is_query=True, 
+            no_pairs=getattr(self.args, 'no_pairs', False)
         )
         
-        # Determine subfolder structure
-        n_records = condensed_files.shape[0]
-        subfolder_levels = math.floor(math.log(n_records/1000, 16))
+        if condensed_files.shape[0] == 0:
+            raise Exception("No files found in input. Please check.")
+        
+        # Process samples to generate images
+        img_paths = []
         
         # Prepare arguments for run_clean2img function
         args_for_multiprocessing = [
@@ -126,9 +134,9 @@ class QueryCommand:
                 self.np_rng,
                 self.inter_dir,
                 self.all_stats,
-                self.stats_path,
+                Path(self.args.stats_file),
                 self.images_d,
-                subfolder_levels
+                0  # No subfolder levels for query
             )
             for tup in condensed_files.iterrows()
         ]
@@ -136,46 +144,56 @@ class QueryCommand:
         # Single-threaded execution
         if self.args.n_threads == 1:
             for arg_tuple in args_for_multiprocessing:
-                stats = run_clean2img(*arg_tuple)
-                process_stats(
-                    stats,
-                    condensed_files,
-                    self.args,
-                    self.stats_path,
-                    self.images_d,
-                    self.all_stats,
-                    QUAL_THRESH,
-                    LABELS_SEP,
-                )
+                run_clean2img(*arg_tuple)
         
         # Multi-threaded execution
         else:
             with multiprocessing.Pool(processes=int(self.args.n_threads)) as pool:
-                for stats in pool.imap_unordered(
+                for _ in pool.imap_unordered(
                     run_clean2img_wrapper, args_for_multiprocessing
                 ):
-                    process_stats(
-                        stats,
-                        condensed_files,
-                        self.args,
-                        self.stats_path,
-                        self.images_d,
-                        self.all_stats,
-                        QUAL_THRESH,
-                        LABELS_SEP,
-                    )
-    
-    def extract_image_metadata(self, img_paths: List[Path]) -> Dict[str, List]:
-        """
-        Extract metadata from image files.
+                    pass
         
-        Args:
-            img_paths: List of paths to image files
-            
-        Returns:
-            dict: Dictionary of metadata extracted from images
+        eprint("All images prepared, saved in", str(self.images_d))
+        
+        return [img for img in self.images_d.rglob("*.png")]
+    
+    def load_model(self) -> Any:
         """
-        # Initialize metadata lists
+        Load the model for inference.
+        
+        Returns:
+            Loaded model
+        """
+        n_images = len([img for img in self.images_d.rglob("*.png")])
+        
+        try:
+            if n_images >= 128:
+                eprint(n_images, "images in the input, will try to use GPU for prediction.")
+                model = load_learner(self.args.model, cpu=False)
+            else:
+                eprint(n_images, "images in the input, will use CPU for prediction.")
+                model = load_learner(self.args.model, cpu=True)
+        except FileNotFoundError:
+            eprint('Model', self.args.model, "not found locally, trying Hugging Face hub.")
+            try: 
+                model = from_pretrained_fastai(self.args.model)
+            except Exception as e:
+                raise Exception('Unable to load model', self.args.model, "locally or from Hugging Face Hub, please check")
+        
+        return model
+    
+    def run(self) -> None:
+        """
+        Run the query command.
+        """
+        # Prepare images (either process raw reads or collect existing images)
+        img_paths = self.prepare_images()
+        
+        if not img_paths:
+            raise Exception("No images found to query. Please check your input.")
+        
+        # Extract metadata from images
         actual_labels = []
         qual_flags = []
         freq_sds = []
@@ -184,7 +202,6 @@ class QueryCommand:
         query_klen = []
         query_mapping = []
         
-        # Extract metadata from each image
         for p in img_paths:
             try:
                 labs = ";".join(get_varKoder_labels(p))
@@ -201,18 +218,19 @@ class QueryCommand:
             except (AttributeError, TypeError):
                 freq_sd = np.nan
 
-            img_metadata = get_metadata_from_img_filename(p)
+            img_metadatada = get_metadata_from_img_filename(p)
 
-            sample_ids.append(img_metadata['sample'])
-            query_bp.append(img_metadata['bp'])
-            query_klen.append(img_metadata['img_kmer_size'])
-            query_mapping.append(img_metadata['img_kmer_mapping'])
+            
+            sample_ids.append(img_metadatada['sample'])
+            query_bp.append(img_metadatada['bp'])
+            query_klen.append(img_metadatada['img_kmer_size'])
+            query_mapping.append(img_metadatada['img_kmer_mapping'])
             actual_labels.append(labs)
             qual_flags.append(qual_flag)
             freq_sds.append(freq_sd)
         
-        # Return combined metadata
-        return {
+        # Start output dataframe
+        common_data = {
             "varKode_image_path": img_paths,
             "sample_id": sample_ids,
             "query_basepairs": query_bp,
@@ -223,57 +241,22 @@ class QueryCommand:
             "possible_low_quality": qual_flags,
             "basefrequency_sd": freq_sds,
         }
-    
-    def load_model(self) -> Any:
-        """
-        Load the trained model for querying.
         
-        Returns:
-            The loaded model
-        """
-        n_images = len([img for img in self.images_d.rglob("*.png")])
-        try:
-            if n_images >= 128:
-                eprint(n_images, "images in the input, will try to use GPU for prediction.")
-                learn = load_learner(self.args.model, cpu=False)
-            else:
-                eprint(n_images, "images in the input, will use CPU for prediction.")
-                learn = load_learner(self.args.model, cpu=True)
-        except FileNotFoundError:
-            eprint('Model', self.args.model, "not found locally, trying Hugging Face hub.")
-            try: 
-                learn = from_pretrained_fastai(self.args.model)
-            except:
-                raise Exception('Unable to load model', self.args.model, "locally or from Hugging Face Hub, please check")
+        # Load model
+        learn = self.load_model()
         
-        return learn
-    
-    def make_predictions(self, model: Any, img_paths: List[Path]) -> pd.DataFrame:
-        """
-        Make predictions using the trained model.
-        
-        Args:
-            model: Trained model
-            img_paths: List of paths to image files
-            
-        Returns:
-            DataFrame: Predictions results
-        """
-        # Extract metadata from images
-        common_data = self.extract_image_metadata(img_paths)
-        
-        # Create dataloader for prediction
+        # Create data loader for inference
         df = pd.DataFrame({"path": img_paths})
-        query_dl = model.dls.test_dl(df, bs=self.args.max_batch_size)
+        query_dl = learn.dls.test_dl(df, bs=self.args.max_batch_size)
         
-        # Make predictions based on model type
-        if "MultiLabel" in str(model.loss_func):
+        # Make predictions
+        if "MultiLabel" in str(learn.loss_func):
             eprint(
                 "This is a multilabel classification model, each input may have 0 or more predictions."
             )
-            pp, _ = model.get_preds(dl=query_dl, act=nn.Sigmoid())
+            pp, _ = learn.get_preds(dl=query_dl, act=nn.Sigmoid())
             above_threshold = pp >= self.args.threshold
-            vocab = model.dls.vocab
+            vocab = learn.dls.vocab
             predicted_labels = [
                 ";".join([vocab[idx] for idx, val in enumerate(row) if val])
                 for row in above_threshold
@@ -288,74 +271,35 @@ class QueryCommand:
         
         else:
             eprint(
-                "This is a single label classification model, each input may have only one prediction."
+                "This is a single label classification model, each input may will have only one prediction."
             )
-            pp, _ = model.get_preds(dl=query_dl)
+            pp, _ = learn.get_preds(dl=query_dl)
         
             best_ps, best_idx = torch.max(pp, dim=1)
-            best_labels = model.dls.vocab[best_idx]
+            best_labels = [learn.dls.vocab[i] for i in best_idx]
         
             output_df = pd.DataFrame({
                 **common_data,
                 "prediction_type": "Single label",
                 "best_pred_label": best_labels,
-                "best_pred_prob": best_ps,
+                "best_pred_prob": best_ps.tolist(),
             })
         
-        # Add raw probabilities if requested
+        # Add probabilities if requested
         if self.args.include_probs:
-            output_df = pd.concat([output_df, pd.DataFrame(pp, columns=model.dls.vocab)], axis=1)
+            prob_df = pd.DataFrame(pp.numpy(), columns=learn.dls.vocab)
+            output_df = pd.concat([output_df, prob_df], axis=1)
         
-        return output_df, pp
-    
-    def run(self) -> None:
-        """
-        Run the query command.
-        """
-        eprint("Running varKoder query command")
-        
-        # If input is raw sequences, process them to generate images
-        if not self.args.images:
-            eprint("Kmer size:", str(self.args.kmer_size))
-            eprint("Processing reads and preparing images")
-            eprint("Reading input data")
-            
-            inpath = Path(self.args.input)
-            condensed_files = process_input(
-                inpath, 
-                is_query=True,
-                no_pairs=self.args.no_pairs
-            )
-            
-            if condensed_files.shape[0] == 0:
-                raise Exception("No files found in input. Please check.")
-            
-            # Generate images from sequences
-            self.process_samples(condensed_files)
-            
-            eprint("All images done, saved in", str(self.images_d))
-        
-        # Find all PNG images in the images directory
-        img_paths = [img for img in self.images_d.rglob("*.png")]
-        if not img_paths:
-            raise Exception("No images found for querying. Please check input.")
-        
-        # Load the model
-        model = self.load_model()
-        
-        # Make predictions
-        output_df, _ = self.make_predictions(model, img_paths)
-        
-        # Save predictions
+        # Save results
         outdir = Path(self.args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         output_df.to_csv(outdir / "predictions.csv", index=False)
         
-        # Clean up temporary directory if created
-        if not self.args.images and not self.args.int_folder and self.inter_dir.is_dir():
-            shutil.rmtree(self.inter_dir)
+        eprint("Predictions saved to", str(outdir / "predictions.csv"))
         
-        eprint(f"Predictions saved to {outdir / 'predictions.csv'}")
+        # Clean up temporary directory if created
+        if not self.args.int_folder and not self.args.keep_images and self.inter_dir.is_dir():
+            shutil.rmtree(self.inter_dir)
 
 
 def run_query_command(args: Any, np_rng: np.random.Generator) -> None:

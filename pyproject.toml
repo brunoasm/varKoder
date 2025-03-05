@@ -27,7 +27,7 @@ dependencies = [
 varKoder = "varKoder.cli:main"
 
 [tool.setuptools]
-packages = ["varKoder"]
+packages = ["varKoder", "varKoder.core", "varKoder.commands", "varKoder.models", "varKoder.processing"]
 include-package-data = true
 
 [tool.setuptools.package-data]

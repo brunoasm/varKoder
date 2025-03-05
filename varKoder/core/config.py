@@ -31,7 +31,7 @@ CUSTOM_ARCHS = ['fiannaca2018', 'arias2022']
 
 # Default parameters
 DEFAULT_KMER_SIZE = 7
-DEFAULT_KMER_MAPPING = 'cgr'
+DEFAULT_KMER_MAPPING = 'cgr'  # Original default was 'cgr'
 DEFAULT_THRESHOLD = 0.7
 DEFAULT_THREADS = 1
 DEFAULT_CPUS_PER_THREAD = 1
