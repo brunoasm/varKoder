@@ -107,56 +107,74 @@ class QueryCommand:
             # Input is already images, just collect them
             return [img for img in self.images_d.rglob("*.png")]
         
+        # Check if input directory contains PNG files
+        inpath = Path(self.args.input)
+        png_files = list(inpath.glob("*.png"))
+        
+        # If PNG files are found, suggest using the --images flag
+        if png_files:
+            eprint("ERROR: Found PNG files in input directory.")
+            eprint("If your input directory contains pre-generated images, use the --images flag:")
+            eprint("    varKoder query --images " + str(inpath) + " " + str(self.args.outdir))
+            raise Exception("Input directory contains PNG files. Use --images flag for pre-generated images.")
+        
         # Input is raw reads, process them into images
         eprint("Processing reads and preparing images")
         eprint("Reading input data")
         
         # Parse input and create a table relating reads files to samples and taxa
-        inpath = Path(self.args.input)
-        condensed_files = process_input(
-            inpath, 
-            is_query=True, 
-            no_pairs=getattr(self.args, 'no_pairs', False)
-        )
-        
-        if condensed_files.shape[0] == 0:
-            raise Exception("No files found in input. Please check.")
-        
-        # Process samples to generate images
-        img_paths = []
-        
-        # Prepare arguments for run_clean2img function
-        args_for_multiprocessing = [
-            (
-                tup,
-                self.kmer_mapping,
-                self.args,
-                self.np_rng,
-                self.inter_dir,
-                self.all_stats,
-                Path(self.args.stats_file),
-                self.images_d,
-                0  # No subfolder levels for query
+        try:
+            condensed_files = process_input(
+                inpath, 
+                is_query=True, 
+                no_pairs=getattr(self.args, 'no_pairs', False)
             )
-            for tup in condensed_files.iterrows()
-        ]
+            
+            if condensed_files.shape[0] == 0:
+                raise Exception("No files found in input. Please check.")
+            
+            # Process samples to generate images
+            # Prepare arguments for run_clean2img function
+            args_for_multiprocessing = [
+                (
+                    tup,
+                    self.kmer_mapping,
+                    self.args,
+                    self.np_rng,
+                    self.inter_dir,
+                    self.all_stats,
+                    Path(self.args.stats_file),
+                    self.images_d,
+                    0  # No subfolder levels for query
+                )
+                for tup in condensed_files.iterrows()
+            ]
+            
+            # Single-threaded execution
+            if self.args.n_threads == 1:
+                for arg_tuple in args_for_multiprocessing:
+                    run_clean2img(*arg_tuple)
+            
+            # Multi-threaded execution
+            else:
+                with multiprocessing.Pool(processes=int(self.args.n_threads)) as pool:
+                    for _ in pool.imap_unordered(
+                        run_clean2img_wrapper, args_for_multiprocessing
+                    ):
+                        pass
+            
+            eprint("All images prepared, saved in", str(self.images_d))
+            
+            return [img for img in self.images_d.rglob("*.png")]
         
-        # Single-threaded execution
-        if self.args.n_threads == 1:
-            for arg_tuple in args_for_multiprocessing:
-                run_clean2img(*arg_tuple)
-        
-        # Multi-threaded execution
-        else:
-            with multiprocessing.Pool(processes=int(self.args.n_threads)) as pool:
-                for _ in pool.imap_unordered(
-                    run_clean2img_wrapper, args_for_multiprocessing
-                ):
-                    pass
-        
-        eprint("All images prepared, saved in", str(self.images_d))
-        
-        return [img for img in self.images_d.rglob("*.png")]
+        except KeyError as e:
+            if str(e) == "'labels'":
+                eprint("Error processing input directory. Check if it contains images or if it has the expected structure.")
+                eprint("If your directory contains images, use the --images flag:")
+                eprint("    varKoder query --images " + str(inpath) + " " + str(self.args.outdir))
+                raise Exception("Input format error. If using pre-generated images, use --images flag.") from e
+            else:
+                raise
     
     def load_model(self) -> Any:
         """
