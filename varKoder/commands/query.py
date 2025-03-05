@@ -185,9 +185,18 @@ class QueryCommand:
         """
         n_images = len([img for img in self.images_d.rglob("*.png")])
         
+        # Check if GPU is available
+        if torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
+                                           and torch.cuda.device_count()):
+            eprint("GPU available. Will try to use GPU for processing.")
+            load_on_cpu = False
+        else:
+            load_on_cpu = True
+            eprint("GPU not available. Using CPU for processing.")
+        
         try:
-            if n_images >= 128:
-                eprint(n_images, "images in the input, will try to use GPU for prediction.")
+            if n_images >= 128 and not load_on_cpu:
+                eprint(n_images, "images in the input, will use GPU for prediction.")
                 model = load_learner(self.args.model, cpu=False)
             else:
                 eprint(n_images, "images in the input, will use CPU for prediction.")
