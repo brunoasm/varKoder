@@ -357,16 +357,9 @@ def process_input(inpath, is_query=False, no_pairs=False):
                                 }
                             )
 
-        # Create DataFrame from records
-        files_df = pd.DataFrame(files_records)
-        
-        # Ensure labels is a consistent data type (convert tuples to lists)
-        if "labels" in files_df.columns:
-            files_df["labels"] = files_df["labels"].apply(lambda x: list(x) if isinstance(x, tuple) else x)
-        
-        # Group by labels and sample
+        # Create DataFrame from records and group directly - consistent with original implementation
         files_table = (
-            files_df
+            pd.DataFrame(files_records)
             .groupby(["labels", "sample"])
             .agg(list)
             .reset_index()
