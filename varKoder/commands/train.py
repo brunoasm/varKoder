@@ -31,6 +31,7 @@ from fastai.learner import load_learner
 from fastai.losses import CrossEntropyLossFlat
 from fastai.callback.core import Callback, CancelValidException
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
+from fastai.distributed import to_parallel, detach_parallel
 
 from torch.nn import CrossEntropyLoss, Module, Sequential, Linear, Flatten, LazyLinear, ReLU, Dropout, Conv1d, MaxPool1d
 from timm.loss import AsymmetricLossMultiLabel
