@@ -39,6 +39,7 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from fastai.learner import load_learner
+from fastai.torch_core import to_device, to_cpu
 from huggingface_hub import from_pretrained_fastai
 
 
@@ -184,7 +185,6 @@ class QueryCommand:
             Loaded model
         """
         n_images = len([img for img in self.images_d.rglob("*.png")])
-        
         # Check if GPU is available
         if torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
                                            and torch.cuda.device_count()):
@@ -197,18 +197,28 @@ class QueryCommand:
         try:
             if n_images >= 128 and not load_on_cpu:
                 eprint(n_images, "images in the input, will use GPU for prediction.")
-                model = load_learner(self.args.model, cpu=False)
+                learn = load_learner(self.args.model, cpu=False)
             else:
                 eprint(n_images, "images in the input, will use CPU for prediction.")
-                model = load_learner(self.args.model, cpu=True)
+                learn = load_learner(self.args.model, cpu=True)
         except FileNotFoundError:
             eprint('Model', self.args.model, "not found locally, trying Hugging Face hub.")
             try: 
-                model = from_pretrained_fastai(self.args.model)
+                learn = from_pretrained_fastai(self.args.model)
+                if n_images >= 128 and not load_on_cpu:
+                    if torch.backends.cuda.is_built() and torch.cuda.device_count():
+                        learn.model = learn.model.to('cuda')
+                        learn.dls.device = 'cuda'
+                    elif torch.backends.mps.is_built() and torch.backends.mps.is_available():
+                        learn.model = learn.model.to('mps')
+                        learn.dls.device = 'mps'
+                    else:
+                        learn.model = learn.model.to('cpu')
+                        learn.dls.device = 'cpu'
             except Exception as e:
-                raise Exception('Unable to load model', self.args.model, "locally or from Hugging Face Hub, please check")
+                raise Exception(f"Unable to load model '{self.args.model}' locally or from Hugging Face Hub, please check")
         
-        return model
+        return learn
     
     def run(self) -> None:
         """
@@ -271,7 +281,6 @@ class QueryCommand:
         
         # Load model
         learn = self.load_model()
-        
         # Create data loader for inference
         df = pd.DataFrame({"path": img_paths})
         query_dl = learn.dls.test_dl(df, bs=self.args.max_batch_size)
@@ -284,10 +293,12 @@ class QueryCommand:
             pp, _ = learn.get_preds(dl=query_dl, act=nn.Sigmoid())
             above_threshold = pp >= self.args.threshold
             vocab = learn.dls.vocab
-            predicted_labels = [
-                ";".join([vocab[idx] for idx, val in enumerate(row) if val])
-                for row in above_threshold
-            ]
+            predicted_labels = []
+            for row in above_threshold:
+                # Use list comprehension with direct boolean indexing
+                indices = row.nonzero().squeeze(1)
+                labels = [vocab[idx] for idx in indices]
+                predicted_labels.append(";".join(labels))
         
             output_df = pd.DataFrame({
                 **common_data,
