@@ -35,9 +35,10 @@ These two images represent the same kmer counts, with individual kmers mapping t
 | `-d SEED`, `--seed SEED` |  optional random seed. Not relevant for the convert command. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
-| `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process simages in parallel. (default: 1) |
+| `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process images in parallel. (default: 1) |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers used to produce original images. Will be inferred from file names if omitted. (default: 7) |
 | `-p {varKode,cgr} `, `--input-mapping {varKode,cgr}` | kmer mapping of input images. Will be inferred from file names if omitted. |
+| `-r`, `--sum-reverse-complements` | When converting from CGR to varKode, add together counts from canonical kmers and their reverse complements. |
 
 ## Input
 
