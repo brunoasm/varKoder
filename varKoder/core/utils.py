@@ -334,7 +334,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                     files_records.append(
                         {
                             "labels": ("query",),
-                            "sample": str(i) + "_" + fl.name.split(".")[0],
+                            "sample": fl.name.split(".")[0],
                             "files": fl,
                         }
                     )
