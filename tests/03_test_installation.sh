@@ -187,8 +187,20 @@ case $choice in
         ;;
 esac
 
-# Detect available CPU cores
-AVAILABLE_CORES=$(nproc)
+# Detect available CPU cores based on the operating system
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS detection method
+    AVAILABLE_CORES=$(sysctl -n hw.ncpu)
+else
+    # Linux detection method
+    AVAILABLE_CORES=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
+fi
+
+# Handle the case when detection fails
+if [[ -z "$AVAILABLE_CORES" || "$AVAILABLE_CORES" -lt 1 ]]; then
+    AVAILABLE_CORES=1
+fi
+
 if [ $AVAILABLE_CORES -eq 1 ]; then
     DEFAULT_CORES=1
 else
