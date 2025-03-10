@@ -194,3 +194,57 @@ When producing *varKodes*, we use `fastp` xml output to evaluate sequence qualit
 
 Because this is fast and easy to calculate from files produced during sequencing processing, we use the variation of average base pair frequencies along reads as a heuristics to flag samples that may be low quality. Therefore, users can take that into account when evaluating predictions. 
 The expected standard deviation for a high-quality, high-diversity sample is 0. We chose an arbitrary threshold of 0.01 to flag samples as low quality if they show more than that.
+
+## Examples
+
+Here are several examples demonstrating how to use the `image` command in different scenarios:
+
+### Example 1: Basic Usage with Folder Structure
+
+Process fastq files organized in a folder structure where each species has its own folder with sample subfolders:
+
+```bash
+varKoder image path/to/sequence_data
+```
+
+This will process all samples in the `sequence_data` directory using the default settings (k-mer size 7, CGR mapping, etc.) and create varKodes in a folder named `images`.
+
+### Example 2: Using a CSV File with Multiple Labels
+
+Process fastq files listed in a CSV file with multiple taxonomic labels:
+
+```bash
+varKoder image path/to/metadata.csv --outdir custom_images --label-table
+```
+
+This uses a CSV file to link samples to their fastq files and taxonomic labels, saves the images to a custom output directory, and also outputs a labels table.
+
+### Example 3: Setting K-mer Size and Mapping Type
+
+Generate varKodes with a custom k-mer size and using the varKode mapping instead of CGR:
+
+```bash
+varKoder image path/to/sequence_data --kmer-size 9 --kmer-mapping varKode --outdir k9_varkodes
+```
+
+This generates images with 9-mers instead of the default 7-mers, uses varKode mapping, and saves the images to a custom directory.
+
+### Example 4: Customizing Input Data Amount
+
+Control the amount of data used for generating varKodes:
+
+```bash
+varKoder image path/to/sequence_data --min-bp 1M --max-bp 10M --outdir variable_sizes
+```
+
+This creates varKodes for each sample using randomly subsampled reads with between 1 million and 10 million base pairs, resulting in multiple images per sample at different data amounts (1M, 2M, 5M, 10M).
+
+### Example 5: Parallel Processing with Multiple Threads
+
+Process multiple samples in parallel to speed up image generation:
+
+```bash
+varKoder image path/to/sequence_data --n-threads 4 --cpus-per-thread 2 --outdir parallel_processed
+```
+
+This processes 4 samples in parallel, using 2 CPUs for each sample's processing, which can significantly speed up the processing of large datasets.

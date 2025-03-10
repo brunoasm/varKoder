@@ -102,3 +102,57 @@ By default, only the top prediction (if single-label) or predictions above thres
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
  *  other columns: confidence scores in each label. All confidence scores sum to 1. They are only included with `--include-probs` option.
+ 
+## Examples
+
+Here are several examples demonstrating how to use the `query` command in different scenarios:
+
+### Example 1: Basic Query with Default Model
+
+Query a set of fastq files using the default pretrained model:
+
+```bash
+varKoder query path/to/fastq_files query_results
+```
+
+This processes the fastq files to generate varKodes, then uses the default Hugging Face model (brunoasm/vit_large_patch32_224.NCBI_SRA) to predict labels with a confidence threshold of 0.5.
+
+### Example 2: Using Your Custom-trained Model
+
+Query samples using a model you trained:
+
+```bash
+varKoder query path/to/fastq_files custom_query_results --model path/to/trained_model.pkl --threshold 0.7
+```
+
+This uses your custom-trained model instead of the default one, and requires a higher confidence threshold (0.7) for making predictions.
+
+### Example 3: Directly Querying Existing varKode Images
+
+Query existing varKode images instead of processing fastq files:
+
+```bash
+varKoder query path/to/varkode_images direct_image_results --images --threshold 0.6
+```
+
+This skips the fastq processing step and directly uses existing varKode images for prediction with a 0.6 confidence threshold.
+
+### Example 4: Preserving Images and Including All Probability Scores
+
+Query samples while saving the generated varKodes and including all probability scores in the output:
+
+```bash
+varKoder query path/to/fastq_files full_results --keep-images --include-probs
+```
+
+This processes the fastq files, saves the generated varKodes to the output directory, and includes confidence scores for all possible labels in the output CSV file, not just those above the threshold.
+
+### Example 5: Processing Large Files with Parallel Processing
+
+Process and query large sequencing files more efficiently:
+
+```bash
+varKoder query path/to/large_fastq_files parallel_results --n-threads 4 --cpus-per-thread 2 --max-bp 5M --max-batch-size 128
+```
+
+This uses 4 parallel threads with 2 CPUs each for processing samples, limits each sample to 5 million base pairs, and uses a batch size of 128 for GPU prediction, which can significantly speed up processing of large datasets.

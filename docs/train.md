@@ -115,7 +115,61 @@ During training, fastai outputs a log with some information (unless you use the 
 
 ## Output
 
-At the end of the training cycle, three files will be written to the utput folder selected by the user:
- - `trained_model.pkl`: the model weigths exported using `fastai`. This can be used as input again using the `--pretrained-model` option in cae you want to further train the model or improve it with new images.
+At the end of the training cycle, three files will be written to the output folder selected by the user:
+ - `trained_model.pkl`: the model weights exported using `fastai`. This can be used as input again using the `--pretrained-model` option in case you want to further train the model or improve it with new images.
  - `labels.txt`: a text file with the labels that can be predicted using this model.
  - `input_data.csv`: a table with information about varKodes used in the training and validation sets.
+
+## Examples
+
+Here are several examples demonstrating how to use the `train` command for different training scenarios:
+
+### Example 1: Basic Multi-label Training
+
+Train a model using the default architecture (vision transformer) with multi-label classification:
+
+```bash
+varKoder train path/to/images trained_model
+```
+
+This uses the default vision transformer architecture (hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) to train a multi-label classification model on the varKodes in the images folder, with a 0.7 confidence threshold for validation metrics.
+
+### Example 2: Training with a Different Architecture
+
+Train a model using a ResNet50 architecture:
+
+```bash
+varKoder train path/to/images resnet50_model --architecture resnet50
+```
+
+This trains a model using the ResNet50 architecture from the timm library instead of the default vision transformer, which may train faster but might have lower accuracy.
+
+### Example 3: Single-label Classification with Label Smoothing
+
+Train a model for single-label classification with label smoothing:
+
+```bash
+varKoder train path/to/images single_label_model --single-label --ignore-quality --label-smoothing
+```
+
+This trains a model for single-label classification (each sample assigned exactly one label) with label smoothing to help prevent overfitting. The `--ignore-quality` flag is required with single-label mode.
+
+### Example 4: Freezing Layers and Transfer Learning
+
+Fine-tune a pretrained model by first training only the final layer:
+
+```bash
+varKoder train path/to/images transfer_model --pretrained-model path/to/existing_model.pkl --freeze-epochs 5 --epochs 20
+```
+
+This loads an existing model and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning.
+
+### Example 5: Customizing Training Parameters
+
+Train with custom batch size, learning rate, and data augmentation settings:
+
+```bash
+varKoder train path/to/images custom_model --max-batch-size 32 --base_learning_rate 0.001 --mix-augmentation CutMix --p-lighting 0.5 --max-lighting 0.2
+```
+
+This trains a model with a smaller batch size and learning rate, uses CutMix instead of MixUp for data augmentation, and applies less aggressive lighting transformations during training.
