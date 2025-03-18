@@ -1,23 +1,23 @@
 name: varKoder
 channels:
-  - pytorch
-  - nvidia
-  - fastai
   - bioconda
   - conda-forge
-  - defaults
+  - anaconda
 dependencies:
-  - python>=3.9
+  - python=3.11
   - pyarrow>=14.0.1
-  - huggingface_hub=0.26.2
   - pigz
-  - conda-forge::accelerate=0.31
-  - tenacity
-  - pytorch=2.4
-  - humanfriendly=10
-  - fastai=2.7.17
-  - timm=1.0
   - bbmap=38.18
   - wget
-  - accelerate
   - fastp=0.24
+  - pip
+  - pip:
+    - torch==2.6
+    - torchvision
+    - torchaudio
+    - fastai==2.7.19
+    - humanfriendly
+    - "accelerate~=1.5"
+    - "timm~=1.0.0"
+    - tenacity
+    - "huggingface_hub~=0.29.0"

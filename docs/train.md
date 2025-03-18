@@ -42,13 +42,13 @@ There are two modes of training:
 | -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | pickle file with optional pretrained neural network model to update with new images. Overrides --architecture and --pretrained-timm |
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
-| -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 25) |
+| -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
 | -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA)|
-| -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (defaul: 4) |
+| -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (default: 4) |
 | -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -M, --no-metrics | skip calculation of validation loss and metrics (default: False) |
-| -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CurMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
+| -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CutMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms (default: 0.75) |
 | -l MAX_LIGHTING, --max-lighting MAX_LIGHTING | maximum scale of lighting transform. See https://docs. fast.ai/vision.augment.html#aug_transforms (default: 0.25) |
@@ -67,7 +67,7 @@ You can use as input the name of a model supported by the timm library (see http
 2. Models from Hugging Face hub
 
 The timm library allows downloading models from Hugging face hub directly. See
-https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf_hub:' to the model repository on Hugging Face Hub. For example, the following will use the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data:
+https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf-hub:' to the model repository on Hugging Face Hub. For example, the following will use the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data:
 `varKoder train --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
 
 3. Models previously used with chaos game representations
@@ -115,7 +115,61 @@ During training, fastai outputs a log with some information (unless you use the 
 
 ## Output
 
-At the end of the training cycle, three files will be written to the utput folder selected by the user:
- - `trained_model.pkl`: the model weigths exported using `fastai`. This can be used as input again using the `--pretrained-model` option in cae you want to further train the model or improve it with new images.
+At the end of the training cycle, three files will be written to the output folder selected by the user:
+ - `trained_model.pkl`: the model weights exported using `fastai`. This can be used as input again using the `--pretrained-model` option in case you want to further train the model or improve it with new images.
  - `labels.txt`: a text file with the labels that can be predicted using this model.
  - `input_data.csv`: a table with information about varKodes used in the training and validation sets.
+
+## Examples
+
+Here are several examples demonstrating how to use the `train` command for different training scenarios:
+
+### Example 1: Basic Multi-label Training
+
+Train a model using the default architecture (vision transformer) with multi-label classification:
+
+```bash
+varKoder train path/to/images trained_model
+```
+
+This uses the default vision transformer architecture (hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) to train a multi-label classification model on the varKodes in the images folder, with a 0.7 confidence threshold for validation metrics.
+
+### Example 2: Training with a Different Architecture
+
+Train a model using a ResNet50 architecture:
+
+```bash
+varKoder train path/to/images resnet50_model --architecture resnet50
+```
+
+This trains a model using the ResNet50 architecture from the timm library instead of the default vision transformer, which may train faster but might have lower accuracy.
+
+### Example 3: Single-label Classification with Label Smoothing
+
+Train a model for single-label classification with label smoothing:
+
+```bash
+varKoder train path/to/images single_label_model --single-label --ignore-quality --label-smoothing
+```
+
+This trains a model for single-label classification (each sample assigned exactly one label) with label smoothing to help prevent overfitting. The `--ignore-quality` flag is required with single-label mode.
+
+### Example 4: Freezing Layers and Transfer Learning
+
+Fine-tune a pretrained model by first training only the final layer:
+
+```bash
+varKoder train path/to/images transfer_model --pretrained-model path/to/existing_model.pkl --freeze-epochs 5 --epochs 20
+```
+
+This loads an existing model and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning.
+
+### Example 5: Customizing Training Parameters
+
+Train with custom batch size, learning rate, and data augmentation settings:
+
+```bash
+varKoder train path/to/images custom_model --max-batch-size 32 --base_learning_rate 0.001 --mix-augmentation CutMix --p-lighting 0.5 --max-lighting 0.2
+```
+
+This trains a model with a smaller batch size and learning rate, uses CutMix instead of MixUp for data augmentation, and applies less aggressive lighting transformations during training.

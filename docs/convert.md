@@ -35,9 +35,10 @@ These two images represent the same kmer counts, with individual kmers mapping t
 | `-d SEED`, `--seed SEED` |  optional random seed. Not relevant for the convert command. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
-| `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process simages in parallel. (default: 1) |
+| `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process images in parallel. (default: 1) |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers used to produce original images. Will be inferred from file names if omitted. (default: 7) |
 | `-p {varKode,cgr} `, `--input-mapping {varKode,cgr}` | kmer mapping of input images. Will be inferred from file names if omitted. |
+| `-r`, `--sum-reverse-complements` | When converting from CGR to varKode, add together counts from canonical kmers and their reverse complements. |
 
 ## Input
 
@@ -61,4 +62,57 @@ To create a chaos game representation from varKodes created with kmer size of 7 
 varKoder convert cgr varKodes_folder cgr_folder
 ```
 
+## Examples
+
+Here are several examples demonstrating how to use the `convert` command in different scenarios:
+
+### Example 1: Converting varKodes to CGR Representation
+
+Convert a folder of varKodes to Chaos Game Representation:
+
+```bash
+varKoder convert cgr path/to/varkodes cgr_output
+```
+
+This converts all varKode images in the input folder to the Chaos Game Representation format, preserving their metadata.
+
+### Example 2: Converting CGR Images to varKode Representation
+
+Convert Chaos Game Representation images to varKode format:
+
+```bash
+varKoder convert varKode path/to/cgr_images varkode_output
+```
+
+This converts all CGR images in the input folder to the varKode format.
+
+### Example 3: Converting Images with Specific K-mer Size
+
+Explicitly specify the k-mer size when converting images:
+
+```bash
+varKoder convert cgr path/to/varkodes cgr_k9_output --kmer-size 9
+```
+
+This is useful when the k-mer size cannot be inferred from the filenames or when you want to ensure a specific k-mer size is used.
+
+### Example 4: Parallel Processing for Large Image Sets
+
+Convert a large set of images using parallel processing:
+
+```bash
+varKoder convert varKode path/to/cgr_images varkode_parallel_output --n-threads 8
+```
+
+This uses 8 parallel threads to speed up the conversion process when dealing with a large number of images.
+
+### Example 5: Converting with Explicit Input Mapping and Reverse Complement Handling
+
+Convert images with explicitly specified input mapping and handling of reverse complements:
+
+```bash
+varKoder convert varKode path/to/cgr_images special_varkode_output --input-mapping cgr --sum-reverse-complements
+```
+
+This explicitly states that the input images are in CGR format and instructs the converter to sum the counts from canonical k-mers and their reverse complements when creating the varKode images.
 

@@ -140,7 +140,7 @@ varKoder is installed to your conda environment using the instructions above and
 varKoder -h
 ```
 
-There are three commands available (`image`, `train`, `query` and `convert`) and you can also get help on each command by using `-h`:
+There are four commands available (`image`, `train`, `query` and `convert`) and you can also get help on each command by using `-h`:
 ```bash
 varKoder image -h
 varKoder train -h
@@ -154,6 +154,17 @@ Follow these links for detailed information for each command. The help for the c
 2. [Training an image classification model `varKoder.py train`](docs/train.md)
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
 4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
+
+## Examples
+
+Here are quick links to example sections for each command:
+
+- [Image Command Examples](docs/image.md#examples) - Examples of generating varKodes from different input formats
+- [Train Command Examples](docs/train.md#examples) - Examples of training models with different architectures and parameters
+- [Query Command Examples](docs/query.md#examples) - Examples of identifying samples using different models and parameters
+- [Convert Command Examples](docs/convert.md#examples) - Examples of converting between varKodes and rfCGRs
+
+These examples demonstrate common use cases and parameter configurations to help you get started with varKoder.
 
 
 

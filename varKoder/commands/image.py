@@ -1,204 +1,63 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-# imports used for all commands
-import pkg_resources
-import contextlib
-import traceback
+"""
+Image command module for varKoder.
+
+This module contains functionality for generating varKode images from DNA sequences.
+It handles the preprocessing of reads, k-mer counting, and image generation.
+"""
+
+import os
+import re
+import multiprocessing
+import tempfile
+import shutil
+import math
+import humanfriendly
+import numpy as np
+import pandas as pd
 from pathlib import Path
 from collections import OrderedDict, defaultdict
+from typing import Dict, List, Tuple, Optional, Any, Union
+from io import StringIO
 from tqdm import tqdm
 from functools import partial
-
-from io import StringIO
 from tenacity import Retrying, stop_after_attempt, wait_random_exponential
-from sklearn.exceptions import UndefinedMetricWarning
+import json
+import hashlib
+import gzip
+import itertools
+import subprocess
+import traceback
 
-import pandas as pd, numpy as np, itertools, tempfile, shutil, subprocess, functools, hashlib
-import pandas.errors
-import os, re, sys, gzip, time, humanfriendly, random, multiprocessing, math, json, warnings
-from concurrent.futures import ThreadPoolExecutor
-from math import log
+from varKoder.core.config import (
+    LABELS_SEP, BP_KMER_SEP, SAMPLE_BP_SEP, QUAL_THRESH, 
+    MAPPING_CHOICES, DEFAULT_KMER_SIZE, DEFAULT_KMER_MAPPING,
+    FASTP_CMD, DSK_CMD, DSK2ASCII_CMD, REFORMAT_CMD, PIGZ_CMD,
+    LABEL_SAMPLE_SEP
+)
+from varKoder.core.utils import (
+    eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats
+)
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
-from PIL.Image import Resampling
+from concurrent.futures import ThreadPoolExecutor
 
-from fastai.data.all import DataBlock, ColSplitter, ColReader
-from fastai.vision.all import (
-    ImageBlock,
-    MultiCategoryBlock,
-    CategoryBlock,
-    vision_learner,
-    parent_label
-)
-from fastai.vision.all import aug_transforms, Resize, ResizeMethod
-from fastai.distributed import to_parallel, detach_parallel
-from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
-from fastai.learner import Learner, load_learner
-from fastai.torch_core import set_seed, default_device
-from fastai.callback.mixup import CutMix, MixUp
-from fastai.losses import CrossEntropyLossFlat  # , BCEWithLogitsLossFlat
-from fastai.callback.core import Callback, CancelValidException
-from fastai.torch_core import set_seed
-
-from torch import nn
-from torch.nn import CrossEntropyLoss
-import torch
-
-from timm import create_model
-from timm.loss import AsymmetricLossMultiLabel
-from huggingface_hub import from_pretrained_fastai
-
-# define filename separators
-label_sample_sep = "+"
-labels_sep = ";"
-bp_kmer_sep = "+"
-sample_bp_sep = "@"
-qual_thresh = 0.01
-mapping_choices = ['varKode', 'cgr']
-custom_archs = ['fiannaca2018', 'arias2022']
-
-# ignore sklearn warning during training
-from sklearn.exceptions import UndefinedMetricWarning
-warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
-
-
-# defining a function to print to stderr more easily
-# idea from https://stackoverflow.com/questions/5574702/how-to-print-to-stderr-in-python
-def eprint(*args, **kwargs):
-    print(*args, file=sys.stderr, **kwargs)
-
-# this function process the input file or folder and returns a table with files
-def process_input(inpath, is_query=False, no_pairs=False):
-    # first, check if input is a folder
-    # if it is, make input table from the folder
-    # try:
-    if inpath.is_dir() and not is_query:
-        files_records = list()
-
-        seen_samples = set()
-        for taxon in inpath.iterdir():
-            if taxon.is_dir():
-                for sample in taxon.iterdir():
-                    if sample.is_dir():
-                        if sample.name in seen_samples:
-                            raise Exception(
-                                f"Duplicate sample name '{sample.name}' detected. Each sample must have a unique name across all taxa."
-                            )
-                            seen_samples.add(sample.name)
-                        for fl in sample.iterdir():
-                            files_records.append(
-                                {
-                                    "labels": (taxon.name,),
-                                    "sample": sample.name,
-                                    "files": taxon / sample.name / fl.name,
-                                }
-                            )
-        try:
-            files_table = (
-                pd.DataFrame(files_records)
-                .groupby(["labels", "sample"])
-                .agg(list)
-                .reset_index()
-            )
-        except KeyError as e:
-            if str(e) == "'labels'":
-                raise Exception("Folder input could not be parsed. Check the github documentation for input format.") from e
-            else:
-                raise
-
-        if not files_table.shape[0]:
-            raise Exception("Folder detected, but no records read. Check format.")
-
-    elif is_query:
-        files_records = list()
-        # start by checking if input directory contains directories
-        contains_dir = any(f.is_dir() or 
-                           (f.is_symlink() and Path(os.readlink(f)).is_dir()) 
-                           for f in inpath.iterdir())
-        # if there are no subdirectories, or no_pairs is True treat each fastq as a single sample. Otherwise, use each directory for a sample
-        if not contains_dir:
-            for i, fl in enumerate(inpath.rglob('*')):
-                if (
-                    fl.name.endswith("fq")
-                    or fl.name.endswith("fastq")
-                    or fl.name.endswith("fq.gz")
-                    or fl.name.endswith("fastq.gz")
-                ):
-                    files_records.append(
-                        {
-                            "labels": ("query",),
-                            "sample": str(i) + "_" + fl.name.split(".")[0],
-                            "files": fl,
-                        }
-                    )
-
-        else:
-            for sample in inpath.iterdir():
-                if sample.resolve().is_dir():
-                    #eprint("is_dir")
-                    for fl in sample.iterdir():
-                        #eprint(fl)
-                        if (
-                            fl.name.endswith("fq")
-                            or fl.name.endswith("fastq")
-                            or fl.name.endswith("fq.gz")
-                            or fl.name.endswith("fastq.gz")
-                        ):
-                            files_records.append(
-                                {
-                                    "labels": ("query",),
-                                    "sample": sample.name,
-                                    "files": sample / fl.name,
-                                }
-                            )
-        #eprint(files_records)
-
-        files_table = (
-            pd.DataFrame(files_records)
-            .groupby(["labels", "sample"])
-            .agg(list)
-            .reset_index()
-        )
-
-        if not files_table.shape[0]:
-            raise Exception("Folder detected, but no records read. Check format.")
-
-    # if it isn't a folder, read csv table input
-    else:
-        files_table = pd.read_csv(inpath)
-        for colname in ["labels", "sample", "files"]:
-            if colname not in files_table.columns:
-                raise Exception("Input csv file missing column: " + colname)
-        else:
-            files_table = files_table.assign(
-                labels=lambda x: x["labels"].str.split(";")
-            ).assign(
-                files=lambda x: x["files"].apply(
-                    lambda y: [str(Path(inpath.parent, z)) for z in y.split(";")]
-                )
-            )
-
-    # except:
-    #    raise Exception('Could not parse input csv file or folder structure, double check.')
-
-    files_table["sample"] = files_table["sample"].astype(str)
-
-    files_table = (
-        files_table.loc[:, ["labels", "sample", "files"]]
-        .groupby("sample")
-        .agg("sum")
-        .map(lambda x: sorted(set(x)))
-        .reset_index()
-    )
-
-    return files_table
-
-
-# this function reads the json file produced by fastp within the clean_reads function
-# and returns the standard deviation in base frequencies from positions 1-40 in forward reads.
-# This is expected to be 0 for high-quality samples but increases in low-quality ones
+# ORIGINAL IMPLEMENTATION OF FUNCTIONS FROM functions.py
 def get_basefrequency_sd(file_list):
+    """
+    This function reads the json file produced by fastp within the clean_reads function
+    and returns the standard deviation in base frequencies from positions 1-40 in forward reads.
+    This is expected to be 0 for high-quality samples but increases in low-quality ones.
+    
+    Args:
+        file_list: List of fastp JSON files
+        
+    Returns:
+        float: Standard deviation of base frequencies
+    """
     base_sd = []
 
     for f in file_list:
@@ -228,7 +87,6 @@ def get_basefrequency_sd(file_list):
 
         return np.mean(base_sd)
 
-#helper function to preprocess files        
 def estimate_read_lengths(filename, sample_size=10000):
     """
     Estimate average read length by sampling the first sample_size reads from a file.
@@ -245,7 +103,7 @@ def estimate_read_lengths(filename, sample_size=10000):
     total_length = 0
     reads_counted = 0
     
-    opener = gzip.open if filename.endswith('gz') else open
+    opener = gzip.open if str(filename).endswith('gz') else open
     with opener(filename, 'rb') as f:
         for i, line in enumerate(f):
             if i % 4 == 1:  # Sequence line
@@ -256,7 +114,6 @@ def estimate_read_lengths(filename, sample_size=10000):
     
     return total_length / reads_counted if reads_counted > 0 else 0, reads_counted
 
-#helper function to preprocess files
 def count_total_reads(filename):
     """Count total number of reads in a FASTQ file using system tools for efficiency."""
     
@@ -264,7 +121,7 @@ def count_total_reads(filename):
     abs_path = str(Path(filename).resolve())
     
     try:
-        if filename.endswith('gz'):
+        if str(filename).endswith('gz'):
             # Try using gunzip -c instead of zcat for better compatibility
             cmd = f"gunzip -c '{abs_path}' | wc -l"
         else:
@@ -297,14 +154,13 @@ def count_total_reads(filename):
         
         try:
             # Fallback to pure Python counting if system command fails
-            with gzip.open(abs_path, 'rb') if filename.endswith('gz') else open(abs_path, 'rb') as f:
+            with gzip.open(abs_path, 'rb') if str(filename).endswith('gz') else open(abs_path, 'rb') as f:
                 line_count = sum(1 for _ in f)
                 return line_count // 4
         except Exception as e:
             eprint(f"Failed to count reads: {str(e)}")
             raise
 
-#helper function to preprocess files
 def calculate_reads_needed(files_info, max_bp):
     """
     Calculate how many reads to take from each file to achieve target coverage.
@@ -364,7 +220,6 @@ def calculate_reads_needed(files_info, max_bp):
     
     return reads_to_take
 
-#helper function to preprocess files
 def extract_reads(filename, num_reads, output_file):
     """
     Extract a specified number of reads from a FASTQ file using pure Python.
@@ -385,7 +240,7 @@ def extract_reads(filename, num_reads, output_file):
     
     try:
         # Open input file with appropriate opener (gzip or regular)
-        opener = gzip.open if filename.endswith('gz') else open
+        opener = gzip.open if str(filename).endswith('gz') else open
         with opener(abs_input, 'rb') as infile, open(abs_output, 'ab') as outfile:
             # Use itertools.islice for memory-efficient iteration
             for line in itertools.islice(infile, num_lines):
@@ -406,7 +261,6 @@ def extract_reads(filename, num_reads, output_file):
         eprint(f"Error during read extraction: {str(e)}")
         raise  # Re-raise the exception to handle it in the calling function
 
-#helper function to preprocess files
 def concatenate_reads(reads, basename, max_bp, work_dir, verbose):
     """
     Main function to concatenate reads with optimized sampling approach.
@@ -460,12 +314,6 @@ def concatenate_reads(reads, basename, max_bp, work_dir, verbose):
     
     return total_bp
 
-
-# cleans illumina reads and saves results as a single merged fastq file to outpath
-# cleaning includes:
-# 1 - adapter removal
-# 2 - deduplication
-# 3 - merging
 def clean_reads(
     infiles,
     outpath,
@@ -478,7 +326,29 @@ def clean_reads(
     overwrite=False,
     verbose=False,
 ):
-    start_time = time.time()
+    """
+    Cleans illumina reads and saves results as a single merged fastq file to outpath.
+    Cleaning includes:
+    1 - adapter removal
+    2 - deduplication
+    3 - merging
+    
+    Args:
+        infiles: List of input FASTQ files
+        outpath: Path to output FASTQ file
+        cut_adapters: Whether to remove adapters
+        merge_reads: Whether to merge paired-end reads
+        deduplicate: Whether to deduplicate reads
+        trim_bp: Number of base pairs to trim from start and end
+        max_bp: Maximum number of base pairs to use
+        threads: Number of threads to use
+        overwrite: Whether to overwrite existing files
+        verbose: Whether to print verbose output
+        
+    Returns:
+        OrderedDict: Statistics dictionary
+    """
+    start_time = pd.Timestamp.now()
 
     # let's print a message to the user
     basename = Path(outpath).name.removesuffix("".join(Path(outpath).suffixes))
@@ -516,7 +386,6 @@ def clean_reads(
     eprint("Concatenating input files:", reads)
 
     # from now on we will manipulate files in a temporary folder that will be deleted at the end of this function
-    #with tempfile.TemporaryDirectory(prefix='barcoding_clean_' + basename) as work_dir:
     work_dir = tempfile.mkdtemp(prefix="barcoding_clean_" + basename)
 
     retained_bp = concatenate_reads(reads, basename, max_bp, work_dir, verbose)
@@ -552,7 +421,7 @@ def clean_reads(
         # for some reason, fastp fails with interleaved input unless it is provided from stdin
         # for this reason, we will make a pipe
         command = [
-            "fastp",
+            FASTP_CMD,
             "--in1",
             str(Path(work_dir) / (basename + "_R1.fq")),
             "--in2",
@@ -607,7 +476,7 @@ def clean_reads(
         extra_command = [x for x in extra_command if x not in ["--merge", "--include_unmerged"]]
 
         command = [
-            "fastp",
+            FASTP_CMD,
             "-i",
             str(Path(work_dir) / (basename + "_unpaired.fq")),
             "-o",
@@ -696,24 +565,22 @@ def clean_reads(
         clean_bp = np.nan
 
     stats = OrderedDict()
-    done_time = time.time()
+    done_time = pd.Timestamp.now()
     stats["clean_basepairs"] = clean_bp
-    stats["cleaning_time"] = done_time - start_time
-    # eprint([x for x in Path(work_dir).glob(basename + '_fastp_*.json')])
-    # stats['base_frequencies_sd'] = get_basefrequency_sd(Path(work_dir).glob(basename + '_fastp_*.json'))
+    stats["cleaning_time"] = (done_time - start_time).total_seconds()
 
     shutil.rmtree(work_dir)
     ####END OF TEMPDIR BLOCK
 
     return stats
 
-#Helper function to parallelize reformat.sh execution
 def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=None):
+    """Helper function to parallelize reformat.sh execution."""
     # Create list of commands and their arguments
     commands = []
     for i, bp in enumerate(sites_per_file):
         command = [
-            "reformat.sh",
+            REFORMAT_CMD,
             "samplebasestarget=" + str(bp),
             "sampleseed=" + str(int(seed) + i),
             "breaklength=500",
@@ -759,15 +626,6 @@ def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, m
     if not all(results):
         raise RuntimeError("One or more reformat processes failed")
 
-# function takes a fastq file as input and splits it into several files
-# to be saved in outfolder with outprefix as prefix in the file name
-# this is because we found that NNs could accurately identify samples
-# but below a certain level of coverage they were sensitive to amount
-# of data used as input.
-# Therefore, to better generalize we split the input files in several
-# The first one randomly pulls half of the reads, the next gets half of the remaining, etc
-# until there are less than min_bp left
-# if max_bp is set, the first file will use max_bp or half of the reads, whatever is lower
 def split_fastq(
     infile,
     outprefix,
@@ -780,7 +638,25 @@ def split_fastq(
     verbose=False,
     n_threads=1
 ):
-    start_time = time.time()
+    """
+    Split a FASTQ file into multiple files with different numbers of reads.
+    
+    Args:
+        infile: Path to input FASTQ file
+        outprefix: Prefix for output files
+        outfolder: Output directory
+        min_bp: Minimum number of base pairs per file
+        max_bp: Maximum number of base pairs per file
+        is_query: Whether this is a query operation
+        seed: Random seed
+        overwrite: Whether to overwrite existing files
+        verbose: Whether to print verbose output
+        n_threads: Number of threads to use
+        
+    Returns:
+        OrderedDict: Statistics dictionary
+    """
+    start_time = pd.Timestamp.now()
 
     # let's start by counting the number of sites in reads of the input file
     sites_seq = []
@@ -824,7 +700,7 @@ def split_fastq(
         Path(outfolder)
         / (
             outprefix
-            + sample_bp_sep
+            + SAMPLE_BP_SEP
             + str(int(bp / 1000)).rjust(8, "0")
             + "K"
             + ".fq.gz"
@@ -839,25 +715,43 @@ def split_fastq(
     
     run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=verbose, max_workers=n_threads)
 
-    done_time = time.time()
+    done_time = pd.Timestamp.now()
 
     stats = OrderedDict()
 
-    stats["splitting_time"] = done_time - start_time
+    stats["splitting_time"] = (done_time - start_time).total_seconds()
     stats["splitting_bp_per_file"] = ",".join([str(x) for x in sites_per_file])
 
     return stats
 
-
-# counts kmers for fastq infile, saving results as an hdf5 container
-# in some cases dsk lauches an hdf5 error of file access when using more than 1 thread. For that reason, will keep one thread for now
-def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=False):
-    start_time = time.time()
+def count_kmers(
+    infile, 
+    outfolder, 
+    threads=1, 
+    k=7, 
+    overwrite=False, 
+    verbose=False
+):
+    """
+    Count k-mers in a FASTQ file.
+    
+    Args:
+        infile: Path to input FASTQ file
+        outfolder: Output directory
+        threads: Number of threads to use
+        k: K-mer size
+        overwrite: Whether to overwrite existing files
+        verbose: Whether to print verbose output
+        
+    Returns:
+        OrderedDict: Statistics dictionary
+    """
+    start_time = pd.Timestamp.now()
 
     Path(outfolder).mkdir(exist_ok=True)
     outfile = (
         str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
-        + bp_kmer_sep
+        + BP_KMER_SEP
         + "k"
         + str(k)
         + ".fq.h5"
@@ -875,7 +769,7 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
         ):
             with attempt:
                 command = [
-                        "dsk",
+                        DSK_CMD,
                         "-nb-cores",
                         str(threads),
                         "-kmer-size",
@@ -904,86 +798,13 @@ def count_kmers(infile, outfolder, threads=1, k=7, overwrite=False, verbose=Fals
                     eprint(' '.join(command))
                     eprint(p.stderr.decode())
 
-    done_time = time.time()
+    done_time = pd.Timestamp.now()
 
     stats = OrderedDict()
-    stats[str(k) + "mer_counting_time"] = done_time - start_time
+    stats[str(k) + "mer_counting_time"] = (done_time - start_time).total_seconds()
 
     return stats
 
-# This function returns the coordinates of kmers according to chaos game representation
-# for a given kmer_size
-# By default, both a canonical kmer and its reverse complement map to 2 pixels
-# If compact is True, they will both map to a single pixel, for a more compact representation
-def get_cgr(kmer_size):
-
-    #following corners from Jeffrey, using cartesian coords
-    corners = np.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=float)
-
-    nucleotides = np.array([0, 1, 2, 3], dtype=np.uint8)  # A, C, G, T
-    all_sequences = np.array(np.meshgrid(*[nucleotides]*kmer_size)).T.reshape(-1, kmer_size)
-
-    rev_sequences = all_sequences[:, ::-1]  # Reverse the sequences
-    rev_complement = 3 - rev_sequences      # Compute reverse complement
-
-
-    # Calculate CGR coordinates using vectorized operations
-    coords = np.full((all_sequences.shape[0], 2), 0.5)  # Start coordinates (x, y) at the center
-    for i in range(kmer_size):
-        coords = (coords + corners[all_sequences[:, i]]) / 2
-
-    # Convert integer sequences back to string for display
-    # Join sequences and reverse complements to the mapping
-
-    nucleotide_map = np.array(['A', 'C', 'G', 'T'])
-    df = pd.concat([pd.DataFrame({
-                      'x': coords[:, 0],
-                      'y': coords[:, 1]
-                      }, index=[''.join(nucleotide_map[seq]) 
-                                for seq in all_sequences]),
-                    pd.DataFrame({
-                      'x': coords[:, 0],
-                      'y': coords[:, 1]
-                      }, index=[''.join(nucleotide_map[seq]) 
-                                for seq in rev_complement])
-                   ])
-
-    # Replace coords with integer numbers
-    sq_side = len(df['x'].drop_duplicates())
-    df['x'] = (sq_side*(df['x'] - df['x'].min())).astype(int)
-    df['y'] = (sq_side*(df['y'] - df['y'].min())).astype(int)
-
-
-    return df
-
-
-
-
-# This function returns a table mapping specific kmers of size kmer-size to
-# a x and y coordinates in a square grid
-# method options: varkode, cgr
-# cgr: chaos game representation
-def get_kmer_mapping(kmer_size = 7, method = 'varKode'):
-
-
-    if method == 'varKode':
-        map_path = pkg_resources.resource_filename(
-            "varKoder", f"kmer_mapping/{kmer_size}mer_mapping.parquet"
-        )
-        kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
-    elif method == 'cgr':
-        kmer_mapping = get_cgr(kmer_size)
-    else:
-        raise Exception('method must be "varKode" or "cgr"')
-
-    return kmer_mapping
-
-
-# given an input dsk hdf5 file, make an image with kmer counts
-# kmer_mapping is the instruction of which mapping to use:
-### * k+
-# we do not need to save the ascii dsk kmer counts to disk, but the program requires a file
-# so we will create a temporary file and delete it
 def make_image(
     infile,
     outfolder,
@@ -993,19 +814,36 @@ def make_image(
     verbose=False,
     labels=[],
     base_sd=0,
-    base_sd_thresh=qual_thresh,
+    base_sd_thresh=QUAL_THRESH,
     subfolder_levels=0,
     mapping_code='varKode',
 ):
+    """
+    Create an image from k-mer counts.
     
-    
+    Args:
+        infile: Path to k-mer counts file
+        outfolder: Output directory
+        kmer_mapping: K-mer mapping table
+        threads: Number of threads to use
+        overwrite: Whether to overwrite existing files
+        verbose: Whether to print verbose output
+        labels: List of labels
+        base_sd: Base frequency standard deviation
+        base_sd_thresh: Base frequency standard deviation threshold
+        subfolder_levels: Number of subfolder levels
+        mapping_code: K-mer mapping method code
+        
+    Returns:
+        OrderedDict: Statistics dictionary
+    """
     in_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
-    in_base1, in_k = in_basename.split(bp_kmer_sep)
+    in_base1, in_k = in_basename.split(BP_KMER_SEP)
 
     outfile = (in_base1 +
-               bp_kmer_sep +
+               BP_KMER_SEP +
                mapping_code +
-               bp_kmer_sep +
+               BP_KMER_SEP +
                in_k +
                ".png"
               )
@@ -1020,7 +858,7 @@ def make_image(
         eprint("File exists. Skipping image for file:", str(infile))
         return OrderedDict()
 
-    start_time = time.time()
+    start_time = pd.Timestamp.now()
     kmer_size = len(kmer_mapping.index[0])
 
     with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
@@ -1035,7 +873,7 @@ def make_image(
         ):
             with attempt:
                 command = [
-                        "dsk2ascii",
+                        DSK2ASCII_CMD,
                         "-c",
                         "-file",
                         str(infile),
@@ -1083,40 +921,19 @@ def make_image(
 
         # Now let's add the labels and other metadata:
         metadata = PngInfo()
-        metadata.add_text("varkoderKeywords", labels_sep.join(labels))
+        metadata.add_text("varkoderKeywords", LABELS_SEP.join(labels))
         metadata.add_text("varkoderBaseFreqSd", str(base_sd))
-        metadata.add_text("varkoderLowQualityFlag", str(base_sd > qual_thresh))
+        metadata.add_text("varkoderLowQualityFlag", str(base_sd > base_sd_thresh))
         metadata.add_text("varkoderMapping", mapping_code)
 
         # finally, save the image
         img.save(Path(outfolder) / outfile, optimize=True, pnginfo=metadata)
 
-    done_time = time.time()
+    done_time = pd.Timestamp.now()
     stats = OrderedDict()
-    stats["k" + str(kmer_size) + "_img_time"] = done_time - start_time
+    stats["k" + str(kmer_size) + "_img_time"] = (done_time - start_time).total_seconds()
 
     return stats
-
-
-# Function: read stats file:
-def read_stats(stats_path):
-    return pd.read_csv(stats_path, index_col=[0], dtype={0: str}, low_memory=False).to_dict(
-        orient="index"
-    )
-
-
-# Function: save stats dict as a csv file:
-def stats_to_csv(all_stats, stats_path):
-    df = pd.DataFrame.from_dict(all_stats, orient="index").rename_axis(index=["sample"])
-    df.to_csv(stats_path)
-    return df.reset_index()
-
-
-### To be able to run samples in parallel using python, the image pipeline has to be encoded
-### into a function
-### this will take as input:
-### one row of the condensed_files dataframe, the stats dictionary and the number of cores to use per sample
-
 
 def run_clean2img(
     it_row,
@@ -1128,13 +945,24 @@ def run_clean2img(
     stats_path,
     images_d,
     subfolder_levels=0,
-    label_sample_sep=label_sample_sep,
-    humanfriendly=humanfriendly,
-    defaultdict=defaultdict,
-    eprint=eprint,
-    make_image=make_image,
-    count_kmers=count_kmers,
 ):
+    """
+    Process a single sample from raw reads to image.
+    
+    Args:
+        it_row: Row tuple from DataFrame
+        kmer_mapping: K-mer mapping table
+        args: Command line arguments
+        np_rng: NumPy random number generator
+        inter_dir: Intermediate directory
+        all_stats: All statistics
+        stats_path: Path to statistics file
+        images_d: Output images directory
+        subfolder_levels: Number of subfolder levels
+        
+    Returns:
+        dict: Sample statistics
+    """
     cores_per_process = args.cpus_per_thread
 
     x = it_row[1]
@@ -1229,7 +1057,7 @@ def run_clean2img(
         stats[str(x["sample"])][str(args.kmer_size) + "mer_counting_time"] = 0
 
         kmer_key = str(args.kmer_size) + "mer_counting_time"
-        for infile in split_reads_d.glob(x["sample"] + sample_bp_sep + "*"):
+        for infile in split_reads_d.glob(x["sample"] + SAMPLE_BP_SEP + "*"):
             try:
                 count_stats = count_kmers(
                     infile=infile,
@@ -1261,14 +1089,12 @@ def run_clean2img(
         img_key = "k" + str(args.kmer_size) + "_img_time"
 
         stats[str(x["sample"])][img_key] = 0
-        for infile in kmer_counts_d.glob(x["sample"] + sample_bp_sep + "*"):
+        for infile in kmer_counts_d.glob(x["sample"] + SAMPLE_BP_SEP + "*"):
             base_sd = get_basefrequency_sd(
                 Path(inter_dir, "clean_reads").glob(str(x["sample"]) + "_fastp_*.json")
             )
             stats[str(x["sample"])]["base_frequencies_sd"] = base_sd
-            kmer_mapping = get_kmer_mapping(
-                kmer_size = args.kmer_size,
-                method = args.kmer_mapping)     
+            
             try:
                 img_stats = make_image(
                     infile=infile,
@@ -1302,24 +1128,33 @@ def run_clean2img(
     return stats
 
 
-## This is just an unwrapper to be able to use run_clean2img() with multiprocessing
 def run_clean2img_wrapper(args_tuple):
-    # print(f"args_tuple received: {args_tuple}")
-    # Unpack the arguments
+    """
+    Wrapper function for run_clean2img to use with multiprocessing.
+    
+    Args:
+        args_tuple: Arguments tuple
+        
+    Returns:
+        dict: Sample statistics
+    """
     return run_clean2img(*args_tuple)
 
 
-# This processes stats after creating images
-def process_stats(
-    stats,
-    condensed_files,
-    args,
-    stats_path,
-    images_d,
-    all_stats,
-    qual_thresh,
-    labels_sep,
-):
+def process_stats(stats, condensed_files, args, stats_path, images_d, all_stats, qual_thresh, labels_sep):
+    """
+    Process and update statistics.
+    
+    Args:
+        stats: Sample statistics
+        condensed_files: Files table
+        args: Command line arguments
+        stats_path: Path to statistics file
+        images_d: Output images directory
+        all_stats: All statistics
+        qual_thresh: Quality threshold
+        labels_sep: Label separator
+    """
     # Check if stats.csv exists
     if stats_path.exists():
         try:
@@ -1350,523 +1185,149 @@ def process_stats(
         )
 
 
-###### Functions to train a nn
-
-
-# Function: select training and validation set given kmer size and amount of data (as a list).
-# minbp_filter will only consider samples that have yielded at least that amount of data
-def get_train_val_sets():
-    file_path = [
-        x.absolute()
-        for x in (Path("images_" + str(kmer_size))).ls()
-        if x.suffix == ".png"
-    ]
-    taxon = [
-        x.name.split(sample_bp_sep)[0].split(label_sample_sep)[0] for x in file_path
-    ]
-    sample = [
-        x.name.split(sample_bp_sep)[0].split(label_sample_sep)[1] for x in file_path
-    ]
-    n_bp = [
-        int(x.name.split(sample_bp_sep)[1].split(bp_kmer_sep)[0].replace("K", "000"))
-        for x in file_path
-    ]
-
-    df = pd.DataFrame(
-        {"taxon": taxon, "sample": sample, "n_bp": n_bp, "path": file_path}
-    )
-
-    if minbp_filter is not None:
-        included_samples = df.loc[df["n_bp"] == 200000000]["sample"].drop_duplicates()
-    else:
-        included_samples = df["sample"].drop_duplicates()
-
-    df = df.loc[df["sample"].isin(included_samples)]
-
-    valid = (
-        df[["taxon", "sample"]]
-        .drop_duplicates()
-        .groupby("taxon")
-        .apply(lambda x: x.sample(n_valid, replace=False))
-        .reset_index(drop=True)
-        .assign(is_valid=True)
-        .merge(df, on=["taxon", "sample"])
-    )
-
-    train = df.loc[~df["sample"].isin(valid["sample"])].assign(is_valid=False)
-    train = train.loc[train["n_bp"].isin(bp_training)]
-
-    train_valid = pd.concat([valid, train]).reset_index(drop=True)
-    return train_valid
-
-
-# Function: retrieve varKoder labels as a list
-def get_varKoder_labels(img_path):
-    return [x for x in Image.open(img_path).info.get("varkoderKeywords").split(";")]
-
-
-# Function: retrieve varKoder quality flag
-def get_varKoder_qual(img_path):
-    return bool(Image.open(img_path).info.get("varkoderLowQualityFlag"))
-
-
-# Function: retrieve basefreq sd
-def get_varKoder_freqsd(img_path):
-    return float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
-
-# Function: retrieve mapping
-def get_varKoder_mapping(img_path):
-    return str(Image.open(img_path).info.get("varkoderMapping"))
-
-# Function: retrieve kmer size and kmer mapping method from image file name
-def get_metadata_from_img_filename(img_path):
-    sample_name, split2 = Path(img_path).name.removesuffix('.png').split(sample_bp_sep)
-    try:
-        n_bp, img_kmer_mapping, img_kmer_size = split2.split(bp_kmer_sep)
-    except ValueError: #backwards compatible with varKoder v0.X
-        n_bp, img_kmer_size = split2.split(bp_kmer_sep)
-        img_kmer_mapping = 'varKode'
+class ImageCommand:
+    """
+    Class for handling the image command functionality in varKoder.
+    
+    This class implements methods to process DNA sequences and generate
+    varKode or CGR images.
+    """
+    
+    def __init__(self, args: Any, np_rng: np.random.Generator) -> None:
+        """
+        Initialize ImageCommand with command line arguments and random number generator.
         
-    n_bp = int(n_bp[:-1])*1000
-    img_kmer_size = int(img_kmer_size[1:])
-
-
-    return {'sample': sample_name,
-            'bp': n_bp,
-            'img_kmer_mapping': img_kmer_mapping,
-            'img_kmer_size': img_kmer_size,
-            'path':Path(img_path)
-           }
-    
-# Function: retrieve varKoder base frequency sd as a float and apply an exponential function to turn it into a loss function weight
-def get_varKoder_quality_weights(img_path):
-    base_sd = float(Image.open(img_path).info.get("varkoderBaseFreqSd"))
-    weight = 2 / (1 + math.exp(20 * base_sd))
-    return weight
-
-
-# Custom training loop for fastai to use sample weights
-# def custom_weighted_training_loop(learn, sample_weights):
-#    model, opt = learn.model, learn.opt
-#    for xb, yb in learn.dls.train:
-#        # Get the corresponding sample weights for the current batch
-#        batch_sample_weights = [sample_weights[i] for i in learn.dls.train.get_idxs()]
-#
-#        # Convert the sample weights to a tensor
-#        batch_sample_weights_tensor = torch.tensor(batch_sample_weights, device=xb.device, dtype=torch.float)
-#
-#        # Calculate the loss with the custom loss function
-#        loss = learn.loss_func(model(xb), yb, batch_sample_weights_tensor)
-#
-#        # Backward pass
-#        loss.backward()
-#
-#        # Optimization step
-#        opt.step()
-#
-#        # Zero the gradients
-#        opt.zero_grad()
-#
-##Callback to add sample weights
-# class CustomWeightedTrainingCallback(Callback):
-#    def __init__(self, sample_weights):
-#        self.sample_weights = sample_weights
-#
-#    def before_fit(self):
-#        self.learn._do_one_batch = lambda: custom_weighted_training_loop(self.learn, self.sample_weights)
-#
-## Modified AsymmetricLossMultiLabel from timm library to include sample weights
-# class CustomWeightedAsymmetricLossMultiLabel(nn.Module):
-#    def __init__(self, gamma_neg=4, gamma_pos=1, clip=0.05, eps=1e-8, disable_torch_grad_focal_loss=False):
-#        super(CustomWeightedAsymmetricLossMultiLabel, self).__init__()
-#
-#        self.gamma_neg = gamma_neg
-#        self.gamma_pos = gamma_pos
-#        self.clip = clip
-#        self.disable_torch_grad_focal_loss = disable_torch_grad_focal_loss
-#        self.eps = eps
-#
-#    def forward(self, x, y, sample_weights=None):
-#        """
-#        Parameters
-#        ----------
-#        x: input logits
-#        y: targets (multi-label binarized vector) or tuple of targets for MixUp
-#        sample_weights: per-sample weights, should have the same shape as y
-#        """
-#
-#        if isinstance(y, tuple):
-#            y1, y2, lam = y
-#            y = lam * y1 + (1 - lam) * y2
-#            if sample_weights is not None:
-#                sample_weights = lam * sample_weights + (1 - lam) * sample_weights
-#
-#        # Calculating Probabilities
-#        x_sigmoid = torch.sigmoid(x)
-#        xs_pos = x_sigmoid
-#        xs_neg = 1 - x_sigmoid
-#
-#        # Asymmetric Clipping
-#        if self.clip is not None and self.clip > 0:
-#            xs_neg = (xs_neg + self.clip).clamp(max=1)
-#
-#        # Basic CE calculation
-#        los_pos = y * torch.log(xs_pos.clamp(min=self.eps))
-#        los_neg = (1 - y) * torch.log(xs_neg.clamp(min=self.eps))
-#        loss = los_pos + los_neg
-#
-#        # Asymmetric Focusing
-#        if self.gamma_neg > 0 or self.gamma_pos > 0:
-#            if self.disable_torch_grad_focal_loss:
-#                torch._C.set_grad_enabled(False)
-#            pt0 = xs_pos * y
-#            pt1 = xs_neg * (1 - y)  # pt = p if t > 0 else 1-p
-#            pt = pt0 + pt1
-#            one_sided_gamma = self.gamma_pos * y + self.gamma_neg * (1 - y)
-#            one_sided_w = torch.pow(1 - pt, one_sided_gamma)
-#            if self.disable_torch_grad_focal_loss:
-#                torch._C.set_grad_enabled(True)
-#            loss *= one_sided_w
-#
-#        # Apply sample weights
-#        if sample_weights is not None:
-#            loss *= sample_weights
-#
-#        return -loss.sum()
-
-# Function: build a custom models for linearized varKodes or CGRs based on prior work
-# Define classes for custom models
-
-class Arias2022Head(nn.Module):
-    def __init__(self, n_classes):
-        super(Arias2022Head, self).__init__()
-        self.head = nn.Sequential(nn.Linear(64, n_classes))
-    def forward(self, x):
-        return self.head(x)
-
-class Arias2022Body(nn.Module):
-    def __init__(self):
-        super(Arias2022Body, self).__init__()
-        self.body = nn.Sequential(
-                nn.Flatten(), #reshape to 1D array
-                nn.LazyLinear(512),
-                nn.ReLU(),
-                nn.Dropout(0.5),
-                nn.Linear(512, 64),
-                nn.ReLU(),
-                nn.Dropout(0.5))
-
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.body(x)
-        return x
-
-class Fiannaca2018Head(nn.Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Head, self).__init__()
-        self.head = nn.Sequential(nn.Linear(500, n_classes))
-
-    def forward(self, x):
-        #x = x.unsqueeze(1)  # Add channel dimension for convolution layers
-        return self.head(x)
-
-class Fiannaca2018Body(nn.Module):
-    def __init__(self):
-        super(Fiannaca2018Body, self).__init__()
-        self.flatten = nn.Flatten()
-        self.body = nn.Sequential(
-            nn.Conv1d(1, 5, kernel_size=5),  # First convolutional layer
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2),  # Pooling layer
-
-            nn.Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2),  # Pooling layer
-
-            nn.Flatten(),
-            nn.LazyLinear(500),  # Adjust the size based on the output of previous layers
-            nn.ReLU())
-
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.flatten(x)
-        x = x.unsqueeze(1)
-        x = self.body(x)
-        return x
-
-class Fiannaca2018Model(nn.Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Model, self).__init__()
-        self.model = nn.Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
-class Arias2022Model(nn.Module):
-    def __init__(self,n_classes):
-        super(Arias2022Model, self).__init__()
-        self.model = nn.Sequential(Arias2022Body(),Arias2022Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
-def build_custom_model(architecture, dls):
-    if architecture == 'arias2022':
-        custom_model = Arias2022Model(len(dls.vocab))
-    elif architecture == 'fiannaca2018':
-        custom_model = Fiannaca2018Model(len(dls.vocab))
-    else:
-        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
-
-    # Initiallize LazyLinear with dummy batch
-    xb, yb = dls.one_batch()
-    input_image_size = xb.shape[-2:]  
-    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
-    custom_model(dummy_batch)
-
-    return custom_model
-    
-# Define callback to skip validation
-class SkipValidationCallback(Callback):
-    def before_validate(self):
-        raise CancelValidException
-
-
-# Function: build dataloaders, learners and train
-def train_nn(
-    df,
-    architecture,
-    valid_pct=0.2,
-    max_bs=64,
-    base_lr=1e-3,
-    model_state_dict=None,
-    epochs=30,
-    freeze_epochs=0,
-    normalize=True,
-    callbacks=CutMix,
-    max_lighting=0,
-    p_lighting=0,
-    pretrained=False,
-    loss_fn=CrossEntropyLoss(),
-    is_multilabel=False,
-    metrics_threshold=0.7,
-    gamma_neg=4,
-    verbose=True,
-    num_workers = 0,
-    no_metrics = False
-):
-    # if skipping validation metrics, add NoValidation callback
-    if no_metrics:
-        if isinstance(callbacks,list):
-            callbacks.append(SkipValidationCallback())
-        else:
-            callbacks=[callbacks,SkipValidationCallback()]
-
-
-    # find a batch size that is a power of 2 and splits the dataset in about 10 batches
-    batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
-    batch_size = min(batch_size, max_bs)
-
-    # set kind of splitter for DataBlock
-    if "is_valid" in df.columns:
-        sptr = ColSplitter()
-    else:
-        sptr = RandomSplitter(valid_pct=valid_pct)
-
-    # check if item resizing is necessary
-    item_transforms = None
-    if not architecture in custom_archs:
-        default_cfg = create_model(architecture, pretrained=False).default_cfg
-        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-            item_transforms = Resize(
-                size=default_cfg["input_size"][1:],
-                method=ResizeMethod.Squish,
-                resamples=(Resampling.BOX, Resampling.BOX),
-            )
-            eprint(
-                "Model architecture",
-                architecture,
-                "requires image resizing to",
-                str(default_cfg["input_size"][1:]),
-            )
-            eprint("This will be done automatically.")
+        Args:
+            args: Parsed command line arguments
+            np_rng: NumPy random number generator
+        """
+        self.args = args
+        self.np_rng = np_rng
+        self.all_stats = defaultdict(OrderedDict)
+        
+        # Validate input parameters
+        if args.kmer_size not in range(5, 9 + 1):
+            raise ValueError("kmer size must be between 5 and 9")
             
-
-    # set batch transforms
-    transforms = aug_transforms(
-        do_flip=False,
-        max_rotate=0,
-        max_zoom=1,
-        max_lighting=max_lighting,
-        max_warp=0,
-        p_affine=0,
-        p_lighting=p_lighting,
-    )
-
-    # set DataBlock
-    if is_multilabel:
-        blocks = (ImageBlock, MultiCategoryBlock)
-        get_y = ColReader("labels", label_delim=";")
-    else:
-        blocks = (ImageBlock, CategoryBlock)
-        get_y = ColReader("labels")
-
-    dbl = DataBlock(
-        blocks=blocks,
-        splitter=sptr,
-        get_x=ColReader("path"),
-        get_y=get_y,
-        item_tfms=item_transforms,
-        batch_tfms=transforms,
-    )
-
-    # create data loaders with calculated batch size and appropriate device
-    dls = dbl.dataloaders(df, 
-        bs=batch_size, 
-        device=default_device(), 
-        num_workers=num_workers)
-
-    # create learner
-    if is_multilabel:
-        # find all labels that are not 'low_quality:True'
-        labels = [i for i, x in enumerate(dls.vocab) if x != "low_quality:True"]
-        # define metrics
-        precision = PrecisionMulti(labels=labels, average="micro", thresh=metrics_threshold)
-        recall = RecallMulti(labels=labels, average="micro", thresh=metrics_threshold)
-        auc = RocAuc(average="micro")
-        metrics = [auc, precision, recall]
-    else:
-        metrics = accuracy
-
-    if architecture in custom_archs:
-        #build model
-        custom_model = build_custom_model(architecture, dls)
-        
-        learn = Learner(dls, 
-                        custom_model, 
-                        metrics=metrics, 
-                        cbs=callbacks,
-                        loss_func=loss_fn
-                       ).to_fp16()
-        
-    else:
-        learn = vision_learner(dls,
-                               architecture,
-                               metrics=metrics,
-                               normalize=normalize,
-                               pretrained=pretrained,
-                               cbs=callbacks,
-                               loss_func=loss_fn,
-                            ).to_fp16()
-   
-    # if there a pretrained model body weights, replace them
-    if model_state_dict:
-        old_state_dict = learn.state_dict()
-        new_state_dict = {
-            k: v
-            for k, v in model_state_dict.items()
-            if k in old_state_dict and old_state_dict[k].size() == v.size()
-        }
-        learn.model.load_state_dict(new_state_dict, strict=False)
-
-    # Check for multiple GPUs and parallelize if available
-    is_parallel = torch.backends.cuda.is_built() and torch.cuda.device_count() > 1
-    if is_parallel:
-        learn.to_parallel()
-
-    # Train the model with or without verbose output
-    training_context = learn.no_bar() if not verbose else contextlib.nullcontext()
-    logging_context = learn.no_logging() if not verbose else contextlib.nullcontext()
-
-    with training_context, logging_context:
-        learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
-
-    # Detach parallelization if it was used
-    if is_parallel:
-        learn.detach_parallel()
-
-    # Remove skip validation callback if used
-    learn.remove_cb(SkipValidationCallback)
-
-    return learn
-
-##Function: get the reverse complement of a sequence string
-def rc(seq):
-    complement = {'A': 'T', 'T': 'A', 'C': 'G', 'G': 'C'}
-    reverse_complement = "".join(complement[base] for base in reversed(seq))
-    return reverse_complement
-
-
-
-## Function: remap an image
-## in_mapping and out_mapping should be one of the supported kmer_mapping 
-def remap(img, k, in_mapping, out_mapping, sum_rc=False):
-    if (not in_mapping in mapping_choices) or (not out_mapping in mapping_choices):
-        raise Exception('Input and output mapping must be one of: ' + str(mapping_choices))
-        
-    in_mp = get_kmer_mapping(k,in_mapping)
-    out_mp = get_kmer_mapping(k,out_mapping)
-
-    merged = in_mp.merge(out_mp, how='inner',left_index=True, right_index=True,suffixes=['_in', '_out'])
-    #x and y are reversed for PIL images
-    merged['y_in'] = merged['y_in'].max()-merged['y_in']
-    merged['y_out'] = merged['y_out'].max()-merged['y_out']
-
-    new_img = img.resize((merged['y_out'].max()+1,merged['x_out'].max()+1),
-                    resample=Image.NEAREST)
-    new_img_array = np.zeros(np.array(new_img).shape,dtype=np.uint8)
-
-    old_img_array = np.array(img)
-
-    x_out = merged['x_out'].values
-    y_out = merged['y_out'].values
-    x_in = merged['x_in'].values
-    y_in = merged['y_in'].values
-    if sum_rc:
-        np.add.at(new_img_array, (y_out, x_out), old_img_array[y_in, x_in])
-        new_img_array = np.uint8((new_img_array-new_img_array.min())/new_img_array.max()*255)
-    else:
-        new_img_array[y_out,x_out] = old_img_array[y_in,x_in]
-
-    new_img.putdata(new_img_array.flatten('A'))
-
-    return(new_img)
-
-#Function: processes one image for remapping
-def process_remapping(f_data, output_mapping, sum_rc):
-    # Open the image
-    image = Image.open(f_data['path'])
-    
-    # Remap the image
-    new_img = remap(image, 
-                    f_data['img_kmer_size'], 
-                    f_data['img_kmer_mapping'], 
-                    output_mapping,
-                    sum_rc
-                   )
-    
-    # Create a PngInfo object and add the necessary info
-    pnginfo = PngInfo()
-    for k, v in new_img.info.items():
-        if k == 'VarkoderMapping':
-            pnginfo.add_text(k, f_data['img_kmer_mapping'])
+        # Set up intermediate directory
+        try:
+            self.inter_dir = Path(args.int_folder)
+        except TypeError:
+            self.inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+            
+        # Check if output directory exists
+        if not args.overwrite and Path(args.outdir).exists():
+            raise Exception("Output directory exists, use --overwrite if you want to overwrite it.")
         else:
-            pnginfo.add_text(k, str(v))
-    
-    # Create the necessary directories
-    f_data['outfile_path'].parent.mkdir(parents=True, exist_ok=True)
-    
-    # Save the new image
-    new_img.save(f_data['outfile_path'], optimize=True, pnginfo=pnginfo)
+            if Path(args.outdir).is_dir():
+                shutil.rmtree(Path(args.outdir))
+                
+        # Set directory to save images
+        self.images_d = Path(args.outdir)
         
+        # Set up kmer mapping
+        self.kmer_mapping = get_kmer_mapping(args.kmer_size, args.kmer_mapping)
+        
+        # Initialize stats
+        self.stats_path = Path(args.stats_file)
+        if self.stats_path.exists():
+            self.all_stats.update(read_stats(self.stats_path))
+    
+    def process_samples(self, condensed_files: pd.DataFrame) -> None:
+        """
+        Process all samples to generate images.
+        
+        Args:
+            condensed_files: DataFrame with file information
+        """
+        # Check if we need multiple subfolder levels
+        # This will ensure we have about 1000 samples per subfolder
+        n_records = condensed_files.shape[0]
+        subfolder_levels = math.floor(math.log(n_records/1000, 16))
+        
+        # Prepare arguments for run_clean2img function
+        args_for_multiprocessing = [
+            (
+                tup,
+                self.kmer_mapping,
+                self.args,
+                self.np_rng,
+                self.inter_dir,
+                self.all_stats,
+                self.stats_path,
+                self.images_d,
+                subfolder_levels
+            )
+            for tup in condensed_files.iterrows()
+        ]
+        
+        # Single-threaded execution
+        if self.args.n_threads == 1:
+            for arg_tuple in args_for_multiprocessing:
+                stats = run_clean2img(*arg_tuple)
+                process_stats(
+                    stats,
+                    condensed_files,
+                    self.args,
+                    self.stats_path,
+                    self.images_d,
+                    self.all_stats,
+                    QUAL_THRESH,
+                    LABELS_SEP,
+                )
+        
+        # Multi-threaded execution
+        else:
+            with multiprocessing.Pool(processes=int(self.args.n_threads)) as pool:
+                for stats in pool.imap_unordered(
+                    run_clean2img_wrapper, args_for_multiprocessing
+                ):
+                    process_stats(
+                        stats,
+                        condensed_files,
+                        self.args,
+                        self.stats_path,
+                        self.images_d,
+                        self.all_stats,
+                        QUAL_THRESH,
+                        LABELS_SEP,
+                    )
+    
+    def run(self) -> None:
+        """
+        Run the image command.
+        """
+        eprint("varKoder")
+        eprint("Kmer size:", str(self.args.kmer_size))
+        eprint("Processing reads and preparing images")
+        eprint("Reading input data")
+        
+        # Parse input and create a table relating reads files to samples and taxa
+        inpath = Path(self.args.input)
+        condensed_files = process_input(inpath, is_query=False)
+        
+        if condensed_files.shape[0] == 0:
+            raise Exception("No files found in input. Please check.")
+        
+        # Process samples and generate images
+        self.process_samples(condensed_files)
+        
+        eprint("All images done, saved in", str(self.images_d))
+        
+        # Clean up temporary directory if created
+        if not self.args.int_folder and self.inter_dir.is_dir():
+            shutil.rmtree(self.inter_dir)
 
 
-
-
-
-   
-
-
-
+def run_image_command(args: Any, np_rng: np.random.Generator) -> None:
+    """
+    Run the image command with the given arguments.
+    
+    This is the main entry point for the image command, called by the CLI.
+    
+    Args:
+        args: Parsed command line arguments
+        np_rng: NumPy random number generator
+    """
+    image_cmd = ImageCommand(args, np_rng)
+    image_cmd.run()

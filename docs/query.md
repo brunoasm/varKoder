@@ -29,7 +29,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
-| `-l MODEL`, `--model MODEL` | either to path pickle file with exported trained model or name of HuggingFace hub model to pull (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
+| `-l MODEL`, `--model MODEL` | path pickle file with exported trained model or name of HuggingFace hub model (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-1`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
@@ -46,7 +46,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-r`, `--no-merge` |        do not attempt to merge paired reads. See tips in `image` command  for details.|
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See tips in `image` command for details. |
 | `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. This is applied to both forward and reverse reads in the case of paired ends.  (default: 10,10) |
-| `-M MAX_BP`, `--max-bp MAX_BP` | maximum number of post-cleaning basepairs to make an image. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp). Set to 0 to use all of the available data. (default: 200M) |
+| `-M MAX_BP`, `--max-bp MAX_BP` | number of post-cleaning basepairs to use for making image. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp). Set to 0 to use all of the available data. (default: 200M) |
 | `-b MAX_BATCH_SIZE`, `--max-batch-size MAX_BATCH_SIZE` | maximum batch size when using GPU for prediction. (default: 64) |
 
 ## Query command tips
@@ -55,7 +55,7 @@ The query command preprocesses samples to generate varKode images and then predi
 
 If `--max-bp` is less than the data available for a sample, *varKoder* will ramdomly choose reads to include. If it is more than the data available for a sample, this sample will be skipped.
 
-If there are less than 100 samples included in a query, we use a CPU to compute predictions. If there are more than 100 samples and a GPU is available, we use a GPU and group varKodes in batches of size `--max-batch-size`. The only constraint to batch size is the memory available in the GPU: the larger the batch size, the faster predictions will be done.
+If there are less than 128 samples included in a query, we use a CPU to compute predictions. If there are 128 or more samples and a GPU is available, we use a GPU and group varKodes in batches of size `--max-batch-size`. The only constraint to batch size is the memory available in the GPU: the larger the batch size, the faster predictions will be done.
 
 ## Input 
 By default, if the input folder contains subfolders, `varKoder query` will assume that raw reads in each subfolder should all be treated as a single sample (named with subfolder name). To override this behavior, use `--no-pairs`. If there are no subfolders or `--no-pairs` is used, each fastq file in the input will be treated as a separate sample (named after the file name). See help on `varKoder image` command for more information about fastq processing.
@@ -102,3 +102,57 @@ By default, only the top prediction (if single-label) or predictions above thres
  *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
  *  other columns: confidence scores in each label. All confidence scores sum to 1. They are only included with `--include-probs` option.
+ 
+## Examples
+
+Here are several examples demonstrating how to use the `query` command in different scenarios:
+
+### Example 1: Basic Query with Default Model
+
+Query a set of fastq files using the default pretrained model:
+
+```bash
+varKoder query path/to/fastq_files query_results
+```
+
+This processes the fastq files to generate varKodes, then uses the default Hugging Face model (brunoasm/vit_large_patch32_224.NCBI_SRA) to predict labels with a confidence threshold of 0.5.
+
+### Example 2: Using Your Custom-trained Model
+
+Query samples using a model you trained:
+
+```bash
+varKoder query path/to/fastq_files custom_query_results --model path/to/trained_model.pkl --threshold 0.7
+```
+
+This uses your custom-trained model instead of the default one, and requires a higher confidence threshold (0.7) for making predictions.
+
+### Example 3: Directly Querying Existing varKode Images
+
+Query existing varKode images instead of processing fastq files:
+
+```bash
+varKoder query path/to/varkode_images direct_image_results --images --threshold 0.6
+```
+
+This skips the fastq processing step and directly uses existing varKode images for prediction with a 0.6 confidence threshold.
+
+### Example 4: Preserving Images and Including All Probability Scores
+
+Query samples while saving the generated varKodes and including all probability scores in the output:
+
+```bash
+varKoder query path/to/fastq_files full_results --keep-images --include-probs
+```
+
+This processes the fastq files, saves the generated varKodes to the output directory, and includes confidence scores for all possible labels in the output CSV file, not just those above the threshold.
+
+### Example 5: Processing Large Files with Parallel Processing
+
+Process and query large sequencing files more efficiently:
+
+```bash
+varKoder query path/to/large_fastq_files parallel_results --n-threads 4 --cpus-per-thread 2 --max-bp 5M --max-batch-size 128
+```
+
+This uses 4 parallel threads with 2 CPUs each for processing samples, limits each sample to 5 million base pairs, and uses a batch size of 128 for GPU prediction, which can significantly speed up processing of large datasets.
