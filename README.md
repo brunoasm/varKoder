@@ -6,7 +6,7 @@ This python program can generate varKodes from raw reads, which are images encod
 
 For more information see the preprint:
 
-de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Anderson, C., and Davis, C.C. (2024). **A universal DNA barcode for the Tree of Life**. *EcoEvoRxiv*. https://doi.org/10.32942/X24891
+de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Anderson, C., and Davis, C.C. (2024). **A universal DNA signature for the Tree of Life**. *EcoEvoRxiv*. https://doi.org/10.32942/X24891
 
 ## Approach
 
