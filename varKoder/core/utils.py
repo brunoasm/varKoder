@@ -265,6 +265,23 @@ def rc(seq):
     return reverse_complement
 
 
+def is_fastq_file(filename):
+    """
+    Check if a file is a FASTQ file based on its extension.
+    
+    Args:
+        filename: Filename string or Path object
+        
+    Returns:
+        Boolean indicating if the file is a FASTQ file
+    """
+    name = str(filename)
+    return (name.endswith("fq") or 
+            name.endswith("fastq") or 
+            name.endswith("fq.gz") or 
+            name.endswith("fastq.gz"))
+
+
 def process_input(inpath, is_query=False, no_pairs=False):
     """
     Process input file or directory and return a table with files.
@@ -280,6 +297,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
     # First, check if input is a folder
     # If it is, make input table from the folder
     if inpath.is_dir() and not is_query:
+        eprint(f"Analyzing input directory {inpath}")
         files_records = list()
 
         seen_samples = set()
@@ -293,13 +311,18 @@ def process_input(inpath, is_query=False, no_pairs=False):
                             )
                             seen_samples.add(sample.name)
                         for fl in sample.iterdir():
-                            files_records.append(
-                                {
-                                    "labels": (taxon.name,),
-                                    "sample": sample.name,
-                                    "files": taxon / sample.name / fl.name,
-                                }
-                            )
+                            # Check if file is a fastq file
+                            if is_fastq_file(fl.name):
+                                files_records.append(
+                                    {
+                                        "labels": (taxon.name,),
+                                        "sample": sample.name,
+                                        "files": taxon / sample.name / fl.name,
+                                    }
+                                )
+                            else:
+                                tmp_fl_path = taxon / sample.name / fl.name
+                                eprint(f"Warning: File '{tmp_fl_path}' is not recognized as a sequence file and will be ignored.")
         try:
             files_table = (
                 pd.DataFrame(files_records)
@@ -317,6 +340,9 @@ def process_input(inpath, is_query=False, no_pairs=False):
             raise Exception("Folder detected, but no records read. Check format.")
 
     elif is_query:
+
+        eprint("Analyzing input directory {inpath}")
+
         files_records = list()
         # Start by checking if input directory contains directories
         contains_dir = any(f.is_dir() or 
@@ -325,12 +351,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
         # If there are no subdirectories, or no_pairs is True treat each fastq as a single sample. Otherwise, use each directory for a sample
         if not contains_dir:
             for i, fl in enumerate(inpath.rglob('*')):
-                if (
-                    fl.name.endswith("fq")
-                    or fl.name.endswith("fastq")
-                    or fl.name.endswith("fq.gz")
-                    or fl.name.endswith("fastq.gz")
-                ):
+                if is_fastq_file(fl.name):
                     files_records.append(
                         {
                             "labels": ("query",),
@@ -343,12 +364,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
             for sample in inpath.iterdir():
                 if sample.resolve().is_dir():
                     for fl in sample.iterdir():
-                        if (
-                            fl.name.endswith("fq")
-                            or fl.name.endswith("fastq")
-                            or fl.name.endswith("fq.gz")
-                            or fl.name.endswith("fastq.gz")
-                        ):
+                        if is_fastq_file(fl.name):
                             files_records.append(
                                 {
                                     "labels": ("query",),
@@ -370,6 +386,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
 
     # If it isn't a folder, read csv table input
     else:
+        eprint("Analyzing input table {inpath}")
         files_table = pd.read_csv(inpath)
         for colname in ["labels", "sample", "files"]:
             if colname not in files_table.columns:
