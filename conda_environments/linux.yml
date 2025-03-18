@@ -1,26 +1,27 @@
 name: varKoder
 channels:
-  - pytorch
-  - nvidia
-  - fastai
   - bioconda
   - conda-forge
+  - nvidia
+  - defaults
 dependencies:
-  - conda-forge::huggingface_hub=0.29
-  - conda-forge::accelerate=1.5
-  - conda-forge::timm=1.0
-  - conda-forge::pyarrow>=14.0.1
-  - conda-forge::pandas
-  - conda-forge::humanfriendly
+  - python>=3.11
   - conda-forge::pigz
-  - conda-forge::tenacity
   - bioconda::bbmap
   - bioconda::dsk=2.3.3=h43eeafb_4
   - bioconda::fastp=0.24
   - bioconda::sra-tools>=3
   - pip
   - pip:
-    - torch==2.6
+    - --index-url https://download.pytorch.org/whl/cu118
+    - --extra-index-url https://pypi.org/simple
+    - torch==2.6.0
     - torchvision
     - torchaudio
     - fastai==2.7.19
+    - "huggingface_hub~=0.29.0"
+    - "accelerate~=1.5.0"
+    - "timm~=1.0.0"
+    - "pyarrow>=14.0.1"
+    - humanfriendly
+    - tenacity
