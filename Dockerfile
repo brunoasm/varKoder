@@ -1,5 +1,5 @@
 # Start from the cuda base image
-FROM pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 
 # Install dependencies with Anaconda
 RUN echo 'channels:' > /docker.yml && \
@@ -9,7 +9,6 @@ RUN echo 'channels:' > /docker.yml && \
     echo '  - bioconda' >> /docker.yml && \
     echo '  - conda-forge' >> /docker.yml && \
     echo 'dependencies:' >> /docker.yml && \
-    echo '  - fastai::fastai=2.7' >> /docker.yml && \
     echo '  - conda-forge::huggingface_hub=0.26' >> /docker.yml && \
     echo '  - conda-forge::toml' >> /docker.yml && \
     echo '  - conda-forge::accelerate=1.1' >> /docker.yml && \
@@ -21,7 +20,10 @@ RUN echo 'channels:' > /docker.yml && \
     echo '  - conda-forge::tenacity' >> /docker.yml && \
     echo '  - bioconda::bbmap' >> /docker.yml && \
     echo '  - bioconda::fastp=0.24' >> /docker.yml && \
-    echo '  - bioconda::sra-tools>=3' >> /docker.yml
+    echo '  - bioconda::sra-tools>=3' >> /docker.yml && \
+    echo '  - pip' >> /docker.yml && \
+    echo '  - pip:' >> /docker.yml && \
+    echo '  - fastai==2.7.19' >> /docker.yml && \
 
 # Update conda and install dependencies
 RUN conda update -n base -c conda-forge conda && \
