@@ -2,11 +2,13 @@
 
 A tool that uses **var**iation in **K**-mer frequecies as DNA barc**ode**s.
 
-This python program can generate varKodes from raw reads, which are images encoding the relative frequecies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
+This python program can generate varKodes from raw reads, which are images encoding the relative frequencies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
 
-For more information see the preprint:
+For more information and citation see the following publications:
 
-de Medeiros, B.A.S, Cai, L., Flynn, P.J., Yan, Y., Duan, X., Marinho, L.C., Anderson, C., and Davis, C.C. (2024). **A universal DNA signature for the Tree of Life**. *EcoEvoRxiv*. https://doi.org/10.32942/X24891
+de Medeiros, B.A.S., Cai, L., Flynn, P.J. et al. A composite universal DNA signature for the tree of life. Nat Ecol Evol (2025). https://doi.org/10.1038/s41559-025-02752-1
+
+Asprino, R.C., Cai, L., Yan, Y. , ..., de Medeiros, B.A.S. A curated benchmark dataset for molecular identification based on genome skimming. Sci Data 12, 906 (2025). https://doi.org/10.1038/s41597-025-05230-2
 
 ## Approach
 
@@ -183,8 +185,6 @@ If you just want to predict labels for an unknown sequence file in fastq format 
 
 Bruno A. S. de Medeiros (Field Museum of Natural History), starting in 2019. 
 
-If using **varKoder**, please cite our publication on the top of this page.
-
-## Notes
+If using **varKoder**, please cite our publications on the top of this page.
 
 We initially tested this software on linux servers with different versions of Ubuntu and CentOS, and ARM mac computers with MacOS v 14-16.
