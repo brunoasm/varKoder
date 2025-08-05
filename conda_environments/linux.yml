@@ -21,7 +21,7 @@ dependencies:
     - fastai==2.7.19
     - "huggingface_hub~=0.29.0"
     - "accelerate~=1.5.0"
-    - "timm~=1.0.0"
+    - timm==1.0.15
     - "pyarrow>=14.0.1"
     - humanfriendly
     - tenacity
