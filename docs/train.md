@@ -90,7 +90,9 @@ These are the references for both models:
 
 ## GPU usage
 
-If your system has more than one NVIDIA GPU, varKoder will by default use all available GPUs for training. If this behavior is undesirable, you need to set the visible GPUs before starting varKoder (see https://developer.nvidia.com/blog/cuda-pro-tip-control-gpu-visibility-cuda_visible_devices/). For example, the following command will call varKoder with a single visible GPU:
+If your system has more than one NVIDIA GPU, varKoder will by default use all available GPUs for training. If this behavior is undesirable, you need to set the visible GPUs before starting varKoder (see https://developer.nvidia.com/blog/cuda-pro-tip-control-gpu-visibility-cuda_visible_devices/). If you run into bugs while training using multiple GPUs, restricting to a single GPU may be the solution.
+
+For example, the following command will call varKoder with a single visible GPU:
 
 ```bash
 export CUDA_VISIBLE_DEVICES=0
