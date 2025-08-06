@@ -26,7 +26,7 @@ from fastai.vision.all import (
     Learner, cnn_learner, accuracy, error_rate, Resize, ResizeMethod
 )
 from fastai.callback.mixup import MixUp, CutMix
-from fastai.torch_core import set_seed, default_device
+from fastai.torch_core import set_seed, default_device, defaults
 from fastai.learner import load_learner
 from fastai.losses import CrossEntropyLossFlat
 from fastai.callback.core import Callback, CancelValidException
@@ -158,6 +158,7 @@ def train_nn(
     architecture,
     valid_pct=0.2,
     max_bs=64,
+    min_bs=1,
     base_lr=1e-3,
     model_state_dict=None,
     epochs=30,
@@ -173,7 +174,8 @@ def train_nn(
     gamma_neg=4,
     verbose=True,
     num_workers=0,
-    no_metrics=False
+    no_metrics=False,
+    force_cpu=False
 ):
     """
     Train a neural network model on varKode images.
@@ -183,6 +185,7 @@ def train_nn(
         architecture: Model architecture name
         valid_pct: Validation set percentage
         max_bs: Maximum batch size
+        min_bs: Minimum batch size
         base_lr: Base learning rate
         model_state_dict: Pretrained model state dictionary
         epochs: Number of epochs to train
@@ -199,10 +202,19 @@ def train_nn(
         verbose: Whether to show verbose output
         num_workers: Number of data loader workers
         no_metrics: Whether to skip metrics computation
+        force_cpu: Whether to force CPU usage instead of GPU
         
     Returns:
         Trained model
     """
+    # If forcing CPU usage, set FastAI defaults to ensure consistency
+    if force_cpu:
+        defaults.device = torch.device('cpu')
+        # Disable GPU backends to prevent any GPU usage
+        torch.backends.cuda.enabled = False
+        if hasattr(torch.backends, 'mps') and hasattr(torch.backends.mps, 'enabled'):
+            torch.backends.mps.enabled = False
+    
     # If skipping validation metrics, add NoValidation callback
     if no_metrics:
         if isinstance(callbacks, list):
@@ -213,6 +225,7 @@ def train_nn(
     # Find a batch size that is a power of 2 and splits the dataset in about 10 batches
     batch_size = 2 ** round(log(df[~df["is_valid"]].shape[0] / 10, 2))
     batch_size = min(batch_size, max_bs)
+    batch_size = max(batch_size, min_bs)
 
     # Set kind of splitter for DataBlock
     if "is_valid" in df.columns:
@@ -268,9 +281,10 @@ def train_nn(
     )
 
     # Create data loaders with calculated batch size and appropriate device
+    device = torch.device('cpu') if force_cpu else default_device()
     dls = dbl.dataloaders(df, 
         bs=batch_size, 
-        device=default_device(), 
+        device=device, 
         num_workers=num_workers)
 
     # Create learner
@@ -289,12 +303,16 @@ def train_nn(
         # Build model
         custom_model = build_custom_model(architecture, dls)
         
+        # Ensure custom model is on correct device
+        if force_cpu:
+            custom_model = custom_model.cpu()
+        
         learn = Learner(dls, 
                         custom_model, 
                         metrics=metrics, 
                         cbs=callbacks,
                         loss_func=loss_fn
-                       ).to_fp16()
+                       )
         
     else:
         learn = vision_learner(dls,
@@ -304,20 +322,35 @@ def train_nn(
                                pretrained=pretrained,
                                cbs=callbacks,
                                loss_func=loss_fn,
-                            ).to_fp16()
+                            )
+    
+    # Only use FP16 if not forcing CPU (FP16 is typically GPU-only)
+    if not force_cpu:
+        learn = learn.to_fp16()
+    
+    # Ensure learner components are on correct device when forcing CPU
+    if force_cpu:
+        learn.model = learn.model.cpu()
+        if hasattr(learn, 'dls'):
+            learn.dls.device = device
    
     # If there a pretrained model body weights, replace them
     if model_state_dict:
         old_state_dict = learn.state_dict()
         new_state_dict = {
-            k: v
+            k: v.to(device) if hasattr(v, 'to') else v  # Ensure tensors are on correct device
             for k, v in model_state_dict.items()
             if k in old_state_dict and old_state_dict[k].size() == v.size()
         }
         learn.model.load_state_dict(new_state_dict, strict=False)
+        
+        # Ensure model is on correct device after loading state dict
+        if force_cpu:
+            learn.model = learn.model.cpu()
 
-    # Check for multiple GPUs and parallelize if available
-    is_parallel = torch.backends.cuda.is_built() and torch.cuda.device_count() > 1
+    # Check for multiple GPUs and parallelize if available (unless CPU is forced)
+    is_parallel = (not force_cpu and torch.backends.cuda.is_built() 
+                  and torch.cuda.device_count() > 1)
     if is_parallel:
         learn.to_parallel()
 
@@ -498,8 +531,11 @@ class TrainCommand:
         # 5. Check for pretrained model
         model_state_dict = None
         
-        if torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
-                                             and torch.cuda.device_count()):
+        if self.args.cpu:
+            eprint("CPU forced by user. Using CPU for processing.")
+            load_on_cpu = True
+        elif torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
+                                               and torch.cuda.device_count()):
             eprint("GPU available. Will try to use GPU for processing.")
             load_on_cpu = False
         else:
@@ -558,6 +594,7 @@ class TrainCommand:
             architecture=self.args.architecture,
             valid_pct=self.args.validation_set_fraction,
             max_bs=self.args.max_batch_size,
+            min_bs=self.args.min_batch_size,
             base_lr=self.args.base_learning_rate,
             epochs=self.args.epochs,
             freeze_epochs=self.args.freeze_epochs,
@@ -572,6 +609,7 @@ class TrainCommand:
             is_multilabel=not self.args.single_label,
             num_workers=self.args.num_workers,
             no_metrics=self.args.no_metrics,
+            force_cpu=self.args.cpu,
             **extra_params
         )
         
