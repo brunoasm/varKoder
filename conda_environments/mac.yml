@@ -1,4 +1,4 @@
-name: varKoder_test
+name: varKoder
 channels:
   - bioconda
   - conda-forge
