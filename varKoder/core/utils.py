@@ -21,7 +21,7 @@ import traceback
 import humanfriendly
 import numpy as np
 import pandas as pd
-import pkg_resources
+from importlib.resources import files
 from pathlib import Path
 from collections import OrderedDict, defaultdict
 from functools import partial
@@ -161,9 +161,7 @@ def get_kmer_mapping(kmer_size=7, method='varKode'):
         DataFrame with k-mer mapping
     """
     if method == 'varKode':
-        map_path = pkg_resources.resource_filename(
-            "varKoder", f"kmer_mapping/{kmer_size}mer_mapping.parquet"
-        )
+        map_path = files("varKoder").joinpath(f"kmer_mapping/{kmer_size}mer_mapping.parquet")
         kmer_mapping = pd.read_parquet(map_path).set_index("kmer")
     elif method == 'cgr':
         kmer_mapping = get_cgr(kmer_size)

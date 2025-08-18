@@ -9,10 +9,10 @@ the varKoder application, including default parameters, file-naming conventions,
 and quality thresholds.
 """
 
-import pkg_resources
+from importlib.metadata import version
 
 # Version information
-VERSION = pkg_resources.get_distribution("varKoder").version
+VERSION = version("varKoder")
 
 # File naming conventions
 LABEL_SAMPLE_SEP = "+"
