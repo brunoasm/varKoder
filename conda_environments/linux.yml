@@ -9,7 +9,7 @@ dependencies:
   - conda-forge::pigz
   - bioconda::bbmap
   - bioconda::dsk=2.3.3=h43eeafb_4
-  - bioconda::fastp=0.24
+  - bioconda::fastp=1.0
   - bioconda::sra-tools>=3
   - pip
   - pip:
