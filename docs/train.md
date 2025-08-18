@@ -41,6 +41,8 @@ There are two modes of training:
 | -f VALIDATION_SET_FRACTION, --validation-set-fraction VALIDATION_SET_FRACTION | fraction of samples to be held as a random validation set. If using multi-label, this applies to all samples. If using single-label, this applies to each species. (default: 0.2) |
 | -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | pickle file with optional pretrained neural network model to update with new images. Overrides --architecture and --pretrained-timm |
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
+| -B MIN_BATCH_SIZE, --min-batch-size MIN_BATCH_SIZE | minimum batch size for training. (default: 1) |
+| -C, --cpu | force use CPU for training instead of GPU. (default: False) |
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
@@ -99,11 +101,23 @@ export CUDA_VISIBLE_DEVICES=0
 varKoder train images_folder outfolder 
 ```
 
+If you want to force training on CPU instead of GPU (for example, for debugging or if GPU memory is insufficient), you can use the `--cpu` option:
+
+```bash
+varKoder train images_folder outfolder --cpu
+```
+
+You can also use the short version:
+
+```bash
+varKoder train images_folder outfolder -C
+```
+
 ## Train command tips
 
 All optional arguments are set to defaults that seemed to work well in our tests. Here we give some tips that may help you to modify these defaults
 
- 1. The maximum batch size can be increased until the limit that your GPU memory supports. Larger batch sizes increase training speed, but might need adjustment of the base learning rate (which typically have to increase for large batch sizes as well). When there are only a few images available in the training set, `varKoder` automatically decreases batch size so that each training epoch sees about 10 batches of images. In our preliminary tests, we found that this improved training of these datasets.
+ 1. The maximum batch size can be increased until the limit that your GPU memory supports. Larger batch sizes increase training speed, but might need adjustment of the base learning rate (which typically have to increase for large batch sizes as well). When there are only a few images available in the training set, `varKoder` automatically decreases batch size so that each training epoch sees about 10 batches of images. In our preliminary tests, we found that this improved training of these datasets. You can also set a minimum batch size with `--min-batch-size` to ensure the batch size doesn't become too small.
  2. The number of epochs to train depends on the problem. Models trained for too long may overfit: be very good at the specific training set but bad a generalizing to new samples. Check the evolution of training and validation loss during training: if the training loss decreases but validation loss starts to increase, this means that your model is overfitting and you are training for too long. Because we introduce random noise during training with MixUp and lighting transformations, models should rarely overfit.
  3. Frozen epochs are epochs of training in which the deeper layers of a model are frozen (i. e. cannot be updated). Only the last layer is updated. Intuitively, it means that we keep the possible features that a model can recognize in an image fixed, and only update how it weigths these many different features to make a prediction. This can be useful if you have a model pretrained with `varKodes` and want to use transfer learning (i. e. update a trained model instead of start from scratch). We did not find transfer learning useful when models where previously trained with other kinds of images. However, we did find useful to pretrain some models as single label and use transfer learning to fine tune with frozen epochs as multilabel. 
  4. Finding a good learning rate is also somewhat of an art: if learning rates are too small, a model can get stuck in local optima or take too many epochs to train, wasting resources. If they are too large, the training cycle may never be able to hone into the best model weights. Our default learning rate (5e-3) behaves well for the varKodes that we used as test, but you may consider changing it in the following cases:
@@ -175,3 +189,19 @@ varKoder train path/to/images custom_model --max-batch-size 32 --base_learning_r
 ```
 
 This trains a model with a smaller batch size and learning rate, uses CutMix instead of MixUp for data augmentation, and applies less aggressive lighting transformations during training.
+
+### Example 6: CPU Training with Custom Batch Size
+
+Force CPU training with specific minimum and maximum batch sizes:
+
+```bash
+varKoder train path/to/images cpu_model --cpu --min-batch-size 4 --max-batch-size 16
+```
+
+Using short versions:
+
+```bash
+varKoder train path/to/images cpu_model -C -B 4 -b 16
+```
+
+This forces training on CPU and ensures the batch size stays between 4 and 16, which can be useful when working with limited memory or small datasets.

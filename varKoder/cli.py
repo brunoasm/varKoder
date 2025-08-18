@@ -24,10 +24,10 @@ from varKoder.core.config import (
     DEFAULT_THREADS, DEFAULT_CPUS_PER_THREAD, DEFAULT_OUTDIR,
     DEFAULT_STATS_FILE, DEFAULT_MIN_BP, DEFAULT_MAX_BP,
     DEFAULT_TRIM_BP, DEFAULT_THRESHOLD, DEFAULT_VALIDATION_SET_FRACTION,
-    DEFAULT_ARCHITECTURE, DEFAULT_MAX_BATCH_SIZE, DEFAULT_BASE_LEARNING_RATE,
-    DEFAULT_EPOCHS, DEFAULT_FREEZE_EPOCHS, DEFAULT_NEGATIVE_DOWNWEIGHTING,
-    DEFAULT_MIX_AUGMENTATION, DEFAULT_P_LIGHTING, DEFAULT_MAX_LIGHTING,
-    DEFAULT_MODEL
+    DEFAULT_ARCHITECTURE, DEFAULT_MAX_BATCH_SIZE, DEFAULT_MIN_BATCH_SIZE,
+    DEFAULT_BASE_LEARNING_RATE, DEFAULT_EPOCHS, DEFAULT_FREEZE_EPOCHS, 
+    DEFAULT_NEGATIVE_DOWNWEIGHTING, DEFAULT_MIX_AUGMENTATION, 
+    DEFAULT_P_LIGHTING, DEFAULT_MAX_LIGHTING, DEFAULT_MODEL
 )
 from varKoder.core.utils import (
     eprint, set_seed, process_input, get_kmer_mapping
@@ -230,6 +230,20 @@ def setup_parser():
         help="maximum batch size when using GPU for training.",
         type=int,
         default=DEFAULT_MAX_BATCH_SIZE,
+    )
+    parser_train.add_argument(
+        "-B",
+        "--min-batch-size",
+        help="minimum batch size for training.",
+        type=int,
+        default=DEFAULT_MIN_BATCH_SIZE,
+    )
+    parser_train.add_argument(
+        "-C",
+        "--cpu",
+        help="force use CPU for training instead of GPU.",
+        action="store_true",
+        default=False,
     )
     parser_train.add_argument(
         "-r",

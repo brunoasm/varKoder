@@ -9,7 +9,7 @@ dependencies:
   - pigz
   - bbmap=38.18
   - wget
-  - fastp=0.24
+  - fastp=1.0
   - pip
   - pip:
     - torch==2.6
