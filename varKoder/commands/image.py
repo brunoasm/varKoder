@@ -38,7 +38,7 @@ from varKoder.core.config import (
     LABEL_SAMPLE_SEP
 )
 from varKoder.core.utils import (
-    eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats
+    eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats, is_fasta_file
 )
 
 from PIL import Image
@@ -314,6 +314,66 @@ def concatenate_reads(reads, basename, max_bp, work_dir, verbose):
     
     return total_bp
 
+
+def convert_fasta_to_fastq(fasta_file, fastq_file, verbose=False):
+    """
+    Convert a FASTA file to a fake FASTQ file with null quality scores.
+    
+    Args:
+        fasta_file: Path to input FASTA file
+        fastq_file: Path to output FASTQ file
+        verbose: Whether to print verbose output
+    """
+    if verbose:
+        eprint(f"Converting FASTA to FASTQ: {fasta_file} -> {fastq_file}")
+    
+    # Determine if input file is gzipped
+    opener = gzip.open if str(fasta_file).endswith('.gz') else open
+    
+    try:
+        with opener(fasta_file, 'rt') as infile, open(fastq_file, 'w') as outfile:
+            sequence_id = None
+            sequence_lines = []
+            
+            for line in infile:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                if line.startswith('>'):
+                    # If we have a previous sequence, write it as FASTQ
+                    if sequence_id is not None:
+                        sequence = ''.join(sequence_lines)
+                        quality = 'I' * len(sequence)  # Use 'I' (ASCII 73, Phred score 40)
+                        
+                        # Write FASTQ record
+                        outfile.write(f"@{sequence_id}\n")
+                        outfile.write(f"{sequence}\n")
+                        outfile.write("+\n")
+                        outfile.write(f"{quality}\n")
+                    
+                    # Start new sequence
+                    sequence_id = line[1:]  # Remove '>' prefix
+                    sequence_lines = []
+                else:
+                    # Accumulate sequence lines
+                    sequence_lines.append(line.upper())
+            
+            # Write the last sequence
+            if sequence_id is not None:
+                sequence = ''.join(sequence_lines)
+                quality = 'I' * len(sequence)  # Use 'I' (ASCII 73, Phred score 40)
+                
+                # Write FASTQ record
+                outfile.write(f"@{sequence_id}\n")
+                outfile.write(f"{sequence}\n")
+                outfile.write("+\n")
+                outfile.write(f"{quality}\n")
+                
+    except Exception as e:
+        eprint(f"Error converting FASTA to FASTQ: {str(e)}")
+        raise
+
 def clean_reads(
     infiles,
     outpath,
@@ -357,6 +417,43 @@ def clean_reads(
         eprint("Skipping cleaning for", basename + ":", "File exists.")
         return OrderedDict()
 
+    # Check for FASTA files and handle conversion
+    fasta_files = [f for f in infiles if is_fasta_file(f)]
+    fastq_files = [f for f in infiles if not is_fasta_file(f)]
+    
+    # Don't allow mixing FASTA and FASTQ files for the same sample
+    if fasta_files and fastq_files:
+        raise Exception(f"Cannot mix FASTA and FASTQ files for sample {basename}. "
+                       f"Found {len(fasta_files)} FASTA files and {len(fastq_files)} FASTQ files.")
+    
+    # If we have FASTA files, convert them to FASTQ first
+    has_fasta_input = len(fasta_files) > 0
+    if has_fasta_input:
+        eprint(f"Processing FASTA files for {basename} (fastp cleaning will be skipped)")
+        
+        # Create temporary directory for converted files
+        temp_dir = tempfile.mkdtemp(prefix="fasta_convert_" + basename)
+        converted_files = []
+        
+        for fasta_file in fasta_files:
+            # Create temporary FASTQ file name
+            fastq_name = Path(fasta_file).stem
+            if fastq_name.endswith('.fasta') or fastq_name.endswith('.fa') or fastq_name.endswith('.fas') or fastq_name.endswith('.fna'):
+                fastq_name = fastq_name.rsplit('.', 1)[0]
+            temp_fastq = Path(temp_dir) / (fastq_name + "_converted.fq")
+            
+            # Convert FASTA to FASTQ
+            convert_fasta_to_fastq(fasta_file, temp_fastq, verbose=verbose)
+            converted_files.append(str(temp_fastq))
+        
+        # Replace the original file list with converted files
+        infiles = converted_files
+        
+        # We'll clean up the temp directory at the end
+        cleanup_temp_dir = temp_dir
+    else:
+        cleanup_temp_dir = None
+
     eprint("Finding and concatenating files for", basename)
 
     # let's start separating forward, reverse and unpaired reads
@@ -393,24 +490,39 @@ def clean_reads(
 
     act_list = []
     extra_command = []
-    # add arguments depending on adapter option
-    if cut_adapters:
-        act_list.append("remove adapters")
-        extra_command.extend(["--detect_adapter_for_pe"])
+    
+    # For FASTA input, skip all cleaning operations since FASTA doesn't have quality scores
+    # and we want to preserve the sequences as-is
+    if has_fasta_input:
+        # Disable all cleaning operations for FASTA input
+        extra_command.extend([
+            "--disable_adapter_trimming",
+            "--dont_eval_duplication"
+        ])
+        # Set trimming to 0 to preserve sequences
+        trim_bp = (0, 0)
+        act_list.append("no cleaning (FASTA input)")
     else:
-        extra_command.extend(["--disable_adapter_trimming"])
+        # Normal FASTQ processing
+        # add arguments depending on adapter option
+        if cut_adapters:
+            act_list.append("remove adapters")
+            extra_command.extend(["--detect_adapter_for_pe"])
+        else:
+            extra_command.extend(["--disable_adapter_trimming"])
 
-    # add arguments depending on merge option
-    if merge_reads:
-        extra_command.extend(["--merge", "--include_unmerged"])
-        act_list.append("merge reads")
+        # add arguments depending on merge option
+        if merge_reads:
+            extra_command.extend(["--merge", "--include_unmerged"])
+            act_list.append("merge reads")
 
-    # add arguments depending on dedup option
-    if deduplicate:
-        act_list.append("remove duplicates")
-        extra_command.extend(["--dedup", "--dup_calc_accuracy", "1"])
-    else:
-        extra_command.extend(["--dont_eval_duplication"])
+        # add arguments depending on dedup option
+        if deduplicate:
+            act_list.append("remove duplicates")
+            extra_command.extend(["--dedup", "--dup_calc_accuracy", "1"])
+        else:
+            extra_command.extend(["--dont_eval_duplication"])
+            
     eprint(f"Preprocessing {basename}: {', '.join(act_list)}. Trimming (front,tail): {trim_bp}")
 
 
@@ -568,13 +680,18 @@ def clean_reads(
     done_time = pd.Timestamp.now()
     stats["clean_basepairs"] = clean_bp
     stats["cleaning_time"] = (done_time - start_time).total_seconds()
+    stats["fasta_input"] = has_fasta_input
 
     shutil.rmtree(work_dir)
     ####END OF TEMPDIR BLOCK
+    
+    # Clean up FASTA conversion temporary directory if it was created
+    if cleanup_temp_dir:
+        shutil.rmtree(cleanup_temp_dir)
 
     return stats
 
-def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=None):
+def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, max_workers=None, breaklength=500):
     """Helper function to parallelize reformat.sh execution."""
     # Create list of commands and their arguments
     commands = []
@@ -583,7 +700,7 @@ def run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=False, m
             REFORMAT_CMD,
             "samplebasestarget=" + str(bp),
             "sampleseed=" + str(int(seed) + i),
-            "breaklength=500",
+            f"breaklength={breaklength}",
             "ignorebadquality=t",
             "quantize=t", 
             "iupacToN=t",
@@ -713,7 +830,10 @@ def split_fastq(
             eprint("Files exist. Skipping subsampling for file:", str(infile))
             return OrderedDict()
     
-    run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=verbose, max_workers=n_threads)
+    # Adjust breaklength based on minimum base pairs - use smaller breaklength for small files
+    breaklength = 50 if min_bp < 1000 else 500
+    
+    run_parallel_reformats(sites_per_file, outfs, infile, seed, verbose=verbose, max_workers=n_threads, breaklength=breaklength)
 
     done_time = pd.Timestamp.now()
 

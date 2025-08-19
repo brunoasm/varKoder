@@ -279,6 +279,28 @@ def is_fastq_file(filename):
             name.endswith("fq.gz") or 
             name.endswith("fastq.gz"))
 
+def is_fasta_file(filename):
+    """
+    Check if a file is a FASTA file based on its extension.
+    
+    Args:
+        filename: Path to the file
+        
+    Returns:
+        bool: True if file appears to be FASTA format
+    """
+    filename_str = str(filename).lower()
+    fasta_extensions = ['.fasta', '.fa', '.fas', '.fna']
+    
+    # Check if any fasta extension is present (accounting for possible .gz)
+    for ext in fasta_extensions:
+        if ext in filename_str:
+            return True
+        # Also check for compressed versions
+        if (ext + '.gz') in filename_str:
+            return True
+    return False
+
 
 def process_input(inpath, is_query=False, no_pairs=False):
     """
@@ -309,8 +331,8 @@ def process_input(inpath, is_query=False, no_pairs=False):
                             )
                             seen_samples.add(sample.name)
                         for fl in sample.iterdir():
-                            # Check if file is a fastq file
-                            if is_fastq_file(fl.name):
+                            # Check if file is a sequence file (fastq or fasta)
+                            if is_fastq_file(fl.name) or is_fasta_file(fl.name):
                                 files_records.append(
                                     {
                                         "labels": (taxon.name,),
@@ -349,7 +371,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
         # If there are no subdirectories, or no_pairs is True treat each fastq as a single sample. Otherwise, use each directory for a sample
         if not contains_dir:
             for i, fl in enumerate(inpath.rglob('*')):
-                if is_fastq_file(fl.name):
+                if is_fastq_file(fl.name) or is_fasta_file(fl.name):
                     files_records.append(
                         {
                             "labels": ("query",),
@@ -362,7 +384,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
             for sample in inpath.iterdir():
                 if sample.resolve().is_dir():
                     for fl in sample.iterdir():
-                        if is_fastq_file(fl.name):
+                        if is_fastq_file(fl.name) or is_fasta_file(fl.name):
                             files_records.append(
                                 {
                                     "labels": ("query",),
