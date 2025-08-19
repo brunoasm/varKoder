@@ -1,6 +1,7 @@
 #!/bin/bash
 #02_constants.sh
 TESTDIR=Bembidion
+TESTDIR_FASTA=Bembidion_fasta
 prepend_text() {
     local prefix="$1"
     shift
@@ -30,6 +31,7 @@ else
 fi
 
 IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
+IM_FASTA_CMD="image --seed 1 -k 7 -c 1 -m 1K -M 20M -o ./images_fasta $TESTDIR_FASTA"
 C_CMD="convert --overwrite -k 7 varKode ./images ./images_varkode"
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
@@ -72,6 +74,52 @@ set_cuda_visible_devices() {
             unset CUDA_VISIBLE_DEVICES
             echo "No GPU selected. Using CPU."
         fi
+    fi
+}
+
+# Function to create FASTA test directory with limited sequences
+create_fasta_test_data() {
+    echo "${color}Creating ${TESTDIR_FASTA} directory for FASTA testing...$reset"
+    if [ -d "$TESTDIR" ]; then
+        # Remove existing FASTA directory if it exists
+        rm -rf "$TESTDIR_FASTA"
+        mkdir -p "$TESTDIR_FASTA"
+        
+        # Function to convert FASTQ to FASTA with limited sequences
+        convert_fastq_to_fasta() {
+            local input_file="$1"
+            local output_file="$2"
+            local max_sequences=10
+            local max_lines=$((max_sequences * 4))  # 4 lines per FASTQ record
+            
+            # Use head to limit input to exactly 40 lines (10 sequences), then convert
+            gzip -dc "$input_file" | head -n "$max_lines" | awk '
+                NR % 4 == 1 { print ">" substr($0, 2) }
+                NR % 4 == 2 { print $0 }
+            ' > "$output_file"
+        }
+        
+        # Copy the directory structure
+        find "$TESTDIR" -type d | while read dir; do
+            # Create corresponding directory in FASTA test directory
+            fasta_dir="${dir/$TESTDIR/$TESTDIR_FASTA}"
+            mkdir -p "$fasta_dir"
+        done
+        
+        # Convert FASTQ files to FASTA with 10 sequences each
+        find "$TESTDIR" -name "*.fastq.gz" | while read fastq_file; do
+            # Create corresponding FASTA file path
+            fasta_file="${fastq_file/$TESTDIR/$TESTDIR_FASTA}"
+            fasta_file="${fasta_file/.fastq.gz/.fa.gz}"
+            
+            echo "Converting $fastq_file to ${fasta_file%.gz} (10 sequences)"
+            convert_fastq_to_fasta "$fastq_file" "${fasta_file%.gz}"
+            gzip "${fasta_file%.gz}"
+        done
+        
+        echo "${color}${TESTDIR_FASTA} directory created with FASTA files (10 sequences each)$reset"
+    else
+        echo "${color}Warning: $TESTDIR directory not found. Skipping FASTA creation.$reset"
     fi
 }
 

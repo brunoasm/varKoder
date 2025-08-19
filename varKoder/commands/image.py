@@ -38,7 +38,8 @@ from varKoder.core.config import (
     LABEL_SAMPLE_SEP
 )
 from varKoder.core.utils import (
-    eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats, is_fasta_file
+    eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats, is_fasta_file,
+    format_bp_human_readable
 )
 
 from PIL import Image
@@ -818,8 +819,7 @@ def split_fastq(
         / (
             outprefix
             + SAMPLE_BP_SEP
-            + str(int(bp / 1000)).rjust(8, "0")
-            + "K"
+            + format_bp_human_readable(int(bp))
             + ".fq.gz"
         )
         for bp in sites_per_file

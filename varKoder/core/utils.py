@@ -120,9 +120,110 @@ def get_varKoder_mapping(img_path):
     return str(Image.open(img_path).info.get("varkoderMapping"))
 
 
+def format_bp_human_readable(bp_count):
+    """
+    Format base pair count in human-readable format with exactly 5 digits and optional suffix.
+    Always uses 5 digits, padding with zeros when needed.
+    
+    Examples:
+        1868000 -> "01868K"
+        100000567 -> "00100G" 
+        1898 -> "01898"
+        5000000000 -> "05000M"
+        123 -> "00123"
+    
+    Args:
+        bp_count: Base pair count as integer
+        
+    Returns:
+        String in format like "01868K", "00100G", "01898", "05000M"
+    """
+    # Round to 4 significant digits using scientific notation with 3 decimal places
+    scientific = f"{bp_count:.3e}"
+    
+    # Parse scientific notation
+    if 'e+' in scientific:
+        mantissa_str, exp_str = scientific.split('e+')
+        exponent = int(exp_str)
+    elif 'e-' in scientific:
+        mantissa_str, exp_str = scientific.split('e-')  
+        exponent = -int(exp_str)
+    else:
+        return f"{bp_count:04d}"
+    
+    mantissa = float(mantissa_str)
+    
+    # Convert back to integer (rounded to 4 significant digits)
+    rounded_number = int(mantissa * (10 ** exponent))
+    
+    # Convert to string and apply suffix replacements
+    num_str = str(rounded_number)
+    
+    # Apply replacements from largest to smallest to avoid double replacement
+    # But ensure the result always has exactly 4 digits before the suffix
+    
+    # Try each suffix and check if result would have <= 5 digits
+    replacements = [
+        ('000000000000000000', 'E', 18),  # exabytes (10^18)
+        ('000000000000000', 'P', 15),     # petabytes (10^15)
+        ('000000000000', 'T', 12),        # trillions (10^12)
+        ('000000000', 'G', 9),            # billions (10^9)  
+        ('000000', 'M', 6),               # millions (10^6)
+        ('000', 'K', 3)                   # thousands (10^3)
+    ]
+    
+    result = num_str
+    for suffix_zeros, suffix_letter, zero_count in replacements:
+        if num_str.endswith(suffix_zeros) and len(num_str) > zero_count:
+            potential_result = num_str[:-zero_count] + suffix_letter
+            numeric_part = potential_result[:-1]
+            
+            # Only apply this replacement if it results in <= 5 digits
+            if len(numeric_part) <= 5:
+                result = potential_result
+                break
+    
+    # Ensure exactly 5 digits by padding with zeros if needed
+    if result[-1].isdigit():
+        # No suffix, pad the whole number to 5 digits
+        return f"{result:>05s}"
+    else:
+        # Has suffix, pad the numeric part to exactly 5 digits
+        suffix = result[-1]
+        numeric_part = result[:-1]
+        return f"{numeric_part:>05s}{suffix}"
+
+
+def parse_bp_human_readable(bp_str):
+    """
+    Parse human-readable base pair format back to integer.
+    Supports both new format (e.g., "1868K", "100M", "1898") 
+    and legacy 8-digit format (e.g., "00001868K") for backwards compatibility.
+    Uses humanfriendly for robust parsing.
+    
+    Args:
+        bp_str: String like "1868K", "100M", "1898", or "00001868K"
+        
+    Returns:
+        Base pair count as integer
+    """
+    bp_str = bp_str.strip()
+    
+    # Check if this is the old 8-digit format (8 digits followed by K)
+    if len(bp_str) == 9 and bp_str[:-1].isdigit() and bp_str.endswith('K'):
+        return int(bp_str[:-1]) * 1000
+    
+    # Use humanfriendly to parse both plain numbers and sizes with suffixes
+    try:
+        return int(humanfriendly.parse_size(bp_str))
+    except Exception as e:
+        raise ValueError(f"Invalid base pair format: {bp_str}") from e
+
+
 def get_metadata_from_img_filename(img_path):
     """
     Extract metadata from a varKoder image filename.
+    Supports both old 8-digit format and new human-readable format.
     
     Args:
         img_path: Path to the image file
@@ -136,8 +237,9 @@ def get_metadata_from_img_filename(img_path):
     except ValueError:  # backwards compatible with varKoder v0.X
         n_bp, img_kmer_size = split2.split(BP_KMER_SEP)
         img_kmer_mapping = 'varKode'
-        
-    n_bp = int(n_bp[:-1])*1000
+    
+    # Use the new parsing function that handles both old and new formats
+    n_bp = parse_bp_human_readable(n_bp)
     img_kmer_size = int(img_kmer_size[1:])
 
     return {
@@ -292,12 +394,12 @@ def is_fasta_file(filename):
     filename_str = str(filename).lower()
     fasta_extensions = ['.fasta', '.fa', '.fas', '.fna']
     
-    # Check if any fasta extension is present (accounting for possible .gz)
+    # Check if filename ends with any fasta extension (accounting for possible .gz)
     for ext in fasta_extensions:
-        if ext in filename_str:
+        if filename_str.endswith(ext):
             return True
         # Also check for compressed versions
-        if (ext + '.gz') in filename_str:
+        if filename_str.endswith(ext + '.gz'):
             return True
     return False
 
@@ -329,7 +431,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
                             raise Exception(
                                 f"Duplicate sample name '{sample.name}' detected. Each sample must have a unique name across all taxa."
                             )
-                            seen_samples.add(sample.name)
+                        seen_samples.add(sample.name)
                         for fl in sample.iterdir():
                             # Check if file is a sequence file (fastq or fasta)
                             if is_fastq_file(fl.name) or is_fasta_file(fl.name):
