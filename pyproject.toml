@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varKoder"
-version = "1.4.0"
+version = "1.5.0dev"
 description = "A tool that uses variation in K-mer frequencies as DNA barcodes."
 authors = [
     {name = "Bruno de Medeiros", email = "bdemedeiros@fieldmuseum.org"},

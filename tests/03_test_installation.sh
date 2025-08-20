@@ -222,11 +222,11 @@ echo "${color}Testing image generation with FASTQ files...$reset"
 run_command "IM" "$prefix $IM_CMD -n $NCORES"
 
 # Test with FASTA files (new test with 1 Kbp minimum)
-if [ -d "$TESTDIR_FASTA" ]; then
+if [ -f "${TESTDIR_FASTA}_input.csv" ]; then
     echo "${color}Testing image generation with FASTA files (1 Kbp minimum)...$reset"
     run_command "IM_FASTA" "$prefix $IM_FASTA_CMD -n $NCORES"
 else
-    echo "${color}Warning: $TESTDIR_FASTA directory not found. Skipping FASTA image test.$reset"
+    echo "${color}Warning: ${TESTDIR_FASTA}_input.csv not found. Skipping FASTA image test.$reset"
 fi
 run_command "C" "$prefix $C_CMD -n $NCORES"
 run_command "T1" "$prefix $T1_CMD -n $NCORES"
@@ -265,6 +265,14 @@ else
     echo "${color}Warning: Required directory for Q2 command not found. Skipping.$reset"
 fi
 
+# Test query command with FASTA images using default model
+if [ -d "images_fasta" ] && [ -n "$(find images_fasta -name '*.png' 2>/dev/null)" ]; then
+    echo "${color}Testing query with FASTA images using default model...$reset"
+    run_command "Q_FASTA" "$prefix $Q_FASTA_CMD -n $NCORES"
+else
+    echo "${color}Warning: FASTA images directory not found or empty. Skipping FASTA query test.$reset"
+fi
+
 # Print summary
 echo -e "\n${color}===== TEST SUMMARY =====$reset"
 echo -n "${color}Mode: "
@@ -298,6 +306,7 @@ else
             "T2") echo "${color} (Training from scratch, $pretrain_epochs epochs)$reset" ;;
             "Q1") echo "${color} (Query from FASTQ)$reset" ;;
             "Q2") echo "${color} (Query from images)$reset" ;;
+            "Q_FASTA") echo "${color} (Query from FASTA images with default model)$reset" ;;
             *) echo "" ;;
         esac
     done
@@ -305,7 +314,7 @@ fi
 
 echo -e "\n${color}Commands that failed:$reset"
 failed=false
-for cmd in IM IM_FASTA C T1 T2 Q1 Q2; do
+for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
     if [[ " ${successful_commands[*]} " != *" $cmd "* ]]; then
         # Get the exit code using the appropriate array type
         exit_code=""
@@ -338,7 +347,7 @@ if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
     echo "${color}-------------------------------------------------------------------$reset"
     
     # Loop through commands with the appropriate array method
-    for cmd in IM IM_FASTA C T1 T2 Q1 Q2; do
+    for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
         wall_time=""
         cpu_time=""
         memory=""
@@ -369,4 +378,4 @@ fi
 
 echo -e "\n${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
-echo "${color}rm -rf varKoder.sif Bembidion Bembidion_fasta fastq_query images images_fasta images_varkode inferences* trained* stats.csv$reset"
+echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images images_fasta images_varkode inferences* trained* stats.csv Bembidion$reset"

@@ -47,7 +47,10 @@ def setup_parser():
         add_help=True,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    subparsers = main_parser.add_subparsers(required=True, dest="command")
+    # Add version argument to main parser
+    main_parser.add_argument("--version", action='version', version=f'varKoder {VERSION}', help="show varKoder version and exit")
+    
+    subparsers = main_parser.add_subparsers(required=False, dest="command")
 
     parent_parser = argparse.ArgumentParser(
         add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -491,6 +494,11 @@ def main():
     # Parse arguments
     parser = setup_parser()
     args = parser.parse_args()
+    
+    # If no command is provided, show help and exit
+    if args.command is None:
+        parser.print_help()
+        sys.exit(0)
     
     # Parse max_bp (for compatibility with previous versions of the code)
     if hasattr(args, 'max_bp'):

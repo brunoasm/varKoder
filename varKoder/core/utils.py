@@ -463,7 +463,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
 
     elif is_query:
 
-        eprint("Analyzing input directory {inpath}")
+        eprint(f"Analyzing input directory {inpath}")
 
         files_records = list()
         # Start by checking if input directory contains directories
@@ -508,7 +508,7 @@ def process_input(inpath, is_query=False, no_pairs=False):
 
     # If it isn't a folder, read csv table input
     else:
-        eprint("Analyzing input table {inpath}")
+        eprint(f"Analyzing input table {inpath}")
         files_table = pd.read_csv(inpath)
         for colname in ["labels", "sample", "files"]:
             if colname not in files_table.columns:

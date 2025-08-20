@@ -31,7 +31,8 @@ else
 fi
 
 IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
-IM_FASTA_CMD="image --seed 1 -k 7 -c 1 -m 1K -M 20M -o ./images_fasta $TESTDIR_FASTA"
+IM_FASTA_CMD="image --seed 1 -k 7 -c 1 -m 1K -M 20M -o ./images_fasta ${TESTDIR_FASTA}_input.csv"
+Q_FASTA_CMD="query --seed 6 --images --threshold 0.5 --keep-images ./images_fasta ./inferences_fasta"
 C_CMD="convert --overwrite -k 7 varKode ./images ./images_varkode"
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
@@ -77,7 +78,7 @@ set_cuda_visible_devices() {
     fi
 }
 
-# Function to create FASTA test directory with limited sequences
+# Function to create FASTA test directory with limited sequences and input table
 create_fasta_test_data() {
     echo "${color}Creating ${TESTDIR_FASTA} directory for FASTA testing...$reset"
     if [ -d "$TESTDIR" ]; then
@@ -106,7 +107,10 @@ create_fasta_test_data() {
             mkdir -p "$fasta_dir"
         done
         
-        # Convert FASTQ files to FASTA with 10 sequences each
+        # Create the input CSV file header
+        echo "labels,sample,files" > "${TESTDIR_FASTA}_input.csv"
+        
+        # Convert FASTQ files to FASTA with 10 sequences each and populate CSV
         find "$TESTDIR" -name "*.fastq.gz" | while read fastq_file; do
             # Create corresponding FASTA file path
             fasta_file="${fastq_file/$TESTDIR/$TESTDIR_FASTA}"
@@ -115,9 +119,18 @@ create_fasta_test_data() {
             echo "Converting $fastq_file to ${fasta_file%.gz} (10 sequences)"
             convert_fastq_to_fasta "$fastq_file" "${fasta_file%.gz}"
             gzip "${fasta_file%.gz}"
+            
+            # Extract sample and label information from the path
+            # Path structure: Bembidion/Species_name/Sample_name/file.fastq.gz
+            sample_name=$(basename $(dirname "$fastq_file"))
+            species_name=$(basename $(dirname $(dirname "$fastq_file")))
+            
+            # Add entry to CSV file
+            echo "${species_name},${sample_name},${fasta_file}" >> "${TESTDIR_FASTA}_input.csv"
         done
         
         echo "${color}${TESTDIR_FASTA} directory created with FASTA files (10 sequences each)$reset"
+        echo "${color}Input table created: ${TESTDIR_FASTA}_input.csv$reset"
     else
         echo "${color}Warning: $TESTDIR directory not found. Skipping FASTA creation.$reset"
     fi
