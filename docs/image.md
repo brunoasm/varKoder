@@ -1,10 +1,10 @@
 # varKoder image
 
-This command processes raw sequencing reads and produces *varKodes*, which are images representing the variation in K-mer frequencies for a given k-mer length.
+This command processes raw sequencing reads (FASTQ) or assembled sequences (FASTA) and produces *varKodes*, which are images representing the variation in K-mer frequencies for a given k-mer length.
 
 Processing includes the following steps:
 
- - Raw read cleaning: adapter removal, overlapping pair merging, exact duplicate removal, poly-G tail trimming.
+ - Raw read cleaning: adapter removal, overlapping pair merging, exact duplicate removal, poly-G tail trimming. (Note: For FASTA input, no cleaning is performed to preserve sequences as-is.)
  - Raw read subsampling: random subsampling of raw read files into files with fewer number of reads. This is useful in machine learning training as a data augmentation technique to make sure inferences are robust to random variations in sequencing and amount of input data.
  - Kmer counting: count of kmers from subsampled files.
  - VarKode generation: generation of images from kmer counts, our *varKodes* that represent the genome composition of a taxon.
@@ -20,9 +20,11 @@ Only the table-based format supports multiple labels per sample (for example, yo
 
 ### folder input format
 
-In this format, each taxonomic entity is represented by a folder, and within that folder there are subfolders for each sample. The latter contains all read files associated with a sample.
+In this format, each taxonomic entity is represented by a folder, and within that folder there are subfolders for each sample. The latter contains all sequence files associated with a sample.
 
 Higher-level folder names must correspond to the desired names, and subfolder names must correspond to sample IDs. Sequence file names have no constraint, other than explicitly marking if they are read 1 or 2 in case of paired reads. Any of the default naming conventions for paired reads should work, as long as the root name of paired files is the same.
+
+Supported file formats include FASTQ (.fq, .fastq, .fq.gz, .fastq.gz) and FASTA (.fa, .fasta, .fas, .fna, .fa.gz, .fasta.gz, .fas.gz, .fna.gz). Note that FASTA and FASTQ files cannot be mixed within the same sample.
 
 Species and sample names cannot contain the following characters: `@` and `+`.
 
@@ -67,6 +69,8 @@ In the above example we show some possibilities for formatting the input. Ideall
 - Both compressed and uncompressed `fastq` files are accepted. Compressed files must end with the extension `.gz`. 
 - Read pairs must have corresponding root file names and contain an indication of whether they are read 1 or 2. All examples above work for that end.
 - Read files without `.1.`, `_1_`, `R1`, etc. will be considered unpaired.
+
+The same input directory structure can be used for fasta files, but fasta and fastq files cannot be mixed.
 
 ### table input format
 

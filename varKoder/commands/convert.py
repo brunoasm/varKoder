@@ -24,7 +24,8 @@ from varKoder.core.config import (
 )
 from varKoder.core.utils import (
     eprint, get_kmer_mapping, get_metadata_from_img_filename,
-    get_varKoder_labels, get_varKoder_qual, get_varKoder_freqsd
+    get_varKoder_labels, get_varKoder_qual, get_varKoder_freqsd,
+    format_bp_human_readable
 )
 
 from PIL import Image
@@ -173,7 +174,7 @@ class ConvertCommand:
             if img_metadata['sample'] and img_metadata['bp']:
                 fname = (
                          f"{img_metadata['sample']}{SAMPLE_BP_SEP}"
-                         f"{int(img_metadata['bp'] / 1000):08d}K{BP_KMER_SEP}"
+                         f"{format_bp_human_readable(int(img_metadata['bp']))}{BP_KMER_SEP}"
                          f"{self.args.output_mapping}{BP_KMER_SEP}"
                          f"k{img_metadata['img_kmer_size']}.png"
                         )

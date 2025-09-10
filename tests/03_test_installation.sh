@@ -213,8 +213,21 @@ echo "Press Enter to use recommended default [$DEFAULT_CORES] or type a number:$
 read -p "Enter number of cores [$DEFAULT_CORES]: " NCORES
 NCORES=${NCORES:-$DEFAULT_CORES}
 
+# Create FASTA test data before running image tests
+create_fasta_test_data
+
 # Run commands and track success/failure
+# Test with FASTQ files (original test)
+echo "${color}Testing image generation with FASTQ files...$reset"
 run_command "IM" "$prefix $IM_CMD -n $NCORES"
+
+# Test with FASTA files (new test with 1 Kbp minimum)
+if [ -f "${TESTDIR_FASTA}_input.csv" ]; then
+    echo "${color}Testing image generation with FASTA files (1 Kbp minimum)...$reset"
+    run_command "IM_FASTA" "$prefix $IM_FASTA_CMD -n $NCORES"
+else
+    echo "${color}Warning: ${TESTDIR_FASTA}_input.csv not found. Skipping FASTA image test.$reset"
+fi
 run_command "C" "$prefix $C_CMD -n $NCORES"
 run_command "T1" "$prefix $T1_CMD -n $NCORES"
 run_command "T2" "$prefix $T2_CMD -n $NCORES"
@@ -229,8 +242,10 @@ if [ -f "trained_pretrained/input_data.csv" ]; then
             # Find the source directory
             source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
             if [ -n "$source_dir" ]; then
+                # Remove ./ prefix from source_dir if present for clean symlink paths
+                clean_source_dir="${source_dir#./}"
                 # Create relative symlink in fastq_query directory
-                (cd fastq_query && ln -sf "../$source_dir" "$sample")
+                (cd fastq_query && ln -sf "../$clean_source_dir" "$sample")
             fi
         fi
     done < trained_pretrained/input_data.csv
@@ -248,6 +263,14 @@ if [ -d "inferences_Bembidion/query_images" ]; then
     run_command "Q2" "$prefix $Q2_CMD -n $NCORES"
 else
     echo "${color}Warning: Required directory for Q2 command not found. Skipping.$reset"
+fi
+
+# Test query command with FASTA images using default model
+if [ -d "images_fasta" ] && [ -n "$(find images_fasta -name '*.png' 2>/dev/null)" ]; then
+    echo "${color}Testing query with FASTA images using default model...$reset"
+    run_command "Q_FASTA" "$prefix $Q_FASTA_CMD -n $NCORES"
+else
+    echo "${color}Warning: FASTA images directory not found or empty. Skipping FASTA query test.$reset"
 fi
 
 # Print summary
@@ -276,12 +299,14 @@ else
         echo -n "${color}- $cmd$reset"
         # Display command-specific details
         case $cmd in
-            "IM") echo "${color} (Image generation)$reset" ;;
+            "IM") echo "${color} (Image generation from FASTQ)$reset" ;;
+            "IM_FASTA") echo "${color} (Image generation from FASTA, 1 Kbp min)$reset" ;;
             "C") echo "${color} (Image conversion)$reset" ;;
             "T1") echo "${color} (Training with pre-trained weights, $finetune_epochs epochs)$reset" ;;
             "T2") echo "${color} (Training from scratch, $pretrain_epochs epochs)$reset" ;;
             "Q1") echo "${color} (Query from FASTQ)$reset" ;;
             "Q2") echo "${color} (Query from images)$reset" ;;
+            "Q_FASTA") echo "${color} (Query from FASTA images with default model)$reset" ;;
             *) echo "" ;;
         esac
     done
@@ -289,7 +314,7 @@ fi
 
 echo -e "\n${color}Commands that failed:$reset"
 failed=false
-for cmd in IM C T1 T2 Q1 Q2; do
+for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
     if [[ " ${successful_commands[*]} " != *" $cmd "* ]]; then
         # Get the exit code using the appropriate array type
         exit_code=""
@@ -322,7 +347,7 @@ if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
     echo "${color}-------------------------------------------------------------------$reset"
     
     # Loop through commands with the appropriate array method
-    for cmd in IM C T1 T2 Q1 Q2; do
+    for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
         wall_time=""
         cpu_time=""
         memory=""
@@ -353,4 +378,4 @@ fi
 
 echo -e "\n${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
-echo "${color}rm -rf varKoder.sif Bembidion fastq_query images images_varkode inferences* trained* stats.csv$reset"
+echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images images_fasta images_varkode inferences* trained* stats.csv Bembidion$reset"
