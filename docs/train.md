@@ -54,7 +54,8 @@ There are two modes of training:
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
 | -p P_LIGHTING, --p-lighting P_LIGHTING | probability of a lighting transform. Set to 0 for no lighting transforms. See https://docs.fast.ai/vision.augment.html#aug_transforms (default: 0.75) |
 | -l MAX_LIGHTING, --max-lighting MAX_LIGHTING | maximum scale of lighting transform. See https://docs. fast.ai/vision.augment.html#aug_transforms (default: 0.25) |
-| -g, --no-logging  | hide fastai progress bar and logging during training. These are shown by default. | 
+| -g, --no-logging  | hide fastai progress bar and logging during training. These are shown by default. |
+| -E, --random-erasing | apply RandomErasing augmentation. Can be used in combination with MixUp/CutMix. See https://docs.fast.ai/vision.augment.html#randomerasing (default: False) | 
 
 ## Model architecture
 
@@ -126,6 +127,7 @@ All optional arguments are set to defaults that seemed to work well in our tests
  5. For multi-label models, we use an asymmetric loss function that enables to weight differently positive and negative labels. This may have a major impact when a dataset is very large and there are many negative labels (for example, 99.9% of the varKodes do not have a label for a particular species). We found that a value o `4` worked in most cases, but this might be dataset-dependent and worth testing. This can be set with option `-g`.
  6. There is a wide array of possible model architectures, and new models come up all the time. You can use this resource to explore potential models: https://rwightman.github.io/pytorch-image-models/results/. The model we chose (vision transformer) was the most accurate among those that we tested that could be trained in a reasonable amount of time with the hardware we had in hand (M1 macs, NVIDIA A100 and A5000 GPUs). Generally, larger models will be more accurate but need more compute resources (GPU memory and processing time).
  7. In the paper, we found that a combination of CutMix with random lighting transforms (brightness and contrast) improves training and yields more accurate models for single-label models. MixUp had a similar performance to CutMix, and it seemed to work much better for multi-label classification. For this reason, MixUp and lighting transforms are turned on by default, but you can turn them off or even change the probability that a lighting transform is applied to a *varKode* during training. We also tested Label Smoothing, which was not as helpful. For this reason, it is turned off by default but can be turned on if desired.
+ 8. RandomErasing is an additional augmentation technique that can be used alongside MixUp/CutMix and lighting transforms. It randomly selects rectangular regions in an image and replaces them with noise, which helps prevent overfitting by simulating occlusion scenarios. Unlike MixUp and CutMix which are callback-based, RandomErasing is applied as a batch transform and can be combined with the other augmentation methods. Use `--random-erasing` or `-E` to enable this augmentation.
 
 During training, fastai outputs a log with some information (unless you use the `-g` option). This is a table showing, for each training epoch, the loss in images in the training set (`train_loss`), the loss in images in the validation set (`valid_loss`), the accuracy in images in the validation set. In the case of multi-label models, accuracy is measured as [area under ROC curve](https://en.wikipedia.org/wiki/Partial_Area_Under_the_ROC_Curve) and also [precision and recall](https://en.wikipedia.org/wiki/Precision_and_recall) using the provided confidence threshold for predictions and ignoring DNA quality labels. In the case of single-label models, we report `accuracy`, which is the fraction of varKodes for which the correct label is predicted. In each epoch, the model is presented and updated with all images in the training set, split in a number of batches according to the chosen batch size. The loss is a number calculated with a loss function, which basically shows how well a neural network can predict the labels of images it is presented with. It is expected that the train loss will be small, since these are the very same images that are used in training, and what you want is to see a small validation loss and large validation accuracy, since this shows how well your model can generalize to unseen data.
 
@@ -205,3 +207,19 @@ varKoder train path/to/images cpu_model -C -B 4 -b 16
 ```
 
 This forces training on CPU and ensures the batch size stays between 4 and 16, which can be useful when working with limited memory or small datasets.
+
+### Example 7: Training with RandomErasing Augmentation
+
+Train a model with RandomErasing augmentation combined with existing augmentation methods:
+
+```bash
+varKoder train path/to/images random_erasing_model --random-erasing --mix-augmentation MixUp --p-lighting 0.75
+```
+
+Using short versions:
+
+```bash
+varKoder train path/to/images random_erasing_model -E -X MixUp -p 0.75
+```
+
+This trains a model with RandomErasing augmentation enabled alongside MixUp and lighting transforms, providing comprehensive data augmentation that can help improve model generalization and prevent overfitting.

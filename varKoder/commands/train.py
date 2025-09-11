@@ -25,6 +25,7 @@ from fastai.vision.all import (
     MultiCategoryBlock, DataBlock, ColReader, ColSplitter,
     Learner, cnn_learner, accuracy, error_rate, Resize, ResizeMethod
 )
+from fastai.vision.augment import RandomErasing
 from fastai.callback.mixup import MixUp, CutMix
 from fastai.torch_core import set_seed, default_device, defaults
 from fastai.learner import load_learner
@@ -175,7 +176,8 @@ def train_nn(
     verbose=True,
     num_workers=0,
     no_metrics=False,
-    force_cpu=False
+    force_cpu=False,
+    random_erasing=False
 ):
     """
     Train a neural network model on varKode images.
@@ -203,6 +205,7 @@ def train_nn(
         num_workers: Number of data loader workers
         no_metrics: Whether to skip metrics computation
         force_cpu: Whether to force CPU usage instead of GPU
+        random_erasing: Whether to apply RandomErasing augmentation
         
     Returns:
         Trained model
@@ -262,6 +265,10 @@ def train_nn(
         p_affine=0,
         p_lighting=p_lighting,
     )
+    
+    # Add RandomErasing if requested
+    if random_erasing:
+        transforms.append(RandomErasing())
 
     # Set DataBlock
     if is_multilabel:
@@ -610,6 +617,7 @@ class TrainCommand:
             num_workers=self.args.num_workers,
             no_metrics=self.args.no_metrics,
             force_cpu=self.args.cpu,
+            random_erasing=self.args.random_erasing,
             **extra_params
         )
         

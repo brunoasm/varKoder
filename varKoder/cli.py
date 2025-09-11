@@ -324,6 +324,13 @@ def setup_parser():
         action="store_true",
         default=False,
     )
+    parser_train.add_argument(
+        "-E",
+        "--random-erasing",
+        help="apply RandomErasing augmentation. Can be used in combination with MixUp/CutMix. See https://docs.fast.ai/vision.augment.html#randomerasing",
+        action="store_true",
+        default=False,
+    )
 
     # Create parser for query command
     parser_query = subparsers.add_parser(
