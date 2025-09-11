@@ -52,7 +52,6 @@ To install dependencies and varKoder as a new conda environment named `varKoder`
 ```bash
 git clone https://github.com/brunoasm/varKoder
 cd varKoder
-git checkout dev
 conda env create --file conda_environments/linux.yml
 conda activate varKoder
 pip install .
@@ -67,7 +66,6 @@ We tested this program using Macs with ARM processors (M1,M2,etc). Not all depen
 ```bash
 git clone https://github.com/brunoasm/varKoder
 cd varKoder
-git checkout dev
 conda env create --file conda_environments/mac.yml
 conda activate varKoder
 pip install .
