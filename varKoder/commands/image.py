@@ -528,6 +528,14 @@ def clean_reads(
 
 
 
+    # fastp deadlocks intermittently on high-core-count hosts: its writer thread parks in
+    # futex_wait forever while streaming to stdout. The trigger is glibc spawning many malloc
+    # arenas (up to 8x the number of cores), whose locks race with fastp's own threads. Forcing
+    # a single arena serializes allocation and removes the race (MALLOC_ARENA_MAX=2 still hangs
+    # ~1 in 8 runs; =1 does not). fastp runs single-threaded here, so the lost concurrency is
+    # immaterial.
+    fastp_env = {**os.environ, "MALLOC_ARENA_MAX": "1"}
+
     # now we can run fastp to remove adapters, duplicates and merge paired reads
     if (Path(work_dir) / (basename + "_R1.fq")).is_file():
         # let's build the call to the subprocess. This is the common part
@@ -562,6 +570,7 @@ def clean_reads(
                     check=True,
                     stderr=subprocess.PIPE,
                     stdout=outf,
+                    env=fastp_env,
                 )
                 if verbose:
                     eprint(' '.join(command))
@@ -611,7 +620,8 @@ def clean_reads(
 
         try:
             p = subprocess.run(
-            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True,
+            env=fastp_env,
             )
 
             if verbose:

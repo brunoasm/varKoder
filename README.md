@@ -2,7 +2,7 @@
 
 A tool that uses **var**iation in **K**-mer frequecies as DNA barc**ode**s.
 
-This python program can generate varKodes from raw sequencing reads (FASTQ format) or assembled sequences (FASTA format), which are images encoding the relative frequencies of different k-mers in a genome. For FASTA input, no sequence cleaning with fastp will be performed, preserving the sequences as-is. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
+This python program can generate varKodes from raw sequencing reads (FASTQ format) or assembled sequences (FASTA format), which are images encoding the relative frequencies of different k-mers in a genome. It can also train a convolutional neural network to recognize species based on these images, and query new samples using a trained model.
 
 For more information and citation see the following publications:
 
@@ -54,7 +54,7 @@ git clone https://github.com/brunoasm/varKoder
 cd varKoder
 conda env create --file conda_environments/linux.yml
 conda activate varKoder
-pip install .
+python -m pip install .
 ```
 
 If this takes too long, you can try using [mamba](https://github.com/mamba-org/mamba) instead, which should be much faster than conda. Follow instructions to install mamba and use the same command as above, but replacing `conda` with `mamba`.
@@ -68,7 +68,7 @@ git clone https://github.com/brunoasm/varKoder
 cd varKoder
 conda env create --file conda_environments/mac.yml
 conda activate varKoder
-pip install .
+python -m pip install .
 ```
 #### dsk
 

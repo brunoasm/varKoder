@@ -9,7 +9,7 @@ RUN conda update -n base -c conda-forge conda && \
     # Install only bioinformatics tools and specialized packages via conda
     conda install -y \
         bioconda::bbmap \
-        bioconda::fastp=0.24 \
+        bioconda::fastp=1.0 \
         bioconda::sra-tools>=3 \
         conda-forge::pigz \
         pip && \
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir \
     "huggingface_hub~=0.29.0" \
     toml \
     "accelerate~=1.5.0" \
-    "timm~=1.0.0" \
+    timm==1.0.15 \
     pyarrow>=14.0.1 \
     pandas \
     humanfriendly \
