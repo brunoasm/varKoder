@@ -9,6 +9,7 @@ on varKode images for DNA barcode classification.
 """
 
 import os
+import json
 import warnings
 import torch
 import pandas as pd
@@ -154,6 +155,93 @@ class SkipValidationCallback(Callback):
     def before_validate(self):
         raise CancelValidException
 
+class CheckpointCallback(Callback):
+    """Save model weights and training progress after every epoch.
+
+    Writes ``last.pth`` (model weights) and ``progress.json`` (which phase and how many
+    epochs of each phase have completed) into ``checkpoint_dir`` so an interrupted run can
+    be resumed. Runs late (``order=99``) so metrics are recorded before the snapshot.
+    """
+    order = 99
+
+    def __init__(self, checkpoint_dir, architecture, phase, frozen_base,
+                 unfrozen_base, freeze_epochs):
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.architecture = architecture
+        self.phase = phase
+        self.frozen_base = frozen_base
+        self.unfrozen_base = unfrozen_base
+        self.freeze_epochs = freeze_epochs
+
+    def after_epoch(self):
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        done_this = self.epoch + 1  # epochs completed within the current fit call
+
+        if self.phase == "frozen":
+            frozen_done = self.frozen_base + done_this
+            unfrozen_done = self.unfrozen_base
+        else:
+            frozen_done = self.freeze_epochs
+            unfrozen_done = self.unfrozen_base + done_this
+
+        # Save the underlying model weights (unwrap DataParallel if present)
+        model = self.learn.model
+        model = model.module if hasattr(model, "module") else model
+        tmp_path = self.checkpoint_dir / "last.pth.tmp"
+        torch.save(model.state_dict(), tmp_path)
+        tmp_path.replace(self.checkpoint_dir / "last.pth")
+
+        progress = {
+            "architecture": self.architecture,
+            "phase": self.phase,
+            "frozen_done": frozen_done,
+            "unfrozen_done": unfrozen_done,
+        }
+        with open(self.checkpoint_dir / "progress.json", "w") as f:
+            json.dump(progress, f)
+
+def run_fine_tune(learn, epochs, freeze_epochs, base_lr, checkpoint_dir=None,
+                  checkpoint_architecture=None, resume_progress=None,
+                  lr_mult=100, pct_start=0.3, div=5.0):
+    """Replicate fastai's ``Learner.fine_tune`` with per-epoch checkpointing and resume.
+
+    Mirrors the two-phase schedule of ``fine_tune`` (frozen ``fit_one_cycle`` followed by an
+    unfrozen ``fit_one_cycle`` with discriminative learning rates). When ``resume_progress``
+    is supplied, epochs already completed in each phase are skipped. fastai has no mid-cycle
+    resume, so the one-cycle schedule restarts for the remaining epochs of an interrupted
+    phase.
+    """
+    frozen_done = 0
+    unfrozen_done = 0
+    phase = "frozen"
+    if resume_progress:
+        frozen_done = resume_progress.get("frozen_done", 0)
+        unfrozen_done = resume_progress.get("unfrozen_done", 0)
+        phase = resume_progress.get("phase", "frozen")
+
+    # Frozen phase
+    remaining_frozen = freeze_epochs - frozen_done
+    if phase == "frozen" and remaining_frozen > 0:
+        learn.freeze()
+        cbs = None
+        if checkpoint_dir is not None:
+            cbs = CheckpointCallback(checkpoint_dir, checkpoint_architecture, "frozen",
+                                     frozen_done, unfrozen_done, freeze_epochs)
+        learn.fit_one_cycle(remaining_frozen, slice(base_lr), pct_start=0.99, cbs=cbs)
+
+    # Unfrozen phase
+    unfrozen_lr = base_lr / 2
+    remaining_unfrozen = epochs - unfrozen_done
+    if remaining_unfrozen > 0:
+        learn.unfreeze()
+        cbs = None
+        if checkpoint_dir is not None:
+            cbs = CheckpointCallback(checkpoint_dir, checkpoint_architecture, "unfrozen",
+                                     freeze_epochs, unfrozen_done, freeze_epochs)
+        learn.fit_one_cycle(remaining_unfrozen,
+                            slice(unfrozen_lr / lr_mult, unfrozen_lr),
+                            pct_start=pct_start, div=div, cbs=cbs)
+
 def train_nn(
     df,
     architecture,
@@ -177,7 +265,9 @@ def train_nn(
     num_workers=0,
     no_metrics=False,
     force_cpu=False,
-    random_erasing=False
+    random_erasing=False,
+    checkpoint_dir=None,
+    resume_progress=None
 ):
     """
     Train a neural network model on varKode images.
@@ -361,12 +451,29 @@ def train_nn(
     if is_parallel:
         learn.to_parallel()
 
+    # Recover the effective base timm architecture from the built model so that a resumed
+    # run can rebuild it offline (a plain timm arch name builds without contacting the Hub,
+    # whereas an "hf-hub:" name would trigger a config download).
+    checkpoint_architecture = architecture
+    try:
+        checkpoint_architecture = learn.model[0].model.default_cfg["architecture"]
+    except Exception:
+        pass
+
     # Train the model with or without verbose output
     training_context = learn.no_bar() if not verbose else contextlib.nullcontext()
     logging_context = learn.no_logging() if not verbose else contextlib.nullcontext()
 
     with training_context, logging_context:
-        learn.fine_tune(epochs=epochs, freeze_epochs=freeze_epochs, base_lr=base_lr)
+        run_fine_tune(
+            learn,
+            epochs=epochs,
+            freeze_epochs=freeze_epochs,
+            base_lr=base_lr,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_architecture=checkpoint_architecture,
+            resume_progress=resume_progress,
+        )
 
     # Detach parallelization if it was used
     if is_parallel:
@@ -392,9 +499,20 @@ class TrainCommand:
             args: Parsed command line arguments
         """
         self.args = args
-        
-        # Check if output directory exists
-        if not args.overwrite:
+
+        self.checkpoint_dir = Path(args.outdir) / "checkpoints"
+        self.resuming = False
+
+        # If resuming, the output directory must already contain a checkpoint
+        if getattr(args, "resume", False):
+            progress_file = self.checkpoint_dir / "progress.json"
+            if not progress_file.exists():
+                raise Exception(
+                    f"--resume was requested but no checkpoint was found at {progress_file}."
+                )
+            self.resuming = True
+        # Otherwise, do not overwrite an existing output directory unless asked
+        elif not args.overwrite:
             if Path(args.outdir).exists():
                 raise Exception(
                     "Output directory exists, use --overwrite if you want to overwrite it."
@@ -518,54 +636,88 @@ class TrainCommand:
         Run the train command.
         """
         eprint("Starting train command.")
-        
-        # 1. Collect image files
-        image_files = self.collect_images()
-        
-        # 2. Prepare validation split
-        image_files = self.prepare_validation_split(image_files)
-        
-        # 3. Check label types
-        self.check_label_types(image_files)
-        
-        # 4. Set up model and training parameters
-        eprint("Setting up neural network model for training.")
-        
-        callback = {"MixUp": MixUp, "CutMix": CutMix, "None": None}[
-            self.args.mix_augmentation
-        ]
-        
-        # 5. Check for pretrained model
-        model_state_dict = None
-        
+
+        # Determine whether to load/train on CPU or GPU
         if self.args.cpu:
             eprint("CPU forced by user. Using CPU for processing.")
             load_on_cpu = True
-        elif torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
+        elif torch.backends.mps.is_built() or (torch.backends.cuda.is_built()
                                                and torch.cuda.device_count()):
             eprint("GPU available. Will try to use GPU for processing.")
             load_on_cpu = False
         else:
             load_on_cpu = True
             eprint("GPU not available. Using CPU for processing.")
-        
-        if self.args.pretrained_model:
-            eprint("Loading pretrained model from file:", str(self.args.pretrained_model))
-            past_learn = load_learner(self.args.pretrained_model, cpu=load_on_cpu)
-            model_state_dict = past_learn.model.state_dict()
-            pretrained = False
-            del past_learn
-        
-        elif not self.args.random_weights and self.args.architecture not in CUSTOM_ARCHS:
-            pretrained = True
-            eprint("Starting model with pretrained weights from timm library.")
-            eprint("Model architecture:", self.args.architecture)
-        
+
+        model_state_dict = None
+        resume_progress = None
+        pretrained = False
+
+        if self.resuming:
+            # Resume from checkpoint: reuse the exact split and architecture recorded at the
+            # start of the interrupted run so the rebuilt model matches the saved weights.
+            resume_progress = json.loads((self.checkpoint_dir / "progress.json").read_text())
+            train_architecture = resume_progress["architecture"]
+            eprint(
+                "Resuming training from checkpoint.",
+                "Frozen epochs completed:", resume_progress.get("frozen_done", 0),
+                "- Unfrozen epochs completed:", resume_progress.get("unfrozen_done", 0),
+            )
+            image_files = pd.read_csv(self.checkpoint_dir / "input_data.csv")
+            model_state_dict = torch.load(
+                self.checkpoint_dir / "last.pth", map_location="cpu"
+            )
         else:
-            pretrained = False
-            eprint("Starting model with random weights.")
-            eprint("Model architecture:", self.args.architecture)
-        
+            # 1. Collect image files
+            image_files = self.collect_images()
+
+            # 2. Prepare validation split
+            image_files = self.prepare_validation_split(image_files)
+
+            # 3. Check label types
+            self.check_label_types(image_files)
+
+            train_architecture = self.args.architecture
+
+            if self.args.pretrained_model:
+                eprint("Loading pretrained model from file:", str(self.args.pretrained_model))
+                past_learn = load_learner(self.args.pretrained_model, cpu=load_on_cpu)
+                model_state_dict = past_learn.model.state_dict()
+                # Recover the base timm architecture from the loaded model so training can
+                # rebuild it offline (the "hf-hub:" default would otherwise fetch its config
+                # from Hugging Face even with pretrained=False).
+                try:
+                    train_architecture = past_learn.model[0].model.default_cfg["architecture"]
+                except Exception:
+                    pass  # keep --architecture (e.g. custom archs) as a fallback
+                pretrained = False
+                del past_learn
+
+            elif not self.args.random_weights and self.args.architecture not in CUSTOM_ARCHS:
+                pretrained = True
+                eprint("Starting model with pretrained weights from timm library.")
+                eprint("Model architecture:", self.args.architecture)
+
+            else:
+                pretrained = False
+                eprint("Starting model with random weights.")
+                eprint("Model architecture:", self.args.architecture)
+
+            # Persist the split before training so an interrupted run can be resumed with
+            # the same train/validation partition (and therefore the same label vocabulary).
+            # Clear any stale checkpoint from a previous run first so a later --resume cannot
+            # mix old progress with this run.
+            shutil.rmtree(self.checkpoint_dir, ignore_errors=True)
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            image_files.to_csv(self.checkpoint_dir / "input_data.csv", index=False)
+
+        # 4. Set up model and training parameters
+        eprint("Setting up neural network model for training.")
+
+        callback = {"MixUp": MixUp, "CutMix": CutMix, "None": None}[
+            self.args.mix_augmentation
+        ]
+
         # 6. Set loss function
         if self.args.mix_augmentation == "None" and self.args.single_label:
             loss = CrossEntropyLoss()
@@ -598,7 +750,7 @@ class TrainCommand:
         # 9. Train model
         learn = train_nn(
             df=image_files,
-            architecture=self.args.architecture,
+            architecture=train_architecture,
             valid_pct=self.args.validation_set_fraction,
             max_bs=self.args.max_batch_size,
             min_bs=self.args.min_batch_size,
@@ -618,6 +770,8 @@ class TrainCommand:
             no_metrics=self.args.no_metrics,
             force_cpu=self.args.cpu,
             random_erasing=self.args.random_erasing,
+            checkpoint_dir=self.checkpoint_dir,
+            resume_progress=resume_progress,
             **extra_params
         )
         

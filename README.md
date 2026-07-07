@@ -55,7 +55,7 @@ cd varKoder
 git checkout dev
 conda env create --file conda_environments/linux.yml
 conda activate varKoder
-pip install .
+python -m pip install .
 ```
 
 If this takes too long, you can try using [mamba](https://github.com/mamba-org/mamba) instead, which should be much faster than conda. Follow instructions to install mamba and use the same command as above, but replacing `conda` with `mamba`.
@@ -70,7 +70,7 @@ cd varKoder
 git checkout dev
 conda env create --file conda_environments/mac.yml
 conda activate varKoder
-pip install .
+python -m pip install .
 ```
 #### dsk
 

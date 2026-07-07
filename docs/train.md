@@ -56,6 +56,7 @@ There are two modes of training:
 | -l MAX_LIGHTING, --max-lighting MAX_LIGHTING | maximum scale of lighting transform. See https://docs. fast.ai/vision.augment.html#aug_transforms (default: 0.25) |
 | -g, --no-logging  | hide fastai progress bar and logging during training. These are shown by default. |
 | -E, --random-erasing | apply RandomErasing augmentation. Can be used in combination with MixUp/CutMix. See https://docs.fast.ai/vision.augment.html#randomerasing (default: False) | 
+| -u, --resume | resume training from the latest checkpoint in `outdir` (written to `outdir/checkpoints` after each epoch). Continues an interrupted run instead of starting over. See "Resuming training" below. (default: False) |
 
 ## Model architecture
 
@@ -137,6 +138,18 @@ At the end of the training cycle, three files will be written to the output fold
  - `trained_model.pkl`: the model weights exported using `fastai`. This can be used as input again using the `--pretrained-model` option in case you want to further train the model or improve it with new images.
  - `labels.txt`: a text file with the labels that can be predicted using this model.
  - `input_data.csv`: a table with information about varKodes used in the training and validation sets.
+
+During training, a `checkpoints/` subfolder is also written to the output folder, holding the latest model weights (`last.pth`), the training/validation split (`input_data.csv`), and a small `progress.json` recording how many epochs have completed. These are updated after every epoch.
+
+## Resuming training
+
+Long training runs can be interrupted before they finish (for example, when an HPC job reaches its walltime limit). Because varKoder writes a checkpoint after every epoch, you can continue an interrupted run instead of starting over by adding `--resume` (`-u`) and pointing at the same output folder with the same training options:
+
+```bash
+varKoder train path/to/images output_dir --resume
+```
+
+On resume, varKoder reloads the checkpoint weights and the exact train/validation split saved at the start of the original run, and continues from the last completed epoch. Note that fastai does not support resuming in the middle of its one-cycle learning-rate schedule, so the schedule restarts for the remaining epochs of the interrupted phase. A resumed run is therefore not bit-for-bit identical to an uninterrupted one, but it lets a job that was killed continue to completion rather than losing all progress.
 
 ## Examples
 

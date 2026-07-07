@@ -331,6 +331,13 @@ def setup_parser():
         action="store_true",
         default=False,
     )
+    parser_train.add_argument(
+        "-u",
+        "--resume",
+        help="resume training from the latest checkpoint in outdir (written to outdir/checkpoints after each epoch). Continues an interrupted run instead of starting over.",
+        action="store_true",
+        default=False,
+    )
 
     # Create parser for query command
     parser_query = subparsers.add_parser(
