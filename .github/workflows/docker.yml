@@ -18,6 +18,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read version from pyproject.toml
+        id: version
+        run: echo "version=$(awk -F'\"' '/^version = / {print $2}' pyproject.toml)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -34,6 +38,7 @@ jobs:
           images: brunoasm/varkoder
           tags: |
             type=semver,pattern={{version}}
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push
