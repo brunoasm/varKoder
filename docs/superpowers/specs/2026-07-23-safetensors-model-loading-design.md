@@ -100,9 +100,12 @@ HF repo:
   - `label_names` is the vocab in exact index order (index *i* ↔ head output *i*).
   - `is_multilabel` replaces the current `"MultiLabel" in str(learn.loss_func)`
     sniff, which is unavailable without the pickle.
-  - Image preprocessing (resize method/size + normalization mean/std) is **not**
-    stored; it is re-derived from `architecture` exactly as `train_nn` does, to
-    avoid a second source of truth that could drift.
+  - Image preprocessing is **not** stored; it is reconstructed from
+    `architecture` exactly as `train_nn` does, to avoid a second source of truth
+    that could drift. For **timm** archs this means re-deriving resize + mean/std
+    from `create_model(architecture).default_cfg`; for **custom** archs
+    (`fiannaca2018`, `arias2022`) it means no resize and no normalization, per the
+    custom training branch.
 
 ### HF repo, transition state
 
@@ -140,11 +143,20 @@ and the push script agree.
     `from_pretrained_fastai` (download `model.pkl`) behind the security warning,
     and synthesize `config` from the loaded learner. This preserves querying of
     old-style HF repos.
-- `build_learner(config, dls_or_vocab, device)` — rebuild
-  `vision_learner(pretrained=False)` (or the custom-arch `Learner`) with the
+- `build_learner(config, dls_or_vocab, device)` — rebuild the learner with the
   vocab fixed to `config["label_names"]`, reusing a transform/DataBlock builder
   refactored out of `train_nn` so inference preprocessing is byte-identical to
-  training.
+  training. Two branches, mirroring `train_nn`:
+  - **timm architecture:** `vision_learner(pretrained=False)`; preprocessing
+    (resize + normalize) re-derived from `create_model(architecture).default_cfg`.
+  - **custom architecture** (`architecture in CUSTOM_ARCHS`): map the name to the
+    class, instantiate `Model(num_classes=len(label_names), is_multilabel=…)`,
+    wrap in a bare `Learner`; **no resize, no normalization** (images stay in
+    `[0,1]` at native size), matching the custom training branch. The current
+    custom models (`fiannaca2018`, `arias2022`) have no lazy layers, so parameter
+    shapes are fixed by `num_classes` and no input-size metadata is needed. (A
+    future custom arch using `LazyLinear` would require storing input size in
+    `config.json`.)
 
 ### Refactor in `train_nn`
 
