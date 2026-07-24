@@ -23,6 +23,7 @@ def test_timm_roundtrip_fidelity(tiny_timm_learner, synthetic_images, tmp_path):
     state = load_file(str(tmp_path / MODEL_WEIGHTS_FILENAME))
 
     learn2 = build_learner(cfg, device="cpu")
+    assert list(learn2.dls.vocab) == cfg["label_names"]
     learn2.model.load_state_dict(state, strict=True)
     after = _preds(learn2, df)
 
@@ -49,6 +50,7 @@ def test_normalized_model_roundtrip_fidelity(tiny_timm_learner, synthetic_images
     state = load_file(str(tmp_path / MODEL_WEIGHTS_FILENAME))
 
     learn2 = build_learner(cfg, device="cpu")
+    assert list(learn2.dls.vocab) == cfg["label_names"]
     learn2.model.load_state_dict(state, strict=True)
     after = _preds(learn2, df)
 
@@ -66,12 +68,18 @@ def test_custom_roundtrip_builds(synthetic_images, tmp_path):
     dls = make_dataloaders(df, "fiannaca2018", is_multilabel=False, bs=2, vocab=labels)
     model = instantiate_custom_model("fiannaca2018", len(labels), (1, 64, 64))
     learn = Learner(dls, model, loss_func=CrossEntropyLossFlat())
+    baseline = _preds(learn, df)
+
     save_varkoder_model(learn, tmp_path, architecture="fiannaca2018", is_multilabel=False)
 
     cfg = json.loads((tmp_path / MODEL_CONFIG_FILENAME).read_text())
     state = load_file(str(tmp_path / MODEL_WEIGHTS_FILENAME))
     learn2 = build_learner(cfg, device="cpu")
+    assert list(learn2.dls.vocab) == cfg["label_names"]
     learn2.model.load_state_dict(state, strict=True)  # must not raise
+    after = _preds(learn2, df)
+
+    assert torch.allclose(baseline, after, atol=1e-5)
 
 
 def test_recover_architecture_custom_models(synthetic_images):

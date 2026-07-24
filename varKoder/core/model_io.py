@@ -102,7 +102,6 @@ def build_learner(config, device="cpu"):
 
         norm = config.get("normalize")
         if norm is not None:
-            from fastai.vision.all import Normalize
             # from_stats(cuda=True) puts stats on the DEFAULT device via to_device;
             # Normalize.encodes does (x - mean) with no device coercion, so stats
             # must sit on THIS learner's device. Build on CPU, then move explicitly.
