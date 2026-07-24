@@ -21,7 +21,11 @@ dependencies = [
     "humanfriendly",
     "tenacity",
     "huggingface_hub[fastai]",
+    "safetensors",
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.scripts]
 varKoder = "varKoder.cli:main"
@@ -32,3 +36,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 varKoder = ["kmer_mapping/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
