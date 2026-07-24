@@ -22,11 +22,8 @@ import tempfile
 import shutil
 
 from fastai.vision.all import (
-    aug_transforms, vision_learner, CategoryBlock, ImageBlock, 
-    MultiCategoryBlock, DataBlock, ColReader, ColSplitter,
-    Learner, cnn_learner, accuracy, error_rate, Resize, ResizeMethod
+    vision_learner, Learner, cnn_learner, accuracy, error_rate
 )
-from fastai.vision.augment import RandomErasing
 from fastai.callback.mixup import MixUp, CutMix
 from fastai.torch_core import set_seed, default_device, defaults
 from fastai.learner import load_learner
@@ -37,7 +34,6 @@ from fastai.distributed import to_parallel, detach_parallel
 
 from torch.nn import CrossEntropyLoss, Module, Sequential, Linear, Flatten, LazyLinear, ReLU, Dropout, Conv1d, MaxPool1d
 from timm.loss import AsymmetricLossMultiLabel
-from timm import create_model
 
 from varKoder.core.config import (
     LABELS_SEP, CUSTOM_ARCHS
@@ -46,11 +42,10 @@ from varKoder.core.utils import (
     eprint, get_metadata_from_img_filename, get_varKoder_labels,
     get_varKoder_qual
 )
+from varKoder.core.preprocessing import make_dataloaders
 from varKoder.models.custom import (
     Fiannaca2018Model, Arias2022Model, instantiate_custom_model,
 )
-
-from PIL.Image import Resampling
 
 def build_custom_model(architecture, dls):
     xb, _ = dls.one_batch()
@@ -229,69 +224,13 @@ def train_nn(
     batch_size = min(batch_size, max_bs)
     batch_size = max(batch_size, min_bs)
 
-    # Set kind of splitter for DataBlock
-    if "is_valid" in df.columns:
-        sptr = ColSplitter()
-    else:
-        sptr = RandomSplitter(valid_pct=valid_pct)
-
-    # Check if item resizing is necessary
-    item_transforms = None
-    if architecture not in CUSTOM_ARCHS:
-        default_cfg = create_model(architecture, pretrained=False).default_cfg
-        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-            item_transforms = Resize(
-                size=default_cfg["input_size"][1:],
-                method=ResizeMethod.Squish,
-                resamples=(Resampling.BOX, Resampling.BOX),
-            )
-            eprint(
-                "Model architecture",
-                architecture,
-                "requires image resizing to",
-                str(default_cfg["input_size"][1:]),
-            )
-            eprint("This will be done automatically.")
-            
-
-    # Set batch transforms
-    transforms = aug_transforms(
-        do_flip=False,
-        max_rotate=0,
-        max_zoom=1,
-        max_lighting=max_lighting,
-        max_warp=0,
-        p_affine=0,
-        p_lighting=p_lighting,
-    )
-    
-    # Add RandomErasing if requested
-    if random_erasing:
-        transforms.append(RandomErasing())
-
-    # Set DataBlock
-    if is_multilabel:
-        blocks = (ImageBlock, MultiCategoryBlock)
-        get_y = ColReader("labels", label_delim=";")
-    else:
-        blocks = (ImageBlock, CategoryBlock)
-        get_y = ColReader("labels")
-
-    dbl = DataBlock(
-        blocks=blocks,
-        splitter=sptr,
-        get_x=ColReader("path"),
-        get_y=get_y,
-        item_tfms=item_transforms,
-        batch_tfms=transforms,
-    )
-
     # Create data loaders with calculated batch size and appropriate device
     device = torch.device('cpu') if force_cpu else default_device()
-    dls = dbl.dataloaders(df, 
-        bs=batch_size, 
-        device=device, 
-        num_workers=num_workers)
+    dls = make_dataloaders(
+        df, architecture, is_multilabel, bs=batch_size, device=device,
+        num_workers=num_workers, max_lighting=max_lighting, p_lighting=p_lighting,
+        random_erasing=random_erasing,
+    )
 
     # Create learner
     if is_multilabel:
