@@ -402,4 +402,4 @@ fi
 
 echo -e "\n${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
-echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images images_fasta images_varkode inferences* trained* stats.csv Bembidion$reset"
+echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images images_fasta images_stacked images_stacked_varkode images_varkode inferences* trained* stats.csv Bembidion$reset"
