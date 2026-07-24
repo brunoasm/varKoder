@@ -656,8 +656,11 @@ def test_normalized_model_roundtrip_fidelity(tiny_timm_learner, synthetic_images
     that build_learner reapplies normalization from config."""
     from fastai.vision.all import Normalize
     learn = tiny_timm_learner
+    # cuda=False keeps stats on CPU so this runs on any machine (mps/cuda
+    # available would otherwise put stats off-device and mismatch the CPU batch).
     learn.dls.add_tfms(
-        [Normalize.from_stats([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])], "after_batch")
+        [Normalize.from_stats([0.5, 0.5, 0.5], [0.5, 0.5, 0.5], cuda=False)],
+        "after_batch")
     df, _ = synthetic_images
     baseline = _preds(learn, df)
 
@@ -750,8 +753,13 @@ def build_learner(config, device="cpu"):
         norm = config.get("normalize")
         if norm is not None:
             from fastai.vision.all import Normalize
-            learn.dls.add_tfms(
-                [Normalize.from_stats(norm["mean"], norm["std"])], "after_batch")
+            # from_stats(cuda=True) puts stats on the DEFAULT device via to_device;
+            # Normalize.encodes does (x - mean) with no device coercion, so stats
+            # must sit on THIS learner's device. Build on CPU, then move explicitly.
+            norm_tfm = Normalize.from_stats(norm["mean"], norm["std"], cuda=False)
+            norm_tfm.mean = norm_tfm.mean.to(device)
+            norm_tfm.std = norm_tfm.std.to(device)
+            learn.dls.add_tfms([norm_tfm], "after_batch")
     learn.model = learn.model.to(device)
     return learn
 ```
