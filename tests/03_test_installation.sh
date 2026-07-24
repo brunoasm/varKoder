@@ -247,18 +247,21 @@ if [ -f "trained_pretrained/input_data.csv" ]; then
     # Create fastq_query directory if it doesn't exist
     mkdir -p fastq_query
     
-    while IFS=, read -r sample bp kmer_mapping kmer_size path labels pos_qual is_valid; do
-        if [ "$is_valid" = "True" ]; then
-            # Find the source directory
-            source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
-            if [ -n "$source_dir" ]; then
-                # Remove ./ prefix from source_dir if present for clean symlink paths
-                clean_source_dir="${source_dir#./}"
-                # Create relative symlink in fastq_query directory
-                (cd fastq_query && ln -sf "../$clean_source_dir" "$sample")
-            fi
+    # Select validation samples by column NAME (robust to column additions/reordering
+    # in input_data.csv, e.g. the 'multiframe' column added for stacked images).
+    awk -F, 'NR==1{for(i=1;i<=NF;i++){if($i=="sample")s=i; if($i=="is_valid")v=i}; next}
+             s && v && $v=="True"{print $s}' trained_pretrained/input_data.csv | sort -u |
+    while read -r sample; do
+        [ -z "$sample" ] && continue
+        # Find the source directory
+        source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
+        if [ -n "$source_dir" ]; then
+            # Remove ./ prefix from source_dir if present for clean symlink paths
+            clean_source_dir="${source_dir#./}"
+            # Create relative symlink in fastq_query directory
+            (cd fastq_query && ln -sf "../$clean_source_dir" "$sample")
         fi
-    done < trained_pretrained/input_data.csv
+    done
 else
     echo "${color}Warning: trained_pretrained/input_data.csv not found. Skipping query folder creation.$reset"
 fi
