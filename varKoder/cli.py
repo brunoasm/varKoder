@@ -167,6 +167,12 @@ def setup_parser():
         help="number of base pairs to trim from the start and end of each read, separated by comma.",
         default=DEFAULT_TRIM_BP
     )
+    parser_img.add_argument(
+        "-S",
+        "--stack",
+        help="consolidate all input-size images of a sample into one multi-frame (APNG) file.",
+        action="store_true",
+    )
 
     # Create parser for train command
     parser_train = subparsers.add_parser(
@@ -459,6 +465,12 @@ def setup_parser():
         help="maximum batch size when using GPU for predictions.",
         type=int,
         default=DEFAULT_MAX_BATCH_SIZE,
+    )
+    parser_query.add_argument(
+        "-F",
+        "--all-frames",
+        help="for multi-frame images, output one prediction per frame instead of only the representative (largest) frame.",
+        action="store_true",
     )
 
     # Create parser for convert command

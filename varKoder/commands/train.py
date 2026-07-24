@@ -43,9 +43,10 @@ from varKoder.core.config import (
     LABELS_SEP, CUSTOM_ARCHS
 )
 from varKoder.core.utils import (
-    eprint, get_metadata_from_img_filename, get_varKoder_labels, 
-    get_varKoder_qual
+    eprint, get_metadata_from_img_filename, get_varKoder_labels,
+    get_varKoder_qual, iter_varKoder_images
 )
+from varKoder.core.imaging import VarKodeImage, SelectRandomFrame
 
 from PIL.Image import Resampling
 
@@ -326,16 +327,18 @@ def train_nn(
     else:
         sptr = RandomSplitter(valid_pct=valid_pct)
 
-    # Check if item resizing is necessary
-    item_transforms = None
+    # Randomly draw one frame per multi-frame sample each epoch (training only; a no-op
+    # for legacy single-frame images). Must run before any Resize/ToTensor so a frame is
+    # chosen while the item is still a VarKodeImage.
+    item_transforms = [SelectRandomFrame()]
     if architecture not in CUSTOM_ARCHS:
         default_cfg = create_model(architecture, pretrained=False).default_cfg
         if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-            item_transforms = Resize(
+            item_transforms.append(Resize(
                 size=default_cfg["input_size"][1:],
                 method=ResizeMethod.Squish,
                 resamples=(Resampling.BOX, Resampling.BOX),
-            )
+            ))
             eprint(
                 "Model architecture",
                 architecture,
@@ -362,10 +365,10 @@ def train_nn(
 
     # Set DataBlock
     if is_multilabel:
-        blocks = (ImageBlock, MultiCategoryBlock)
+        blocks = (ImageBlock(cls=VarKodeImage), MultiCategoryBlock)
         get_y = ColReader("labels", label_delim=";")
     else:
-        blocks = (ImageBlock, CategoryBlock)
+        blocks = (ImageBlock(cls=VarKodeImage), CategoryBlock)
         get_y = ColReader("labels")
 
     dbl = DataBlock(
@@ -527,10 +530,10 @@ class TrainCommand:
         """
         eprint("Collecting image files for training...")
         
-        # Collect all image files
+        # Collect all image files (single-frame PNG and multi-frame APNG)
         image_files = []
         f_counter = 0
-        for f in Path(self.args.input).rglob("*.png"):
+        for f in iter_varKoder_images(self.args.input):
             image_files.append(get_metadata_from_img_filename(f))
             f_counter += 1
             if f_counter % 1000 == 0:
