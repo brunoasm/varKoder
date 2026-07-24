@@ -14,7 +14,7 @@
 - Pinned deps (do not bump): `fastai==2.7.19`, `timm==1.0.15`, `huggingface_hub~=0.29.0`. `safetensors` (0.6.2) is already present via timm; declare it explicitly.
 - Python floor: `requires-python = ">=3.11"`.
 - Artifact filenames (exact): weights `varkoder_model.safetensors`, config `config.json`.
-- `config.json` schema: `{architecture, label_names, is_multilabel, num_classes, input_size}` where `architecture` is the **base** timm name (never the `hf-hub:` form) and `input_size` is `[C, H, W]`.
+- `config.json` schema: `{architecture, label_names, is_multilabel, num_classes, input_size, normalize}` where `architecture` is the **base** timm name (never the `hf-hub:` form), `input_size` is `[C, H, W]`, and `normalize` is either `null` (no image normalization) or `{"mean": [...], "std": [...]}`. `normalize` is captured from the source learner's dataloaders at save time and reapplied at load time — fastai's `vision_learner` only adds normalization when `pretrained=True`, so the weights-only path (which uses `pretrained=False`) must carry it explicitly or predictions drift.
 - Backward compatibility: legacy `.pkl` still loads (with a `UserWarning` security warning); `train` writes **both** `trained_model.pkl` (with a `DeprecationWarning`) and the safetensors artifact; the HF repo keeps `model.pkl`.
 - Predictions from the weights-only path must equal the pkl path within `atol=1e-5` (fidelity is a hard requirement).
 - All automated tests run on **CPU** and must not require network access or download pretrained weights (use `pretrained=False`).
@@ -501,12 +501,24 @@ def test_save_writes_files_and_config(tiny_timm_learner, tmp_path):
     assert cfg["label_names"] == list(tiny_timm_learner.dls.vocab)
     assert cfg["num_classes"] == len(tiny_timm_learner.dls.vocab)
     assert len(cfg["input_size"]) == 3
+    assert "normalize" in cfg  # None here (fixture is pretrained=False)
 
     saved = load_file(str(weights))
     ref = tiny_timm_learner.model.state_dict()
     assert set(saved.keys()) == set(ref.keys())
     for k in ref:
         assert saved[k].dtype == torch.float32
+
+
+def test_save_captures_normalization(tiny_timm_learner, tmp_path):
+    from fastai.vision.all import Normalize
+    tiny_timm_learner.dls.add_tfms(
+        [Normalize.from_stats([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])], "after_batch")
+    save_varkoder_model(tiny_timm_learner, tmp_path,
+                        architecture="resnet18", is_multilabel=False)
+    cfg = json.loads((tmp_path / MODEL_CONFIG_FILENAME).read_text())
+    assert cfg["normalize"] is not None
+    assert len(cfg["normalize"]["mean"]) == 3 and len(cfg["normalize"]["std"]) == 3
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -526,9 +538,20 @@ from pathlib import Path
 
 import torch
 from safetensors.torch import save_file, load_file
+from fastai.vision.all import Normalize
 
 MODEL_WEIGHTS_FILENAME = "varkoder_model.safetensors"
 MODEL_CONFIG_FILENAME = "config.json"
+
+
+def _extract_normalize(dls):
+    """Return {'mean':[...], 'std':[...]} for a Normalize in the batch pipeline,
+    or None. fastai stores mean/std as (1,C,1,1) tensors."""
+    for t in dls.after_batch.fs:
+        if isinstance(t, Normalize):
+            return {"mean": t.mean.flatten().tolist(),
+                    "std": t.std.flatten().tolist()}
+    return None
 
 
 def recover_architecture(learn):
@@ -563,6 +586,7 @@ def save_varkoder_model(learn, outdir, *, architecture, is_multilabel):
         "is_multilabel": bool(is_multilabel),
         "num_classes": len(label_names),
         "input_size": input_size,
+        "normalize": _extract_normalize(learn.dls),
     }
     (outdir / MODEL_CONFIG_FILENAME).write_text(json.dumps(config, indent=2))
 ```
@@ -617,6 +641,29 @@ def test_timm_roundtrip_fidelity(tiny_timm_learner, synthetic_images, tmp_path):
     save_varkoder_model(tiny_timm_learner, tmp_path,
                         architecture="resnet18", is_multilabel=False)
     cfg = json.loads((tmp_path / MODEL_CONFIG_FILENAME).read_text())
+    state = load_file(str(tmp_path / MODEL_WEIGHTS_FILENAME))
+
+    learn2 = build_learner(cfg, device="cpu")
+    learn2.model.load_state_dict(state, strict=True)
+    after = _preds(learn2, df)
+
+    assert torch.allclose(baseline, after, atol=1e-5)
+
+
+def test_normalized_model_roundtrip_fidelity(tiny_timm_learner, synthetic_images, tmp_path):
+    """A model trained WITH normalization must still round-trip exactly. This is
+    the case fastai's pretrained=False path would silently drop, so it guards
+    that build_learner reapplies normalization from config."""
+    from fastai.vision.all import Normalize
+    learn = tiny_timm_learner
+    learn.dls.add_tfms(
+        [Normalize.from_stats([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])], "after_batch")
+    df, _ = synthetic_images
+    baseline = _preds(learn, df)
+
+    save_varkoder_model(learn, tmp_path, architecture="resnet18", is_multilabel=False)
+    cfg = json.loads((tmp_path / MODEL_CONFIG_FILENAME).read_text())
+    assert cfg["normalize"] is not None
     state = load_file(str(tmp_path / MODEL_WEIGHTS_FILENAME))
 
     learn2 = build_learner(cfg, device="cpu")
@@ -695,8 +742,16 @@ def build_learner(config, device="cpu"):
             model = instantiate_custom_model(architecture, len(label_names), input_size)
             learn = Learner(dls, model, loss_func=CrossEntropyLossFlat())
         else:
+            # pretrained=False so no weights download; normalization is NOT added
+            # by fastai in this mode, so we reapply it from config below.
             learn = vision_learner(dls, architecture, pretrained=False,
-                                   normalize=True, loss_func=CrossEntropyLossFlat())
+                                   normalize=False, loss_func=CrossEntropyLossFlat())
+
+        norm = config.get("normalize")
+        if norm is not None:
+            from fastai.vision.all import Normalize
+            learn.dls.add_tfms(
+                [Normalize.from_stats(norm["mean"], norm["std"])], "after_batch")
     learn.model = learn.model.to(device)
     return learn
 ```
@@ -780,6 +835,7 @@ def _config_from_learner(learn, architecture=None):
         "is_multilabel": "MultiLabel" in str(learn.loss_func),
         "num_classes": len(label_names),
         "input_size": list(xb.shape[1:]),
+        "normalize": _extract_normalize(learn.dls),
     }
 
 
