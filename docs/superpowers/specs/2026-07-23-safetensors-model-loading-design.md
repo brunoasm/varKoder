@@ -92,9 +92,17 @@ HF repo:
     "architecture": "vit_large_patch32_224",
     "label_names": ["...", "..."],
     "is_multilabel": true,
-    "num_classes": 28643
+    "num_classes": 28643,
+    "input_size": [3, 224, 224]
   }
   ```
+  - `input_size` (`[C, H, W]`) is stored so a model with **lazily-sized layers**
+    can be materialized before loading weights. The real custom architectures
+    (`fiannaca2018`, `arias2022`, defined in `train.py`) use `LazyLinear` whose
+    `in_features` depend on the input image size, so their parameter shapes are
+    unknown until a forward pass at the correct size. Stored explicitly, we avoid
+    needing a sample image to rebuild. For timm archs it equals
+    `default_cfg["input_size"]`.
   - `architecture` is the **base timm name**, never the `hf-hub:` form (so
     `create_model(architecture, pretrained=False)` and rebuilding work offline).
   - `label_names` is the vocab in exact index order (index *i* ↔ head output *i*).
@@ -129,8 +137,11 @@ and the push script agree.
 - `save_varkoder_model(learn, outdir, *, architecture, is_multilabel)` — write
   `varkoder_model.safetensors` (fp32, contiguous state dict) + `config.json`.
   `architecture` and `is_multilabel` are passed **explicitly** by the caller
-  (train knows both directly; the push script derives them from the pkl). A
-  helper `recover_architecture(learn)` reads
+  (train knows both directly; the push script derives them from the pkl).
+  `input_size` is read from the learner's dataloaders
+  (`learn.dls.one_batch()[0].shape[1:]`) so it reflects the actual trained size;
+  `label_names` from `learn.dls.vocab`; `num_classes` from its length. A helper
+  `recover_architecture(learn)` reads
   `learn.model[0].model.default_cfg["architecture"]` for timm archs, or returns
   the custom-arch name, for callers that only have a learner.
 - `resolve_model(source)` → `(state_dict, config)`. `source` may be:
@@ -149,14 +160,21 @@ and the push script agree.
   training. Two branches, mirroring `train_nn`:
   - **timm architecture:** `vision_learner(pretrained=False)`; preprocessing
     (resize + normalize) re-derived from `create_model(architecture).default_cfg`.
-  - **custom architecture** (`architecture in CUSTOM_ARCHS`): map the name to the
-    class, instantiate `Model(num_classes=len(label_names), is_multilabel=…)`,
-    wrap in a bare `Learner`; **no resize, no normalization** (images stay in
-    `[0,1]` at native size), matching the custom training branch. The current
-    custom models (`fiannaca2018`, `arias2022`) have no lazy layers, so parameter
-    shapes are fixed by `num_classes` and no input-size metadata is needed. (A
-    future custom arch using `LazyLinear` would require storing input size in
-    `config.json`.)
+  - **custom architecture** (`architecture in CUSTOM_ARCHS`): instantiate the
+    model, **materialize its `LazyLinear` layers** with a dummy forward at
+    `config["input_size"]`, then load the state dict; wrap in a bare `Learner`;
+    **no resize, no normalization** (images stay in `[0,1]` at native size),
+    matching the custom training branch. `Fiannaca2018Body`/`Arias2022Body` use
+    `LazyLinear` (train.py:65,99), so the dummy forward at the stored input size
+    is required before `load_state_dict` or the weight shapes won't match.
+
+**Refactor for custom models.** The custom model classes and `build_custom_model`
+live in `train.py`; `model_io` importing them from `train.py` would be circular
+(train imports model_io). Relocate the custom classes + a
+`instantiate_custom_model(architecture, num_classes, input_size)` factory into a
+shared module (`varKoder/models/custom.py`); `train.py` and `model_io` both
+import from there. (`varKoder/models/architectures.py` is unused dead code — leave
+it or remove it, out of scope either way.)
 
 ### Refactor in `train_nn`
 
