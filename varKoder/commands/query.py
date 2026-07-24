@@ -90,9 +90,11 @@ class QueryCommand:
         elif args.keep_images:
             self.images_d = Path(args.outdir) / "query_images"
             self.images_d.mkdir(parents=True, exist_ok=True)
-        elif args.int_folder:
-            self.images_d = Path(tempfile.mkdtemp(prefix="barcoding_img_"))
         else:
+            # Query images live under the intermediate dir. With --int-folder this is the
+            # user-provided folder (kept); otherwise it is the auto-created temp dir that
+            # is removed at the end of run(). This avoids leaking an untracked temp
+            # directory when --int-folder is used without --keep-images.
             self.images_d = self.inter_dir / "images"
         
         # Set up kmer mapping
