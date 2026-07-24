@@ -31,8 +31,9 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
 from varKoder.core.config import (
-    LABEL_SAMPLE_SEP, LABELS_SEP, BP_KMER_SEP, 
-    SAMPLE_BP_SEP, QUAL_THRESH, MAPPING_CHOICES
+    LABEL_SAMPLE_SEP, LABELS_SEP, BP_KMER_SEP,
+    SAMPLE_BP_SEP, QUAL_THRESH, MAPPING_CHOICES,
+    MULTIFRAME_EXT, IMAGE_GLOBS
 )
 
 
@@ -91,7 +92,9 @@ def get_varKoder_qual(img_path):
     Returns:
         Boolean quality flag
     """
-    return bool(Image.open(img_path).info.get("varkoderLowQualityFlag"))
+    # The flag is stored as the string form of a Python bool ("True"/"False"),
+    # so it must be compared as a string -- bool("False") is truthy.
+    return str(Image.open(img_path).info.get("varkoderLowQualityFlag")) == "True"
 
 
 def get_varKoder_freqsd(img_path):
@@ -118,6 +121,39 @@ def get_varKoder_mapping(img_path):
         String representing the mapping method
     """
     return str(Image.open(img_path).info.get("varkoderMapping"))
+
+
+def get_varKoder_frame_sizes(img_path):
+    """
+    Extract per-frame base pair amounts from a multi-frame varKoder image's metadata.
+
+    Args:
+        img_path: Path to the image file
+
+    Returns:
+        List of integers (bp per frame, in frame order). Empty list if the
+        metadata is absent (e.g. legacy single-frame PNGs).
+    """
+    raw = Image.open(img_path).info.get("varkoderFrameSizes")
+    if not raw:
+        return []
+    return [int(x) for x in str(raw).split(",") if x != ""]
+
+
+def iter_varKoder_images(root):
+    """
+    Recursively yield all varKoder image files (single-frame PNG and multi-frame APNG)
+    under a directory.
+
+    Args:
+        root: Directory to search
+
+    Yields:
+        Path objects for each matching image file
+    """
+    root = Path(root)
+    for pattern in IMAGE_GLOBS:
+        yield from root.rglob(pattern)
 
 
 def format_bp_human_readable(bp_count):
@@ -231,13 +267,34 @@ def get_metadata_from_img_filename(img_path):
     Returns:
         Dictionary with metadata
     """
-    sample_name, split2 = Path(img_path).name.removesuffix('.png').split(SAMPLE_BP_SEP)
+    name = Path(img_path).name
+
+    # Multi-frame (APNG) images use a non-numeric sentinel in place of the bp segment
+    # (e.g. "sample@stack+cgr+k7.apng"). There is no single bp value, so bp is None.
+    if name.endswith(MULTIFRAME_EXT):
+        sample_name, split2 = name.removesuffix(MULTIFRAME_EXT).rsplit(SAMPLE_BP_SEP, 1)
+        try:
+            _bp_token, img_kmer_mapping, img_kmer_size = split2.split(BP_KMER_SEP)
+        except ValueError:  # backwards compatible with varKoder v0.X layout
+            _bp_token, img_kmer_size = split2.split(BP_KMER_SEP)
+            img_kmer_mapping = 'varKode'
+        img_kmer_size = int(img_kmer_size[1:])
+        return {
+            'sample': sample_name,
+            'bp': None,
+            'img_kmer_mapping': img_kmer_mapping,
+            'img_kmer_size': img_kmer_size,
+            'path': Path(img_path),
+            'multiframe': True,
+        }
+
+    sample_name, split2 = name.removesuffix('.png').split(SAMPLE_BP_SEP)
     try:
         n_bp, img_kmer_mapping, img_kmer_size = split2.split(BP_KMER_SEP)
     except ValueError:  # backwards compatible with varKoder v0.X
         n_bp, img_kmer_size = split2.split(BP_KMER_SEP)
         img_kmer_mapping = 'varKode'
-    
+
     # Use the new parsing function that handles both old and new formats
     n_bp = parse_bp_human_readable(n_bp)
     img_kmer_size = int(img_kmer_size[1:])
@@ -247,7 +304,8 @@ def get_metadata_from_img_filename(img_path):
         'bp': n_bp,
         'img_kmer_mapping': img_kmer_mapping,
         'img_kmer_size': img_kmer_size,
-        'path': Path(img_path)
+        'path': Path(img_path),
+        'multiframe': False,
     }
 
 
