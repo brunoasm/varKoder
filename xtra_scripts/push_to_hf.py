@@ -20,7 +20,7 @@ from varKoder.core.model_io import (
 )
 
 
-def verify_fidelity(learn, sample_image_dir, out_dir, atol=1e-4):
+def verify_fidelity(learn, sample_image_dir, out_dir, atol=1e-5):
     import pandas as pd
     imgs = [str(p) for p in Path(sample_image_dir).rglob("*.png")]
     if not imgs:
@@ -40,6 +40,10 @@ def main():
     ap.add_argument("model_path", help="Path to the trusted local .pkl")
     ap.add_argument("repo_id", help="Target Hugging Face repo id")
     ap.add_argument("sample_images", help="Dir of sample PNGs for the fidelity check")
+    ap.add_argument("--atol", type=float, default=1e-5,
+                    help="Absolute tolerance for the fidelity check (default 1e-5; "
+                         "loosen, e.g. to 1e-4, only if fp16 numeric noise causes a "
+                         "spurious failure).")
     args = ap.parse_args()
 
     learn = load_learner(args.model_path, cpu=True)
@@ -49,7 +53,7 @@ def main():
     with tempfile.TemporaryDirectory() as out:
         save_varkoder_model(learn, out, architecture=architecture,
                             is_multilabel=is_multilabel)
-        if not verify_fidelity(learn, args.sample_images, out):
+        if not verify_fidelity(learn, args.sample_images, out, atol=args.atol):
             raise SystemExit("Fidelity check FAILED — not pushing.")
         api = HfApi()
         for fname in (MODEL_WEIGHTS_FILENAME, MODEL_CONFIG_FILENAME):
