@@ -92,7 +92,9 @@ def get_varKoder_qual(img_path):
     Returns:
         Boolean quality flag
     """
-    return bool(Image.open(img_path).info.get("varkoderLowQualityFlag"))
+    # The flag is stored as the string form of a Python bool ("True"/"False"),
+    # so it must be compared as a string -- bool("False") is truthy.
+    return str(Image.open(img_path).info.get("varkoderLowQualityFlag")) == "True"
 
 
 def get_varKoder_freqsd(img_path):

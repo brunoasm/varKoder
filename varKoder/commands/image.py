@@ -950,7 +950,7 @@ def compute_kmer_array(infile, kmer_mapping, threads=1, verbose=False):
         verbose: Whether to print verbose output
 
     Returns:
-        numpy.uint8 array (height x width) ready for Image.fromarray(..., mode="L")
+        numpy.uint8 array (height x width) ready for Image.fromarray (grayscale "L")
     """
     with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
         # first, dump dsk results as ascii, save in a pandas df and merge with mapping
@@ -1065,7 +1065,7 @@ def make_multiframe_image(
 
     start_time = pd.Timestamp.now()
 
-    frames = [Image.fromarray(arr, mode="L") for _, arr in frames_by_bp]
+    frames = [Image.fromarray(arr) for _, arr in frames_by_bp]
 
     # Metadata: the four existing keys are identical across frames (they are per-sample),
     # plus the per-frame bp amounts and a format-version marker.
@@ -1150,7 +1150,7 @@ def make_image(
     kmer_size = len(kmer_mapping.index[0])
 
     kmer_array = compute_kmer_array(infile, kmer_mapping, threads=threads, verbose=verbose)
-    img = Image.fromarray(kmer_array, mode="L")
+    img = Image.fromarray(kmer_array)
 
     # Now let's add the labels and other metadata:
     metadata = PngInfo()
