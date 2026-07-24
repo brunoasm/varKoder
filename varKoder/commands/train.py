@@ -43,112 +43,21 @@ from varKoder.core.config import (
     LABELS_SEP, CUSTOM_ARCHS
 )
 from varKoder.core.utils import (
-    eprint, get_metadata_from_img_filename, get_varKoder_labels, 
+    eprint, get_metadata_from_img_filename, get_varKoder_labels,
     get_varKoder_qual
+)
+from varKoder.models.custom import (
+    Fiannaca2018Model, Arias2022Model, instantiate_custom_model,
 )
 
 from PIL.Image import Resampling
 
-# Define classes for custom models
-class Arias2022Head(Module):
-    def __init__(self, n_classes):
-        super(Arias2022Head, self).__init__()
-        self.head = Sequential(Linear(64, n_classes))
-    def forward(self, x):
-        return self.head(x)
-
-class Arias2022Body(Module):
-    def __init__(self):
-        super(Arias2022Body, self).__init__()
-        self.body = Sequential(
-                Flatten(), #reshape to 1D array
-                LazyLinear(512),
-                ReLU(),
-                Dropout(0.5),
-                Linear(512, 64),
-                ReLU(),
-                Dropout(0.5))
-
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.body(x)
-        return x
-
-class Fiannaca2018Head(Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Head, self).__init__()
-        self.head = Sequential(Linear(500, n_classes))
-
-    def forward(self, x):
-        return self.head(x)
-
-class Fiannaca2018Body(Module):
-    def __init__(self):
-        super(Fiannaca2018Body, self).__init__()
-        self.flatten = Flatten()
-        self.body = Sequential(
-            Conv1d(1, 5, kernel_size=5),  # First convolutional layer
-            ReLU(),
-            MaxPool1d(kernel_size=2),  # Pooling layer
-
-            Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
-            ReLU(),
-            MaxPool1d(kernel_size=2),  # Pooling layer
-
-            Flatten(),
-            LazyLinear(500),  # Adjust the size based on the output of previous layers
-            ReLU())
-
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.flatten(x)
-        x = x.unsqueeze(1)
-        x = self.body(x)
-        return x
-
-class Fiannaca2018Model(Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Model, self).__init__()
-        self.model = Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
-class Arias2022Model(Module):
-    def __init__(self,n_classes):
-        super(Arias2022Model, self).__init__()
-        self.model = Sequential(Arias2022Body(),Arias2022Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
 def build_custom_model(architecture, dls):
-    """
-    Build a custom model architecture for training.
-    
-    Args:
-        architecture: Model architecture name
-        dls: DataLoaders object
-        
-    Returns:
-        Custom model
-    """
-    if architecture == 'arias2022':
-        custom_model = Arias2022Model(len(dls.vocab))
-    elif architecture == 'fiannaca2018':
-        custom_model = Fiannaca2018Model(len(dls.vocab))
-    else:
-        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
-
-    # Initialize LazyLinear with dummy batch
-    xb, yb = dls.one_batch()
-    input_image_size = xb.shape[-2:]  
-    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
-    custom_model(dummy_batch)
-
-    return custom_model
+    xb, _ = dls.one_batch()
+    input_image_size = xb.shape[-2:]
+    return instantiate_custom_model(
+        architecture, len(dls.vocab), (1, input_image_size[0], input_image_size[1])
+    )
 
 class SkipValidationCallback(Callback):
     """Callback to skip validation during training."""
