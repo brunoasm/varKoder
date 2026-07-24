@@ -166,10 +166,19 @@ def resolve_model(source):
     """
     p = Path(source)
 
-    if p.is_dir() and (p / MODEL_WEIGHTS_FILENAME).exists():
-        return _read_local_dir(p)
+    if p.is_dir():
+        if (p / MODEL_WEIGHTS_FILENAME).exists() and (p / MODEL_CONFIG_FILENAME).exists():
+            return _read_local_dir(p)
+        raise ValueError(
+            f"Model directory '{source}' must contain both "
+            f"{MODEL_WEIGHTS_FILENAME} and {MODEL_CONFIG_FILENAME} (as written by "
+            f"'varKoder train'). Point --model at such a directory, a .pkl file, "
+            f"or a Hugging Face repo id."
+        )
 
     if p.is_file() or str(source).endswith(".pkl"):
+        if not p.is_file():
+            raise ValueError(f"Model file '{source}' not found.")
         warnings.warn(_PICKLE_WARNING, UserWarning)
         learn = load_learner(source, cpu=True)
         return learn.model.state_dict(), _config_from_learner(learn)
@@ -184,7 +193,16 @@ def resolve_model(source):
         state = load_file(wts_path)
         return state, config
     except EntryNotFoundError:
+        # Repo exists but lacks the weights-only artifact: fall back to the
+        # legacy pickled fastai model (deprecated, unsafe).
         warnings.warn(_PICKLE_WARNING, UserWarning)
         from huggingface_hub import from_pretrained_fastai
         learn = from_pretrained_fastai(source)
         return learn.model.state_dict(), _config_from_learner(learn)
+    except Exception as e:
+        raise ValueError(
+            f"Unable to load model '{source}' as a local model directory "
+            f"({MODEL_WEIGHTS_FILENAME} + {MODEL_CONFIG_FILENAME}), a .pkl file, "
+            f"or a Hugging Face repo id. Please check the path or repo id. "
+            f"(underlying error: {type(e).__name__}: {e})"
+        ) from e
