@@ -26,13 +26,12 @@ from fastai.vision.all import (
 )
 from fastai.callback.mixup import MixUp, CutMix
 from fastai.torch_core import set_seed, default_device, defaults
-from fastai.learner import load_learner
 from fastai.losses import CrossEntropyLossFlat
 from fastai.callback.core import Callback, CancelValidException
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
 from fastai.distributed import to_parallel, detach_parallel
 
-from torch.nn import CrossEntropyLoss, Module, Sequential, Linear, Flatten, LazyLinear, ReLU, Dropout, Conv1d, MaxPool1d
+from torch.nn import CrossEntropyLoss
 from timm.loss import AsymmetricLossMultiLabel
 
 from varKoder.core.config import (
@@ -44,9 +43,7 @@ from varKoder.core.utils import (
 )
 from varKoder.core.preprocessing import make_dataloaders
 from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
-from varKoder.models.custom import (
-    Fiannaca2018Model, Arias2022Model, instantiate_custom_model,
-)
+from varKoder.models.custom import instantiate_custom_model
 
 
 def export_trained_model(learn, outdir, *, architecture, is_multilabel):

@@ -100,10 +100,10 @@ https://huggingface.co/docs/hub/timm for possible options. To pull a model, prep
 We implemented two models previously applied to chaos game representations. In both cases, images are linearized instead of being treated as 2D images. 
 
 To use the model employed by [DeLUCS](https://github.com/Kari-Genomics-Lab/iDeLUCS), use option `arias2022`:
-`varKoder train --pretrained-model none --architecture idelucs input_dir output_dir`
+`varKoder train --pretrained-model none --architecture arias2022 input_dir output_dir`
 
 To use the model employed by Fiannaca (2018), use option `fiannaca2018`:
-`varKoder train --pretrained-model none --architecture fiannaca input_dir output_dir`
+`varKoder train --pretrained-model none --architecture fiannaca2018 input_dir output_dir`
 
 In both cases, there are no pretrained models available, you will have to train starting from random weights.
 

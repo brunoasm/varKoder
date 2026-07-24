@@ -1,8 +1,6 @@
-import json
 import torch
-from safetensors.torch import load_file
 from varKoder.core.model_io import (
-    save_varkoder_model, build_learner, resolve_model, MODEL_CONFIG_FILENAME,
+    save_varkoder_model, build_learner, resolve_model,
 )
 
 
