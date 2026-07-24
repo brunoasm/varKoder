@@ -1,6 +1,7 @@
 """Weights-only (safetensors) serialization for varKoder models."""
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -8,8 +9,9 @@ import pandas as pd
 import torch
 from PIL import Image
 from safetensors.torch import save_file, load_file
-from fastai.vision.all import Normalize, vision_learner, Learner
+from fastai.vision.all import Normalize, vision_learner, Learner, PILImage
 from fastai.losses import CrossEntropyLossFlat
+from fastai.learner import load_learner
 
 from varKoder.core.config import CUSTOM_ARCHS
 from varKoder.core.preprocessing import make_dataloaders
@@ -17,6 +19,11 @@ from varKoder.models.custom import instantiate_custom_model
 
 MODEL_WEIGHTS_FILENAME = "varkoder_model.safetensors"
 MODEL_CONFIG_FILENAME = "config.json"
+
+_PICKLE_WARNING = (
+    "Loading a pickled (.pkl) model executes arbitrary code on load. This is "
+    "deprecated and unsafe; re-export to safetensors with a recent varKoder."
+)
 
 
 def _extract_normalize(dls):
@@ -111,3 +118,73 @@ def build_learner(config, device="cpu"):
             learn.dls.add_tfms([norm_tfm], "after_batch")
     learn.model = learn.model.to(device)
     return learn
+
+
+def _config_from_learner(learn, architecture=None):
+    label_names = list(learn.dls.vocab)
+    if architecture is None:
+        architecture = recover_architecture(learn)
+    # A learner loaded via load_learner()/from_pretrained_fastai was written
+    # with Learner.export(), which replaces the train/valid datasets with
+    # empty ones ("without the items"). learn.dls.one_batch() therefore
+    # raises ValueError (no batches). Route one dummy in-memory image
+    # through the same item/batch transform pipeline via test_dl to get a
+    # real post-transform tensor instead. For architectures whose pipeline
+    # enforces a fixed size (timm archs with default_cfg["fixed_input_size"],
+    # via the Resize added in make_dataloaders) this recovers the true
+    # trained input_size. For resolution-flexible/custom architectures
+    # (no such Resize), the pipeline is a no-op on shape, so this only
+    # reflects the dummy probe's size -- the true training resolution is
+    # not recoverable from an exported learner alone in that case.
+    dummy = PILImage.create(np.zeros((8, 8, 3), dtype=np.uint8))
+    xb = learn.dls.test_dl([dummy]).one_batch()[0]
+    return {
+        "architecture": architecture,
+        "label_names": label_names,
+        "is_multilabel": "MultiLabel" in str(learn.loss_func),
+        "num_classes": len(label_names),
+        "input_size": list(xb.shape[1:]),
+        "normalize": _extract_normalize(learn.dls),
+    }
+
+
+def _read_local_dir(d):
+    d = Path(d)
+    config = json.loads((d / MODEL_CONFIG_FILENAME).read_text())
+    state = load_file(str(d / MODEL_WEIGHTS_FILENAME))
+    return state, config
+
+
+def resolve_model(source):
+    """Resolve a model source to (state_dict, config).
+
+    `source` may be: a local directory containing MODEL_WEIGHTS_FILENAME and
+    MODEL_CONFIG_FILENAME (written by save_varkoder_model); a legacy .pkl
+    file path (deprecated, unsafe -- emits UserWarning); or a Hugging Face
+    repo id (downloads the two files, falling back to the legacy
+    from_pretrained_fastai path, with the same warning, if they're absent).
+    """
+    p = Path(source)
+
+    if p.is_dir() and (p / MODEL_WEIGHTS_FILENAME).exists():
+        return _read_local_dir(p)
+
+    if p.is_file() or str(source).endswith(".pkl"):
+        warnings.warn(_PICKLE_WARNING, UserWarning)
+        learn = load_learner(source, cpu=True)
+        return learn.model.state_dict(), _config_from_learner(learn)
+
+    # Treat as a Hugging Face repo id.
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.utils import EntryNotFoundError
+    try:
+        cfg_path = hf_hub_download(source, MODEL_CONFIG_FILENAME)
+        wts_path = hf_hub_download(source, MODEL_WEIGHTS_FILENAME)
+        config = json.loads(Path(cfg_path).read_text())
+        state = load_file(wts_path)
+        return state, config
+    except EntryNotFoundError:
+        warnings.warn(_PICKLE_WARNING, UserWarning)
+        from huggingface_hub import from_pretrained_fastai
+        learn = from_pretrained_fastai(source)
+        return learn.model.state_dict(), _config_from_learner(learn)
