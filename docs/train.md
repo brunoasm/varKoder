@@ -46,9 +46,9 @@ There are two modes of training:
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Only takes effect when `--pretrained-model none` is used (otherwise the architecture comes from the pretrained model, see below). (default: vit_large_patch32_224)|
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Takes effect when you opt out of the default pretrained model, i.e. when you pass `--pretrained-model none` or `--random-weights` (otherwise the architecture comes from the pretrained model, see below). (default: vit_large_patch32_224)|
 | -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (default: 4) |
-| -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
+| -w, --random-weights | start training with random weights. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -M, --no-metrics | skip calculation of validation loss and metrics (default: False) |
 | -X MIX_AUGMENTATION, --mix-augmentation MIX_AUGMENTATION | apply MixUp or CutMix augmentation. Possible values are `CutMix`, `MixUp` or `None`. See https://docs.fast.ai/callback.mixup.html (default: MixUp) |
 | -s, --label-smoothing | turn on Label Smoothing. Only applies to single-label. See https://github.com/fastai/fastbook/blob/master/07_sizing_and_tta.ipynb (default: False) |
@@ -66,7 +66,7 @@ By default, `varKoder train` fine-tunes an existing pretrained model rather than
 2. A Hugging Face Hub repo id.
 3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory when one is available.
 
-Whenever a pretrained model is used, its architecture is used for training and `--architecture` is ignored. To train from scratch instead, pass `--pretrained-model none`; training then starts from `--architecture`, using timm's pretrained weights for that architecture by default, or random weights if `--random-weigths` is also given.
+Whenever a pretrained model is used, its architecture is used for training and `--architecture` is ignored. To train from scratch instead, pass `--pretrained-model none` or `--random-weights`; training then starts from `--architecture`, using timm's pretrained weights for that architecture by default, or random weights if `--random-weights` is also given.
 
 ```bash
 # Fine-tune the default published model (architecture comes from that model)
@@ -81,7 +81,7 @@ varKoder train path/to/images output_dir --pretrained-model path/to/previous_out
 
 ## Model architecture
 
-`--architecture` only takes effect when training from scratch (`--pretrained-model none`; see above). We support three possible inputs here:
+`--architecture` takes effect when you opt out of the default pretrained model, i.e. when you pass `--pretrained-model none` or `--random-weights` (see above). We support three possible inputs here:
 
 1. Models supported by the timm library
 
