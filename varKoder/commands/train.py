@@ -43,7 +43,7 @@ from varKoder.core.utils import (
     get_varKoder_qual
 )
 from varKoder.core.preprocessing import make_dataloaders
-from varKoder.core.model_io import save_varkoder_model, recover_architecture
+from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
 from varKoder.models.custom import (
     Fiannaca2018Model, Arias2022Model, instantiate_custom_model,
 )
@@ -548,19 +548,17 @@ class TrainCommand:
 
             train_architecture = self.args.architecture
 
-            if self.args.pretrained_model:
-                eprint("Loading pretrained model from file:", str(self.args.pretrained_model))
-                past_learn = load_learner(self.args.pretrained_model, cpu=load_on_cpu)
-                model_state_dict = past_learn.model.state_dict()
-                # Recover the base timm architecture from the loaded model so training can
-                # rebuild it offline (the "hf-hub:" default would otherwise fetch its config
-                # from Hugging Face even with pretrained=False).
-                try:
-                    train_architecture = past_learn.model[0].model.default_cfg["architecture"]
-                except Exception:
-                    pass  # keep --architecture (e.g. custom archs) as a fallback
+            use_pretrained = (
+                self.args.pretrained_model
+                and str(self.args.pretrained_model).lower() != "none"
+                and not self.args.random_weights
+            )
+            if use_pretrained:
+                eprint("Loading pretrained model from:", str(self.args.pretrained_model))
+                pre_state, pre_config = resolve_model(self.args.pretrained_model)
+                model_state_dict = pre_state
+                train_architecture = pre_config["architecture"]
                 pretrained = False
-                del past_learn
 
             elif not self.args.random_weights and self.args.architecture not in CUSTOM_ARCHS:
                 pretrained = True
