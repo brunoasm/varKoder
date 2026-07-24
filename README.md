@@ -157,6 +157,12 @@ Follow these links for detailed information for each command. The help for the c
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
 4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
 
+### Multi-frame (stacked) images
+
+varKoder normally writes one image per input amount for each sample. Optionally, `varKoder image --stack` consolidates all input-size images of a sample into a single multi-frame [animated PNG (APNG)](https://en.wikipedia.org/wiki/APNG) file (one frame per input amount), so there is exactly one file per sample. Frame 0 is the representative (largest-input) frame, so older readers and older versions of varKoder degrade gracefully to that frame. Stacked (`.apng`) and unstacked (`.png`) images are interchangeable across `train`, `query`, and `convert`; at query time use `--all-frames` to get a prediction for every frame instead of just the representative one. See the [image command documentation](docs/image.md#multi-frame-stacked-images) for details.
+
+> **Security note:** trained model files (`.pkl`, whether local or from Hugging Face hub) are Python pickles and can execute arbitrary code when loaded. Only use models from sources you trust.
+
 ## Examples
 
 Here are quick links to example sections for each command:
