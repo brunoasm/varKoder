@@ -43,9 +43,30 @@ from varKoder.core.utils import (
     get_varKoder_qual
 )
 from varKoder.core.preprocessing import make_dataloaders
+from varKoder.core.model_io import save_varkoder_model, recover_architecture
 from varKoder.models.custom import (
     Fiannaca2018Model, Arias2022Model, instantiate_custom_model,
 )
+
+
+def export_trained_model(learn, outdir, *, architecture, is_multilabel):
+    """Write both the legacy pkl (deprecated) and the safetensors artifact."""
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    warnings.warn(
+        "Exporting trained_model.pkl is deprecated and will be removed in a "
+        "future release; use the safetensors artifact (varkoder_model.safetensors "
+        "+ config.json).",
+        DeprecationWarning, stacklevel=2,
+    )
+    # config must store the base timm name, never the "hf-hub:" form
+    if architecture.startswith("hf-hub:"):
+        architecture = recover_architecture(learn)
+    learn.export(outdir / "trained_model.pkl")
+    save_varkoder_model(learn, outdir, architecture=architecture,
+                        is_multilabel=is_multilabel)
+    with open(outdir / "labels.txt", "w") as f:
+        f.write("\n".join(learn.dls.vocab))
 
 def build_custom_model(architecture, dls):
     xb, _ = dls.one_batch()
@@ -625,13 +646,13 @@ class TrainCommand:
         
         # 10. Save results
         outdir = Path(self.args.outdir)
-        outdir.mkdir(parents=True, exist_ok=True)
-        
-        learn.export(outdir / "trained_model.pkl")
-        with open(outdir / "labels.txt", "w") as outfile:
-            outfile.write("\n".join(learn.dls.vocab))
+        export_trained_model(
+            learn, outdir,
+            architecture=train_architecture,
+            is_multilabel=not self.args.single_label,
+        )
         image_files.to_csv(outdir / "input_data.csv", index=False)
-        
+
         eprint("Model, labels, and data table saved to directory", str(outdir))
 
 
