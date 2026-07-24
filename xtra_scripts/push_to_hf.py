@@ -1,78 +1,62 @@
-from fastai.vision.all import load_learner
-from huggingface_hub import push_to_hub_fastai
-from timm.models.hub import push_to_hf_hub
-from timm import create_model
-import copy
+#!/usr/bin/env python
+"""Publish a varKoder model to Hugging Face as safetensors weights + config.json.
+
+Loads a trusted local .pkl, exports the safetensors artifact, verifies that the
+rebuilt model reproduces the pkl's predictions on sample images, and only then
+uploads. Legacy files already in the repo are left untouched.
+"""
+
 import argparse
+import tempfile
 from pathlib import Path
 
-def parse_args():
-   parser = argparse.ArgumentParser(description='Push FastAI model to Hugging Face Hub')
-   parser.add_argument('model_path', type=str, help='Path to the FastAI model pkl file')
-   return parser.parse_args()
+import torch
+from fastai.vision.all import load_learner
+from huggingface_hub import HfApi
+
+from varKoder.core.model_io import (
+    save_varkoder_model, build_learner, resolve_model, recover_architecture,
+    MODEL_WEIGHTS_FILENAME, MODEL_CONFIG_FILENAME,
+)
+
+
+def verify_fidelity(learn, sample_image_dir, out_dir, atol=1e-4):
+    import pandas as pd
+    imgs = [str(p) for p in Path(sample_image_dir).rglob("*.png")]
+    if not imgs:
+        raise SystemExit("No sample PNGs found for fidelity check.")
+    df = pd.DataFrame({"path": imgs})
+    baseline, _ = learn.get_preds(dl=learn.dls.test_dl(df))
+
+    state, cfg = resolve_model(str(out_dir))
+    rebuilt = build_learner(cfg, device="cpu")
+    rebuilt.model.load_state_dict(state, strict=True)
+    after, _ = rebuilt.get_preds(dl=rebuilt.dls.test_dl(df))
+    return torch.allclose(baseline, after, atol=atol)
+
 
 def main():
-   args = parse_args()
-   
-   # Load learner
-   learn = load_learner(args.model_path)
-   
-   # Reset metrics
-   for m in learn.metrics: 
-       if hasattr(m, 'reset'): 
-           m.reset()
-           
-   # Reset recorder
-   if hasattr(learn.recorder, 'reset'):
-       learn.recorder.reset()
-       
-   # Push cleaned fastai model to hub
-   push_to_hub_fastai(learner=learn, repo_id="vit_large_patch32_224.NCBI_SRA")
-   
-   # Start a timm model from scratch and update parameters based on fastai model
-   pretrained_cfg = {
-       'hf_hub_id': 'brunoasm/vit_large_patch32_224.NCBI_SRA',
-       'source': 'hf-hub',
-       'architecture': 'hf-hub:timm/vit_large_patch32_224',
-       'tag': 'NCBI_SRA',
-       'custom_load': False,
-       'input_size': [3, 224, 224],
-       'fixed_input_size': True,
-       'interpolation': 'nearest',
-       'crop_pct': 1,
-       'crop_mode': 'center',
-       'mean': [0.5, 0.5, 0.5],
-       'std': [0.5, 0.5, 0.5],
-       'num_classes': 0,
-       'pool_size': None,
-       'first_conv': 'patch_embed.proj',
-       'classifier': 'head'
-   }
-   
-   # Create and update TIMM model
-   mdl = create_model(
-       "timm/vit_large_patch32_224.orig_in21k",
-       pretrained=True,
-       num_classes=len(learn.dls.vocab)
-   )
-   
-   # Transfer weights
-   state_dict = copy.deepcopy(mdl.state_dict())
-   for f_k in learn.state_dict().keys():
-       for k in mdl.state_dict().keys():    
-           if f_k.find(k) >= 0 and state_dict[k].shape == learn.state_dict()[f_k].shape:
-               state_dict[k] = learn.state_dict()[f_k]
-               break
-               
-   mdl.load_state_dict(state_dict, strict=False)
-   
-   # Push TIMM model to hub
-   model_cfg = dict(label_names=list(learn.dls.vocab))
-   push_to_hf_hub(
-       model=mdl,
-       repo_id="vit_large_patch32_224.NCBI_SRA",
-       model_config=model_cfg
-   )
+    ap = argparse.ArgumentParser()
+    ap.add_argument("model_path", help="Path to the trusted local .pkl")
+    ap.add_argument("repo_id", help="Target Hugging Face repo id")
+    ap.add_argument("sample_images", help="Dir of sample PNGs for the fidelity check")
+    args = ap.parse_args()
+
+    learn = load_learner(args.model_path, cpu=True)
+    architecture = recover_architecture(learn)
+    is_multilabel = "MultiLabel" in str(learn.loss_func)
+
+    with tempfile.TemporaryDirectory() as out:
+        save_varkoder_model(learn, out, architecture=architecture,
+                            is_multilabel=is_multilabel)
+        if not verify_fidelity(learn, args.sample_images, out):
+            raise SystemExit("Fidelity check FAILED — not pushing.")
+        api = HfApi()
+        for fname in (MODEL_WEIGHTS_FILENAME, MODEL_CONFIG_FILENAME):
+            api.upload_file(path_or_fileobj=str(Path(out) / fname),
+                            path_in_repo=fname, repo_id=args.repo_id)
+    print("Pushed", MODEL_WEIGHTS_FILENAME, "and", MODEL_CONFIG_FILENAME)
+
 
 if __name__ == "__main__":
-   main()
+    main()
