@@ -1,6 +1,6 @@
 # varKoder query
 
-The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details.
+The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details. Models are distributed and loaded as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`); see [Models](#models) below for the accepted `--model` sources, including the deprecated legacy `.pkl` format.
 
 ## Input format
 
@@ -29,7 +29,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
-| `-l MODEL`, `--model MODEL` | path pickle file with exported trained model or name of HuggingFace hub model (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
+| `-l MODEL`, `--model MODEL` | trained model to use for prediction: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-1`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
@@ -63,9 +63,11 @@ By default, if the input folder contains subfolders, `varKoder query` will assum
 If the `--images` argument is used, `varKoder query` will not attempt to process fastq files. Instead, it will recursively search for `png` files in the input folder, assuming they are varKodes generated with `varKoder image`.
 
 ## Models
-If you trained your own model with `varKoder train`, you can use this model for making predictions by providing the path with the option `--model`.
+`--model` accepts three kinds of sources:
 
-If you want to use a pytorch model from [Hugging Face hub](https://huggingface.co), you can provide the repository for this model using the same option (`--model`). The default model is a model pretrained on SRA data ([brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA)).
+1. A local model directory produced by `varKoder train`, containing `varkoder_model.safetensors` + `config.json`. This is the recommended way to use a model you trained yourself: point `--model` at the training output directory.
+2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), which is downloaded and loaded as weights-only safetensors.
+3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory or Hugging Face repo when one is available.
 
 ## Output
 
@@ -119,13 +121,13 @@ This processes the fastq files to generate varKodes, then uses the default Huggi
 
 ### Example 2: Using Your Custom-trained Model
 
-Query samples using a model you trained:
+Query samples using a model you trained (point `--model` at the training output directory, which contains `varkoder_model.safetensors` + `config.json`):
 
 ```bash
-varKoder query path/to/fastq_files custom_query_results --model path/to/trained_model.pkl --threshold 0.7
+varKoder query path/to/fastq_files custom_query_results --model path/to/trained_model_dir --threshold 0.7
 ```
 
-This uses your custom-trained model instead of the default one, and requires a higher confidence threshold (0.7) for making predictions.
+This uses your custom-trained model instead of the default one, and requires a higher confidence threshold (0.7) for making predictions. A legacy `trained_model.pkl` file from an older varKoder version can also be passed to `--model`, but this is deprecated and will print a security warning, since unpickling executes arbitrary code.
 
 ### Example 3: Directly Querying Existing varKode Images
 

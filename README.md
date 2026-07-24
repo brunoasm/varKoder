@@ -157,6 +157,8 @@ Follow these links for detailed information for each command. The help for the c
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
 4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
 
+Trained models are distributed and stored as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`), both for the published model on Hugging Face Hub and for models produced by `varKoder train`. The older `.pkl` format is **deprecated**: it still works with `--model`/`--pretrained-model`, but loading it prints a security warning, since unpickling executes arbitrary code. See [train.md](docs/train.md#output) and [query.md](docs/query.md#models) for details.
+
 ## Examples
 
 Here are quick links to example sections for each command:

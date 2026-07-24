@@ -39,14 +39,14 @@ There are two modes of training:
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
 | -f VALIDATION_SET_FRACTION, --validation-set-fraction VALIDATION_SET_FRACTION | fraction of samples to be held as a random validation set. If using multi-label, this applies to all samples. If using single-label, this applies to each species. (default: 0.2) |
-| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | pickle file with optional pretrained neural network model to update with new images. Overrides --architecture and --pretrained-timm |
+| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | model to fine-tune from: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). Overrides `--architecture`, since the architecture is read from the pretrained model itself. Pass `none` to ignore any pretrained model and train from `--architecture` instead. (default: brunoasm/vit_large_patch32_224.NCBI_SRA, the published varKoder model) |
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
 | -B MIN_BATCH_SIZE, --min-batch-size MIN_BATCH_SIZE | minimum batch size for training. (default: 1) |
 | -C, --cpu | force use CPU for training instead of GPU. (default: False) |
 | -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. (default: hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA)|
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Only takes effect when `--pretrained-model none` is used (otherwise the architecture comes from the pretrained model, see below). (default: vit_large_patch32_224)|
 | -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (default: 4) |
 | -w, --random-weigths | start training with random weigths. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -M, --no-metrics | skip calculation of validation loss and metrics (default: False) |
@@ -58,31 +58,52 @@ There are two modes of training:
 | -E, --random-erasing | apply RandomErasing augmentation. Can be used in combination with MixUp/CutMix. See https://docs.fast.ai/vision.augment.html#randomerasing (default: False) | 
 | -u, --resume | resume training from the latest checkpoint in `outdir` (written to `outdir/checkpoints` after each epoch). Continues an interrupted run instead of starting over. See "Resuming training" below. (default: False) |
 
+## Pretrained models
+
+By default, `varKoder train` fine-tunes an existing pretrained model rather than starting from scratch: `--pretrained-model` defaults to the published varKoder model (`brunoasm/vit_large_patch32_224.NCBI_SRA`). `--pretrained-model` accepts three kinds of sources:
+
+1. A local model directory produced by a previous `varKoder train` run, containing `varkoder_model.safetensors` + `config.json`.
+2. A Hugging Face Hub repo id.
+3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory when one is available.
+
+Whenever a pretrained model is used, its architecture is used for training and `--architecture` is ignored. To train from scratch instead, pass `--pretrained-model none`; training then starts from `--architecture`, using timm's pretrained weights for that architecture by default, or random weights if `--random-weigths` is also given.
+
+```bash
+# Fine-tune the default published model (architecture comes from that model)
+varKoder train path/to/images output_dir
+
+# Ignore any pretrained model and train a resnet50 from timm's pretrained weights
+varKoder train path/to/images output_dir --pretrained-model none --architecture resnet50
+
+# Continue training from a model you trained previously
+varKoder train path/to/images output_dir --pretrained-model path/to/previous_output_dir
+```
+
 ## Model architecture
 
-We support three possible inputs here:
+`--architecture` only takes effect when training from scratch (`--pretrained-model none`; see above). We support three possible inputs here:
 
 1. Models supported by the timm library
 
-You can use as input the name of a model supported by the timm library (see https://huggingface.co/docs/timm/quickstart for details). For example, this will use timm library to train a model using the resnet50 architecture pulled from timm library:
+You can use as input the name of a model supported by the timm library (see https://huggingface.co/docs/timm/quickstart for details). For example, this will use timm library to train a model using the resnet50 architecture pulled from timm library, starting from timm's pretrained weights for it:
 
-`varKoder train --architecture resnet50 input_dir output_dir`
+`varKoder train --pretrained-model none --architecture resnet50 input_dir output_dir`
 
 2. Models from Hugging Face hub
 
 The timm library allows downloading models from Hugging face hub directly. See
-https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf-hub:' to the model repository on Hugging Face Hub. For example, the following will use the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data:
-`varKoder train --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
+https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf-hub:' to the model repository on Hugging Face Hub. For example, the following will train from scratch using the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data (note: to instead fine-tune varKoder's published model, just use the default `--pretrained-model`, as shown in the section above):
+`varKoder train --pretrained-model none --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
 
 3. Models previously used with chaos game representations
 
 We implemented two models previously applied to chaos game representations. In both cases, images are linearized instead of being treated as 2D images. 
 
 To use the model employed by [DeLUCS](https://github.com/Kari-Genomics-Lab/iDeLUCS), use option `arias2022`:
-`varKoder train --architecture idelucs input_dir output_dir`
+`varKoder train --pretrained-model none --architecture idelucs input_dir output_dir`
 
 To use the model employed by Fiannaca (2018), use option `fiannaca2018`:
-`varKoder train --architecture fiannaca input_dir output_dir`
+`varKoder train --pretrained-model none --architecture fiannaca input_dir output_dir`
 
 In both cases, there are no pretrained models available, you will have to train starting from random weights.
 
@@ -134,8 +155,16 @@ During training, fastai outputs a log with some information (unless you use the 
 
 ## Output
 
-At the end of the training cycle, three files will be written to the output folder selected by the user:
- - `trained_model.pkl`: the model weights exported using `fastai`. This can be used as input again using the `--pretrained-model` option in case you want to further train the model or improve it with new images.
+At the end of the training cycle, the following files are written to the output folder selected by the user:
+ - `varkoder_model.safetensors`: the trained model weights, in the [safetensors](https://github.com/huggingface/safetensors) weights-only format. Loading this file does not execute any code.
+ - `config.json`: the architecture name, label names, and normalization stats needed to rebuild the model from `varkoder_model.safetensors`. Together, these two files fully describe the trained model — pass the output directory itself to `--pretrained-model` (to keep training it) or to `varKoder query --model` (to make predictions with it).
+ - `trained_model.pkl`: the same model exported with `fastai`'s pickle-based format.
+
+   > **Deprecation:** `trained_model.pkl` is still written for backward
+   > compatibility but is **deprecated** and will be removed in a future release.
+   > Prefer `varkoder_model.safetensors` + `config.json`, which load without
+   > executing pickled code.
+
  - `labels.txt`: a text file with the labels that can be predicted using this model.
  - `input_data.csv`: a table with information about varKodes used in the training and validation sets.
 
@@ -157,23 +186,23 @@ Here are several examples demonstrating how to use the `train` command for diffe
 
 ### Example 1: Basic Multi-label Training
 
-Train a model using the default architecture (vision transformer) with multi-label classification:
+Train a model using multi-label classification:
 
 ```bash
 varKoder train path/to/images trained_model
 ```
 
-This uses the default vision transformer architecture (hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA) to train a multi-label classification model on the varKodes in the images folder, with a 0.7 confidence threshold for validation metrics.
+By default, this fine-tunes the published varKoder model (brunoasm/vit_large_patch32_224.NCBI_SRA, a vision transformer, loaded via `--pretrained-model`) as a multi-label classification model on the varKodes in the images folder, with a 0.7 confidence threshold for validation metrics.
 
-### Example 2: Training with a Different Architecture
+### Example 2: Training from Scratch with a Different Architecture
 
-Train a model using a ResNet50 architecture:
+Train a model using a ResNet50 architecture instead of fine-tuning the default pretrained model:
 
 ```bash
-varKoder train path/to/images resnet50_model --architecture resnet50
+varKoder train path/to/images resnet50_model --pretrained-model none --architecture resnet50
 ```
 
-This trains a model using the ResNet50 architecture from the timm library instead of the default vision transformer, which may train faster but might have lower accuracy.
+`--pretrained-model none` disables the default pretrained model so that `--architecture` takes effect; this trains a ResNet50 (starting from timm's pretrained weights for it) instead of the default vision transformer, which may train faster but might have lower accuracy.
 
 ### Example 3: Single-label Classification with Label Smoothing
 
@@ -190,10 +219,10 @@ This trains a model for single-label classification (each sample assigned exactl
 Fine-tune a pretrained model by first training only the final layer:
 
 ```bash
-varKoder train path/to/images transfer_model --pretrained-model path/to/existing_model.pkl --freeze-epochs 5 --epochs 20
+varKoder train path/to/images transfer_model --pretrained-model path/to/existing_model_dir --freeze-epochs 5 --epochs 20
 ```
 
-This loads an existing model and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning.
+This loads a model you trained previously (a directory containing `varkoder_model.safetensors` + `config.json`) and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning. A Hugging Face repo id or a legacy `.pkl` file (deprecated) can also be passed to `--pretrained-model`.
 
 ### Example 5: Customizing Training Parameters
 
