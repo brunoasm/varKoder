@@ -9,6 +9,7 @@ from varKoder.core.utils import (
     format_bp_human_readable,
     get_metadata_from_img_filename,
     get_varKoder_frame_sizes,
+    iter_varKoder_images,
     parse_bp_human_readable,
 )
 
@@ -120,3 +121,13 @@ def test_get_varKoder_frame_sizes_malformed(tmp_path, capsys):
     _save_png_with_text(p, varkoderFrameSizes="10,abc,30")
     assert get_varKoder_frame_sizes(p) == []
     assert "could not parse varkoderFrameSizes" in capsys.readouterr().err
+
+
+def test_iter_varKoder_images_finds_png_and_apng_only(tmp_path):
+    (tmp_path / "a@00500K+cgr+k7.png").touch()
+    (tmp_path / "b@stack+cgr+k7.apng").touch()
+    (tmp_path / "readme.txt").touch()
+    (tmp_path / "a@00500K+cgr+k7.png.bak").touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    assert found == {"a@00500K+cgr+k7.png", "b@stack+cgr+k7.apng"}
