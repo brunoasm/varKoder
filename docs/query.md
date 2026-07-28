@@ -68,7 +68,7 @@ If you trained your own model with `varKoder train`, you can use this model for 
 
 If you want to use a pytorch model from [Hugging Face hub](https://huggingface.co), you can provide the repository for this model using the same option (`--model`). The default model is a model pretrained on SRA data ([brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA)).
 
-> **Security note:** trained model files (`.pkl`) are Python pickles and are loaded via fastai's `load_learner`, which can execute arbitrary code contained in the file. Only load model files (local `--model` paths or Hugging Face repositories) from sources you trust.
+> **Security note:** varKoder currently distributes trained models as fastai `.pkl` files, which are Python pickles loaded via fastai's `load_learner`. Loading one executes code stored in that file, so only use models — local `--model` paths or Hugging Face repositories, including the default model — from sources you trust.
 
 ## Output
 
