@@ -162,14 +162,3 @@ non-numeric bp, a plain `notavarkode.png`) are rejected/skipped rather than
 raising; and a directory containing one good image plus each malformed name
 yields exactly the good one. Then an integration-level assertion that `train`
 completes with a warning instead of dying.
-
----
-
-## Related, not requested
-
-`tests/03_test_installation.sh` prints a cleanup hint that includes `Bembidion`
-and `fastq_query` — but `tests/Bembidion` is the corpus downloaded by
-`01_download_fastqs.sh`, not test output. Following the hint costs a 39-accession
-re-download. Worth splitting the hint into generated outputs vs downloaded
-inputs. (Also: the script exits 0 even when every command fails; the summary
-block is the only real signal.)
