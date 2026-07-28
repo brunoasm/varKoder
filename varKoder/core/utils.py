@@ -171,6 +171,9 @@ def iter_varKoder_images(root, skip_unparseable=True):
         Path objects for each matching image file
     """
     root = Path(root)
+    # NOTE: this summary only prints if the caller fully drains the generator
+    # (list(...) or a complete for-loop); an early break/next() will silently
+    # skip it.
     skipped = []
     for pattern in IMAGE_GLOBS:
         for f in root.rglob(pattern):
@@ -186,8 +189,11 @@ def iter_varKoder_images(root, skip_unparseable=True):
             f"Warning: ignored {len(skipped)} file(s) whose names are not "
             "valid varKoder image names:"
         )
-        for f in skipped:
+        max_listed = 10
+        for f in skipped[:max_listed]:
             eprint(f"  {f}")
+        if len(skipped) > max_listed:
+            eprint(f"  ... and {len(skipped) - max_listed} more")
 
 
 def format_bp_human_readable(bp_count):
@@ -197,9 +203,9 @@ def format_bp_human_readable(bp_count):
     
     Examples:
         1868000 -> "01868K"
-        100000567 -> "00100G" 
+        100000567 -> "00100M"
         1898 -> "01898"
-        5000000000 -> "05000M"
+        5000000000 -> "00005G"
         123 -> "00123"
     
     Args:
