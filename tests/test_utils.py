@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -5,6 +6,7 @@ import pytest
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
+from varKoder.commands.train import TrainCommand
 from varKoder.core.utils import (
     format_bp_human_readable,
     get_metadata_from_img_filename,
@@ -157,3 +159,25 @@ def test_iter_varKoder_images_skip_unparseable_false_yields_everything(tmp_path,
     found = {p.name for p in iter_varKoder_images(tmp_path, skip_unparseable=False)}
     assert found == {good_name, bad_name}
     assert capsys.readouterr().err == ""
+
+
+def test_collect_images_skips_malformed_names_instead_of_raising(tmp_path, capsys):
+    good_name = f"sample1@{format_bp_human_readable(500000)}+cgr+k7.png"
+    good_path = tmp_path / good_name
+    _save_png_with_text(
+        good_path, varkoderKeywords="alpha", varkoderLowQualityFlag="False"
+    )
+
+    # Same reproduction as the original bug report.
+    (tmp_path / "sample2@00500K+cgr+k7 2.png").touch()
+    (tmp_path / "notavarkode.png").touch()
+
+    cmd = TrainCommand.__new__(TrainCommand)
+    cmd.args = argparse.Namespace(
+        input=str(tmp_path), label_table_path=None, verbose=False
+    )
+
+    result = cmd.collect_images()
+
+    assert list(result["sample"]) == ["sample1"]
+    assert "ignored 2 file(s)" in capsys.readouterr().err
