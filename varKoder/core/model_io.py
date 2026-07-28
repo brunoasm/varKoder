@@ -10,7 +10,7 @@ import torch
 from PIL import Image
 from safetensors.torch import save_file, load_file
 from fastai.vision.all import Normalize, vision_learner, Learner
-from fastai.losses import CrossEntropyLossFlat
+from fastai.losses import CrossEntropyLossFlat, BCEWithLogitsLossFlat
 from fastai.learner import load_learner
 
 from varKoder.core.config import CUSTOM_ARCHS
@@ -124,18 +124,24 @@ def build_learner(config, device="cpu", state_dict=None):
         dls = make_dataloaders(df, architecture, is_multilabel, bs=2,
                                device=device, num_workers=0, vocab=label_names)
 
+        # The loss is never trained with here, but fastai derives the activation
+        # get_preds applies from it, so it has to match the kind of model:
+        # sigmoid for multilabel, softmax for single-label. Getting this wrong
+        # would softmax across every label of a multilabel model.
+        loss_func = BCEWithLogitsLossFlat() if is_multilabel else CrossEntropyLossFlat()
+
         if architecture in CUSTOM_ARCHS:
             if state_dict is not None:
                 model = new_custom_model(architecture, len(label_names))
                 model.load_state_dict(state_dict, strict=True)
             else:
                 model = instantiate_custom_model(architecture, len(label_names), input_size)
-            learn = Learner(dls, model, loss_func=CrossEntropyLossFlat())
+            learn = Learner(dls, model, loss_func=loss_func)
         else:
             # pretrained=False so no weights download; normalization is NOT added
             # by fastai in this mode, so we reapply it from config below.
             learn = vision_learner(dls, architecture, pretrained=False,
-                                   normalize=False, loss_func=CrossEntropyLossFlat())
+                                   normalize=False, loss_func=loss_func)
             if state_dict is not None:
                 learn.model.load_state_dict(state_dict, strict=True)
 

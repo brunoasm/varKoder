@@ -133,3 +133,31 @@ def test_custom_arch_pkl_roundtrips_through_weights_only(tmp_path):
     rebuilt.model.eval()
     with torch.no_grad():
         assert torch.allclose(learn.model(batch), rebuilt.model(batch), atol=1e-6)
+
+
+def test_rebuilt_learner_activation_matches_model_kind(synthetic_images, tmp_path):
+    """build_learner's loss decides what activation get_preds applies. A
+    multilabel model must get sigmoid, a single-label one softmax -- otherwise
+    a caller that does not pass `act` explicitly gets nonsense (softmax across
+    every label of a multilabel model)."""
+    df, labels = synthetic_images
+    learn = _legacy_learner(df, labels, image_cls=VarKodeImage, with_frame_tfm=True)
+    save_varkoder_model(learn, tmp_path / "ml", architecture="resnet18",
+                        is_multilabel=True)
+    save_varkoder_model(learn, tmp_path / "sl", architecture="resnet18",
+                        is_multilabel=False)
+
+    q = pd.DataFrame({"path": df["path"].tolist()})
+
+    state, cfg = resolve_model(str(tmp_path / "ml"))
+    ml = build_learner(cfg, device="cpu", state_dict=state)
+    pp, _ = ml.get_preds(dl=ml.dls.test_dl(q))
+    # sigmoid: each label independent, so rows need not sum to 1
+    assert ((pp >= 0) & (pp <= 1)).all()
+    assert not torch.allclose(pp.sum(1), torch.ones(len(q)), atol=1e-3)
+
+    state, cfg = resolve_model(str(tmp_path / "sl"))
+    sl = build_learner(cfg, device="cpu", state_dict=state)
+    pp, _ = sl.get_preds(dl=sl.dls.test_dl(q))
+    # softmax: one label per sample, rows sum to 1
+    assert torch.allclose(pp.sum(1), torch.ones(len(q)), atol=1e-4)
