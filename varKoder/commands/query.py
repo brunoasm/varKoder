@@ -417,8 +417,11 @@ class QueryCommand:
         if frames_dir.is_dir():
             shutil.rmtree(frames_dir, ignore_errors=True)
 
-        # Clean up temporary directory if created
-        if not self.args.int_folder and not self.args.keep_images and self.inter_dir.is_dir():
+        # Clean up the intermediate directory if we created it. --keep-images is not a
+        # reason to keep it: kept images are written to <outdir>/query_images, outside
+        # inter_dir, so removing it here cannot discard them. Only --int-folder, which
+        # means the directory belongs to the user, prevents removal.
+        if not self.args.int_folder and self.inter_dir.is_dir():
             shutil.rmtree(self.inter_dir)
 
 
