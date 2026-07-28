@@ -9,13 +9,14 @@ import pandas as pd
 import torch
 from PIL import Image
 from safetensors.torch import save_file, load_file
-from fastai.vision.all import Normalize, vision_learner, Learner, PILImage
+from fastai.vision.all import Normalize, vision_learner, Learner
 from fastai.losses import CrossEntropyLossFlat
 from fastai.learner import load_learner
 
 from varKoder.core.config import CUSTOM_ARCHS
+from varKoder.core.imaging import VarKodeImage
 from varKoder.core.preprocessing import make_dataloaders
-from varKoder.models.custom import instantiate_custom_model
+from varKoder.models.custom import instantiate_custom_model, new_custom_model
 
 MODEL_WEIGHTS_FILENAME = "varkoder_model.safetensors"
 MODEL_CONFIG_FILENAME = "config.json"
@@ -51,12 +52,29 @@ def _fp32_contiguous_state_dict(model):
             for k, v in model.state_dict().items()}
 
 
+def _probe_input_size(learn):
+    """Return the post-transform input size (C, H, W) of a learner's pipeline.
+
+    Prefers a real batch. A learner reloaded from a .pkl has no items --
+    Learner.export() writes the pickle with empty train/valid datasets, so
+    one_batch() raises -- and in that case one dummy image is routed through the
+    same transform pipeline instead. The dummy is a VarKodeImage so that it
+    satisfies the recorded input type of both the current pipeline and the older
+    plain-PILImage one (VarKodeImage subclasses PILImage).
+    """
+    try:
+        xb, _ = learn.dls.one_batch()
+    except (ValueError, IndexError):
+        dummy = VarKodeImage.create(np.zeros((8, 8, 3), dtype=np.uint8))
+        xb = learn.dls.test_dl([dummy]).one_batch()[0]
+    return list(xb.shape[1:])  # (C, H, W)
+
+
 def save_varkoder_model(learn, outdir, *, architecture, is_multilabel):
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
-    xb, _ = learn.dls.one_batch()
-    input_size = list(xb.shape[1:])  # (C, H, W)
+    input_size = _probe_input_size(learn)
     label_names = list(learn.dls.vocab)
 
     state_dict = _fp32_contiguous_state_dict(learn.model)
@@ -86,7 +104,15 @@ def _dummy_df(label_names, input_size, tmpdir):
     return pd.DataFrame(rows)
 
 
-def build_learner(config, device="cpu"):
+def build_learner(config, device="cpu", state_dict=None):
+    """Rebuild a fastai Learner from a config, optionally loading weights.
+
+    Pass `state_dict` whenever you have the weights: for the custom
+    architectures it is the only reliable way to get their LazyLinear layers to
+    the trained shapes, because an exported .pkl does not record the input
+    resolution for them (their pipeline has no Resize to read it back from).
+    Loading the state_dict materializes those layers directly from the weights.
+    """
     import tempfile
     architecture = config["architecture"]
     label_names = config["label_names"]
@@ -99,13 +125,19 @@ def build_learner(config, device="cpu"):
                                device=device, num_workers=0, vocab=label_names)
 
         if architecture in CUSTOM_ARCHS:
-            model = instantiate_custom_model(architecture, len(label_names), input_size)
+            if state_dict is not None:
+                model = new_custom_model(architecture, len(label_names))
+                model.load_state_dict(state_dict, strict=True)
+            else:
+                model = instantiate_custom_model(architecture, len(label_names), input_size)
             learn = Learner(dls, model, loss_func=CrossEntropyLossFlat())
         else:
             # pretrained=False so no weights download; normalization is NOT added
             # by fastai in this mode, so we reapply it from config below.
             learn = vision_learner(dls, architecture, pretrained=False,
                                    normalize=False, loss_func=CrossEntropyLossFlat())
+            if state_dict is not None:
+                learn.model.load_state_dict(state_dict, strict=True)
 
         norm = config.get("normalize")
         if norm is not None:
@@ -124,26 +156,20 @@ def _config_from_learner(learn, architecture=None):
     label_names = list(learn.dls.vocab)
     if architecture is None:
         architecture = recover_architecture(learn)
-    # A learner loaded via load_learner()/from_pretrained_fastai was written
-    # with Learner.export(), which replaces the train/valid datasets with
-    # empty ones ("without the items"). learn.dls.one_batch() therefore
-    # raises ValueError (no batches). Route one dummy in-memory image
-    # through the same item/batch transform pipeline via test_dl to get a
-    # real post-transform tensor instead. For architectures whose pipeline
-    # enforces a fixed size (timm archs with default_cfg["fixed_input_size"],
-    # via the Resize added in make_dataloaders) this recovers the true
-    # trained input_size. For resolution-flexible/custom architectures
-    # (no such Resize), the pipeline is a no-op on shape, so this only
-    # reflects the dummy probe's size -- the true training resolution is
-    # not recoverable from an exported learner alone in that case.
-    dummy = PILImage.create(np.zeros((8, 8, 3), dtype=np.uint8))
-    xb = learn.dls.test_dl([dummy]).one_batch()[0]
+    # For architectures whose pipeline enforces a fixed size (timm archs with
+    # default_cfg["fixed_input_size"], via the Resize added in make_dataloaders)
+    # the probe recovers the true trained input_size. For resolution-flexible
+    # architectures (no such Resize) the pipeline is a no-op on shape, so this
+    # only reflects the dummy probe's size -- the true training resolution is
+    # not recoverable from an exported learner alone. That is harmless for timm
+    # archs, which pool adaptively; for the custom archs, pass the state_dict to
+    # build_learner so their lazy layers materialize from the weights instead.
     return {
         "architecture": architecture,
         "label_names": label_names,
         "is_multilabel": "MultiLabel" in str(learn.loss_func),
         "num_classes": len(label_names),
-        "input_size": list(xb.shape[1:]),
+        "input_size": _probe_input_size(learn),
         "normalize": _extract_normalize(learn.dls),
     }
 
@@ -194,11 +220,21 @@ def resolve_model(source):
         return state, config
     except EntryNotFoundError:
         # Repo exists but lacks the weights-only artifact: fall back to the
-        # legacy pickled fastai model (deprecated, unsafe).
+        # legacy pickled fastai model (deprecated, unsafe). This is the path the
+        # current default model still takes, so give it its own error handling --
+        # an exception raised in here is NOT caught by the sibling clause below.
         warnings.warn(_PICKLE_WARNING, UserWarning)
-        from huggingface_hub import from_pretrained_fastai
-        learn = from_pretrained_fastai(source)
-        return learn.model.state_dict(), _config_from_learner(learn)
+        try:
+            from huggingface_hub import from_pretrained_fastai
+            learn = from_pretrained_fastai(source)
+            return learn.model.state_dict(), _config_from_learner(learn)
+        except Exception as e:
+            raise ValueError(
+                f"Found a Hugging Face repo '{source}' but it has no "
+                f"{MODEL_WEIGHTS_FILENAME} + {MODEL_CONFIG_FILENAME}, and its "
+                f"legacy pickled model could not be loaded. "
+                f"(underlying error: {type(e).__name__}: {e})"
+            ) from e
     except Exception as e:
         raise ValueError(
             f"Unable to load model '{source}' as a local model directory "

@@ -209,8 +209,7 @@ class QueryCommand:
 
         state_dict, config = resolve_model(self.args.model)
         self.is_multilabel = config["is_multilabel"]
-        learn = build_learner(config, device=device)
-        learn.model.load_state_dict(state_dict, strict=True)
+        learn = build_learner(config, device=device, state_dict=state_dict)
         learn.dls.device = device
         return learn
     

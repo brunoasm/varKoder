@@ -74,15 +74,24 @@ class Arias2022Model(Module):
         return self.model(x)
 
 
+def new_custom_model(architecture, num_classes):
+    """Build a custom model with its LazyLinear layers still uninitialized.
+
+    Loading a state_dict into such a model materializes the lazy layers to the
+    shapes recorded in the weights (torch's lazy-load hook), which is how we
+    rebuild these architectures without knowing the trained input resolution.
+    """
+    if architecture == "arias2022":
+        return Arias2022Model(num_classes)
+    if architecture == "fiannaca2018":
+        return Fiannaca2018Model(num_classes)
+    raise Exception("Custom models must be one of: fiannaca2018 arias2022")
+
+
 def instantiate_custom_model(architecture, num_classes, input_size):
     """Build a custom model and materialize its LazyLinear layers with a dummy
     forward at ``input_size`` (C, H, W), so its state_dict has concrete shapes."""
-    if architecture == "arias2022":
-        model = Arias2022Model(num_classes)
-    elif architecture == "fiannaca2018":
-        model = Fiannaca2018Model(num_classes)
-    else:
-        raise Exception("Custom models must be one of: fiannaca2018 arias2022")
+    model = new_custom_model(architecture, num_classes)
     c, h, w = input_size
     with torch.no_grad():
         model(torch.randn(1, c, h, w))

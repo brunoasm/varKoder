@@ -29,8 +29,7 @@ def verify_fidelity(learn, sample_image_dir, out_dir, atol=1e-5):
     baseline, _ = learn.get_preds(dl=learn.dls.test_dl(df))
 
     state, cfg = resolve_model(str(out_dir))
-    rebuilt = build_learner(cfg, device="cpu")
-    rebuilt.model.load_state_dict(state, strict=True)
+    rebuilt = build_learner(cfg, device="cpu", state_dict=state)
     after, _ = rebuilt.get_preds(dl=rebuilt.dls.test_dl(df))
     return torch.allclose(baseline, after, atol=atol)
 
