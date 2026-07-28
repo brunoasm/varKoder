@@ -27,7 +27,7 @@ There are two possible strategies for image classification using *varKoder*:
   
   * Single-label: in this strategy, each image is associated with a single label. Instead of predicting the confidence in each label independently, *varKoder* will output which of the labels used in training is the best one for a given query sample. This may be more straightforward to handle, since there will always be a response. But we found it to be more prone to errors. Evaluating the confidence in a particular prediction is also less straigthforward.
 
-See options below in [Usage](#Usage) section on how to implement each strategy.
+See options below in [Usage](#usage) section on how to implement each strategy.
 
 ## Installation
 
@@ -152,10 +152,10 @@ varKoder convert -h
 
 Follow these links for detailed information for each command. The help for the convert command includes details on the two kinds of images that varKoder can use(varKodes and rfCGRs)
 
-1. [Creating varKodes or rfCGRs with `varKoder.py image`](docs/image.md)
-2. [Training an image classification model `varKoder.py train`](docs/train.md)
-3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
-4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
+1. [Creating varKodes or rfCGRs with `varKoder image`](docs/image.md)
+2. [Training an image classification model `varKoder train`](docs/train.md)
+3. [Identifying an unknown sample with `varKoder query`](docs/query.md)
+4. [Converting between varKodes and rfCGRs with `varKoder convert`](docs/convert.md)
 
 ### Trained model files
 

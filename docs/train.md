@@ -2,7 +2,7 @@
 
 After *varKodes* are generated with `varKoder image`, they can be used to train a neural network to recognize taxa based on these images. The `varKoder train` command uses `fastai` and `pytorch` to do this training, with image models obtained with the `timm` library. This includes a very large collection of models available on [Hugging Face Hub](https://huggingface.co/docs/hub/timm)
 
-If a model supported by the `timm` library requires a specific input image size (for example, [vision transformers](https://huggingface.co/google/vit-base-patch16-224-in21k)), **varKoder** will automatically resize input **varkodes** using the [nearest pixel method](https://pillow.readthedocs.io/en/stable/handbook/concepts.html#PIL.Image.Resampling.NEAREST).
+If a model supported by the `timm` library requires a specific input image size (for example, [vision transformers](https://huggingface.co/google/vit-base-patch16-224-in21k)), **varKoder** will automatically resize input **varkodes** to that size, squishing them (without preserving aspect ratio) with [box resampling](https://pillow.readthedocs.io/en/stable/handbook/concepts.html#PIL.Image.Resampling.BOX).
 
 There are two modes of training:
 
@@ -12,7 +12,7 @@ There are two modes of training:
  
  2. Single label
  
-  Our initial tests were all done with single-label classification. Even though we found limitation with this mode, we keep the option to do it for compatibility. In this case, it is not possible to account for sample quality when making predictions. To enable single label classification, you have to use options `--single-label` and `--ignore-quality`. 
+  Our initial tests were all done with single-label classification. Even though we found limitation with this mode, we keep the option to do it for compatibility. In this case, it is not possible to account for sample quality when making predictions. To enable single label classification, use the option `--single-label`. 
 
 
 ## Arguments
@@ -33,9 +33,10 @@ There are two modes of training:
 | -R SEED, --seed SEED | random seed passed to `pytorch`. |
 | -x , --overwrite | overwrite existing results. |
 | `-vv`, `--version` |  shows varKoder version. |
+| `-v`, `--verbose` | show more detailed output. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |
 | -t LABEL_TABLE, --label-table LABEL_TABLE | path to csv table with labels for each sample. This table must have columns `sample` and `labels`. Labels are passed as a string, with multiple labels separated by `;`. By default, varKoder will attempt to read labels from image metadata instead of a label table, providing a label table overrides this behavior. Samples not present in label table will be ignored for training and validation. |
-| -S, --single-label  |  Train as a single-label image classification model. This option must be combined with --ignore-quality. By default, models are trained as multi-label. |
+| -S, --single-label  |  Train as a single-label image classification model. Sample quality is not accounted for in this mode. By default, models are trained as multi-label. |
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
 | -f VALIDATION_SET_FRACTION, --validation-set-fraction VALIDATION_SET_FRACTION | fraction of samples to be held as a random validation set. If using multi-label, this applies to all samples. If using single-label, this applies to each species. (default: 0.2) |
@@ -43,7 +44,7 @@ There are two modes of training:
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
 | -B MIN_BATCH_SIZE, --min-batch-size MIN_BATCH_SIZE | minimum batch size for training. (default: 1) |
 | -C, --cpu | force use CPU for training instead of GPU. (default: False) |
-| -r BASE_LEARNING_RATE, --base_learning_rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
+| -r BASE_LEARNING_RATE, --base-learning-rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
 | -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Takes effect when you opt out of the default pretrained model, i.e. when you pass `--pretrained-model none` or `--random-weights` (otherwise the architecture comes from the pretrained model, see below). (default: vit_large_patch32_224)|
@@ -146,18 +147,27 @@ All optional arguments are set to defaults that seemed to work well in our tests
  4. Finding a good learning rate is also somewhat of an art: if learning rates are too small, a model can get stuck in local optima or take too many epochs to train, wasting resources. If they are too large, the training cycle may never be able to hone into the best model weights. Our default learning rate (5e-3) behaves well for the varKodes that we used as test, but you may consider changing it in the following cases:
    1. If using a pretrained model, you may want to decrease the learning rate, since you expect to be closer to the optimal weigths already.
    2. If using a much larger batch size, you may want to increase the learning rate.
- 5. For multi-label models, we use an asymmetric loss function that enables to weight differently positive and negative labels. This may have a major impact when a dataset is very large and there are many negative labels (for example, 99.9% of the varKodes do not have a label for a particular species). We found that a value o `4` worked in most cases, but this might be dataset-dependent and worth testing. This can be set with option `-g`.
+ 5. For multi-label models, we use an asymmetric loss function that enables to weight differently positive and negative labels. This may have a major impact when a dataset is very large and there are many negative labels (for example, 99.9% of the varKodes do not have a label for a particular species). We found that a value o `4` worked in most cases, but this might be dataset-dependent and worth testing. This can be set with option `-i`.
  6. There is a wide array of possible model architectures, and new models come up all the time. You can use this resource to explore potential models: https://rwightman.github.io/pytorch-image-models/results/. The model we chose (vision transformer) was the most accurate among those that we tested that could be trained in a reasonable amount of time with the hardware we had in hand (M1 macs, NVIDIA A100 and A5000 GPUs). Generally, larger models will be more accurate but need more compute resources (GPU memory and processing time).
  7. In the paper, we found that a combination of CutMix with random lighting transforms (brightness and contrast) improves training and yields more accurate models for single-label models. MixUp had a similar performance to CutMix, and it seemed to work much better for multi-label classification. For this reason, MixUp and lighting transforms are turned on by default, but you can turn them off or even change the probability that a lighting transform is applied to a *varKode* during training. We also tested Label Smoothing, which was not as helpful. For this reason, it is turned off by default but can be turned on if desired.
  8. RandomErasing is an additional augmentation technique that can be used alongside MixUp/CutMix and lighting transforms. It randomly selects rectangular regions in an image and replaces them with noise, which helps prevent overfitting by simulating occlusion scenarios. Unlike MixUp and CutMix which are callback-based, RandomErasing is applied as a batch transform and can be combined with the other augmentation methods. Use `--random-erasing` or `-E` to enable this augmentation.
 
 During training, fastai outputs a log with some information (unless you use the `-g` option). This is a table showing, for each training epoch, the loss in images in the training set (`train_loss`), the loss in images in the validation set (`valid_loss`), the accuracy in images in the validation set. In the case of multi-label models, accuracy is measured as [area under ROC curve](https://en.wikipedia.org/wiki/Partial_Area_Under_the_ROC_Curve) and also [precision and recall](https://en.wikipedia.org/wiki/Precision_and_recall) using the provided confidence threshold for predictions and ignoring DNA quality labels. In the case of single-label models, we report `accuracy`, which is the fraction of varKodes for which the correct label is predicted. In each epoch, the model is presented and updated with all images in the training set, split in a number of batches according to the chosen batch size. The loss is a number calculated with a loss function, which basically shows how well a neural network can predict the labels of images it is presented with. It is expected that the train loss will be small, since these are the very same images that are used in training, and what you want is to see a small validation loss and large validation accuracy, since this shows how well your model can generalize to unseen data.
 
+## Multi-frame (stacked) images
+
+`train` accepts multi-frame `apng` stacks produced with `varKoder image --stack`, mixed
+freely with single-frame `png` varKodes. For a stacked sample, one frame is drawn at random
+each epoch, so training sees every input size of that sample across the run rather than
+only the largest one. This applies to the training set only: validation always uses the
+representative (largest-input) frame 0, so validation metrics stay comparable between
+epochs and between stacked and unstacked datasets. Single-frame images are unaffected.
+
 ## Output
 
 At the end of the training cycle, the following files are written to the output folder selected by the user:
  - `varkoder_model.safetensors`: the trained model weights, in the [safetensors](https://github.com/huggingface/safetensors) weights-only format. Loading this file does not execute any code.
- - `config.json`: the architecture name, label names, and normalization stats needed to rebuild the model from `varkoder_model.safetensors`. Together, these two files fully describe the trained model — pass the output directory itself to `--pretrained-model` (to keep training it) or to `varKoder query --model` (to make predictions with it).
+ - `config.json`: the architecture name, label names, number of classes, input image size, whether the model is multi-label, and normalization stats — everything needed to rebuild the model from `varkoder_model.safetensors`. `varKoder query` reads `is_multilabel` from here to decide which kind of predictions to report. Together, these two files fully describe the trained model — pass the output directory itself to `--pretrained-model` (to keep training it) or to `varKoder query --model` (to make predictions with it).
  - `trained_model.pkl`: the same model exported with `fastai`'s pickle-based format.
 
    > **Deprecation:** `trained_model.pkl` is still written for backward
@@ -209,10 +219,10 @@ varKoder train path/to/images resnet50_model --pretrained-model none --architect
 Train a model for single-label classification with label smoothing:
 
 ```bash
-varKoder train path/to/images single_label_model --single-label --ignore-quality --label-smoothing
+varKoder train path/to/images single_label_model --single-label --label-smoothing
 ```
 
-This trains a model for single-label classification (each sample assigned exactly one label) with label smoothing to help prevent overfitting. The `--ignore-quality` flag is required with single-label mode.
+This trains a model for single-label classification (each sample assigned exactly one label) with label smoothing to help prevent overfitting.
 
 ### Example 4: Freezing Layers and Transfer Learning
 
@@ -229,7 +239,7 @@ This loads a model you trained previously (a directory containing `varkoder_mode
 Train with custom batch size, learning rate, and data augmentation settings:
 
 ```bash
-varKoder train path/to/images custom_model --max-batch-size 32 --base_learning_rate 0.001 --mix-augmentation CutMix --p-lighting 0.5 --max-lighting 0.2
+varKoder train path/to/images custom_model --max-batch-size 32 --base-learning-rate 0.001 --mix-augmentation CutMix --p-lighting 0.5 --max-lighting 0.2
 ```
 
 This trains a model with a smaller batch size and learning rate, uses CutMix instead of MixUp for data augmentation, and applies less aggressive lighting transformations during training.

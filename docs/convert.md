@@ -25,7 +25,7 @@ These two images represent the same kmer counts, with individual kmers mapping t
 ### Required arguments
 | argument | description |
 | --- | --- |
-|  kmer_mapping  |         pixel mapping to convert to (`varKode` or `cgr`). |
+|  output_mapping  |         pixel mapping to convert to (`varKode` or `cgr`). |
 |  input  |                path to folder with image files to be converted. |
 |  outdir  |               path to the folder where results will be saved. | 
 ### Optional arguments
@@ -35,6 +35,7 @@ These two images represent the same kmer counts, with individual kmers mapping t
 | `-R SEED`, `--seed SEED` |  optional random seed. Not relevant for the convert command. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
+| `-v`, `--verbose` | show more detailed output. |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process images in parallel. (default: 1) |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers used to produce original images. Will be inferred from file names if omitted. (default: 7) |
 | `-p {varKode,cgr} `, `--input-mapping {varKode,cgr}` | kmer mapping of input images. Will be inferred from file names if omitted. |
@@ -54,7 +55,17 @@ The kmer length used to produce images and the original pixel mapping will try t
 
 A new remapped image will be saved for each input image inside the output directory. If there were subdirectories in the input, these will be preserved in the output. If the input images have been generated using `varKoder image`, the image metadata will also be preserved (e. g. labels).
 
-## Example
+### Multi-frame (stacked) images
+
+`convert` accepts multi-frame `apng` stacks produced with `varKoder image --stack`, and a
+folder may freely mix `png` and `apng` inputs. Every frame of a stack is remapped
+independently and the result is written back as a single multi-frame `apng`, preserving
+frame count and order (so frame 0 remains the representative, largest-input frame) along
+with the stack metadata. Converted stacks are named
+`sample@stack+mapping+kN.apng`, matching what `varKoder image --stack` writes. See the
+[image command documentation](image.md#multi-frame-stacked-images) for the format itself.
+
+## Examples
 
 To create a chaos game representation from varKodes created with kmer size of 7 in folder `varKodes_folder` and save them to `cgr_folder`:
 
@@ -62,9 +73,7 @@ To create a chaos game representation from varKodes created with kmer size of 7 
 varKoder convert cgr varKodes_folder cgr_folder
 ```
 
-## Examples
-
-Here are several examples demonstrating how to use the `convert` command in different scenarios:
+Here are several more examples demonstrating how to use the `convert` command in different scenarios:
 
 ### Example 1: Converting varKodes to CGR Representation
 

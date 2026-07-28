@@ -1,6 +1,6 @@
 # varKoder query
 
-The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details. Models are distributed and loaded as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`); see [Models](#models) below for the accepted `--model` sources, including the deprecated legacy `.pkl` format.
+The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details. Models trained with `varKoder train` are saved and loaded as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`). The default model on Hugging Face Hub is still published in the older fastai `.pkl` format, so querying with it prints a security warning until it is next retrained. See [Models](#models) below for the accepted `--model` sources.
 
 ## Input format
 
@@ -54,27 +54,27 @@ If the input folder contains images (single-frame `png` varKodes and/or multi-fr
 
 The query command preprocesses samples to generate varKode images and then predicts their taxonomy by using a pretrained neural network. See [image](image.md) command tips for options  `--no-merge`, `--no-adapter`, `--stats-file`, `--int-folder` , `--no-deduplicate`, `--trim-bp`, `--cpus-per-thread` and `--kmer-size`.
 
-If `--max-bp` is less than the data available for a sample, *varKoder* will ramdomly choose reads to include. If it is more than the data available for a sample, this sample will be skipped.
+If `--max-bp` is less than the data available for a sample, *varKoder* will ramdomly choose reads to include. If it is more than the data available for a sample, all of that sample's data is used.
 
 If there are less than 128 samples included in a query, we use a CPU to compute predictions. If there are 128 or more samples and a GPU is available, we use a GPU and group varKodes in batches of size `--max-batch-size`. The only constraint to batch size is the memory available in the GPU: the larger the batch size, the faster predictions will be done.
 
 ## Input 
 By default, if the input folder contains subfolders, `varKoder query` will assume that raw reads in each subfolder should all be treated as a single sample (named with subfolder name). To override this behavior, use `--no-pairs`. If there are no subfolders or `--no-pairs` is used, each fastq file in the input will be treated as a separate sample (named after the file name). See help on `varKoder image` command for more information about fastq processing.
 
-If the `--images` argument is used, `varKoder query` will not attempt to process fastq files. Instead, it will recursively search for `png` files in the input folder, assuming they are varKodes generated with `varKoder image`.
+If the `--images` argument is used, `varKoder query` will not attempt to process fastq files. Instead, it will recursively search for `png` and `apng` files in the input folder, assuming they are varKodes generated with `varKoder image`.
 
 ## Models
 `--model` accepts three kinds of sources:
 
 1. A local model directory produced by `varKoder train`, containing `varkoder_model.safetensors` + `config.json`. This is the recommended way to use a model you trained yourself: point `--model` at the training output directory.
-2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), which is downloaded and loaded as weights-only safetensors.
-3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory or Hugging Face repo when one is available.
+2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA). varKoder downloads `varkoder_model.safetensors` + `config.json` if the repo has them, and otherwise falls back to the repo's pickled fastai model. The current default model has not been republished yet, so it takes the fallback path and prints the security warning below.
+3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning; prefer a safetensors model directory or Hugging Face repo when one is available.
 
-> **Security note:** varKoder currently distributes trained models as fastai `.pkl` files, which are Python pickles loaded via fastai's `load_learner`. Loading one executes code stored in that file, so only use models — local `--model` paths or Hugging Face repositories, including the default model — from sources you trust.
+> **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies to local `--model` paths ending in `.pkl` and to Hugging Face repos without the safetensors artifact — including the current default model. Only load `.pkl` models from sources you trust. Safetensors models carry weights only and are not affected.
 
 ## Output
 
-The main output is a table in `csv` format saved as `predictions.csv` in the output folder. The columns included depend on whether the model used for predictions is single-label or multi-label. In addition to this output table, varKodes produced from a raw reads input can be saved to the same folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
+The main output is a table in `csv` format saved as `predictions.csv` in the output folder. The columns included depend on whether the model used for predictions is single-label or multi-label. In addition to this output table, varKodes produced from a raw reads input can be saved to a `query_images` subfolder of the output folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
 
 By default, only the top prediction (if single-label) or predictions above threshold (if multi-label) are included in the table. To also include the predicted confidence of all possible labels, use the argument `--include-probs`. CAUTION: if there are many possible labels in the trained model (for example, thousands) this can generate a very large output file.
 
@@ -87,12 +87,14 @@ For multi-frame (stacked, `.apng`) inputs, there is normally **one row per file*
  *  `sample_id`: An identifier for each sample, inferred from the input file paths.
  *  `query_basepairs`: amount of data used to produce varKodes for query.
  *  `query_kmer_len`: kmer length used to produce varKode.
+ *  `query_mapping`: kmer mapping used to produce varKode (`varKode` or `cgr`).
  *  `trained_model_path`: path to model used to make predictions.
  *  `prediction_type`: Multilabel
  *  `prediction_threshold`: Confidence threshold to call a label
  *  `predicted_labels`: labels above the confidence threshold.
- *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
+ *  `actual_labels`: labels in the metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
+ *  `basefrequency_sd`: standard deviation of base frequencies in the sample, recorded when the varKode was generated.
  *  other columns: confidence scores in each label. Each confidence score varies independently between 0 and 1. They are only included with `--include-probs` option.
 
 
@@ -102,12 +104,14 @@ For multi-frame (stacked, `.apng`) inputs, there is normally **one row per file*
  *  `sample_id`: An identifier for each sample, inferred from the input file paths.
  *  `query_basepairs`: amount of data used to produce varKodes for query.
  *  `query_kmer_len`: kmer length used to produce varKode.
+ *  `query_mapping`: kmer mapping used to produce varKode (`varKode` or `cgr`).
  *  `trained_model_path`: path to model used to make predictions.
  *  `prediction_type`: Single label
  *  `best_pred_label`: the best taxonomic prediction.
  *  `best_pred_prob`: the confidence of the best prediction.
- *  `actual_labels`: labels in the EXIF metadata of a given varKode file. These are not used in the query command, just reported for comparison.
+ *  `actual_labels`: labels in the metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
+ *  `basefrequency_sd`: standard deviation of base frequencies in the sample, recorded when the varKode was generated.
  *  other columns: confidence scores in each label. All confidence scores sum to 1. They are only included with `--include-probs` option.
  
 ## Examples
