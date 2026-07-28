@@ -131,7 +131,10 @@ def test_iter_varKoder_images_finds_png_and_apng_only(tmp_path):
     (tmp_path / "readme.txt").touch()
     (tmp_path / "a@00500K+cgr+k7.png.bak").touch()
 
-    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    # Both decoy files also happen to fail name-parsing, so this must disable
+    # skip_unparseable to isolate extension-filtering (the thing under test)
+    # from the malformed-name filter (covered separately below).
+    found = {p.name for p in iter_varKoder_images(tmp_path, skip_unparseable=False)}
     assert found == {"a@00500K+cgr+k7.png", "b@stack+cgr+k7.apng"}
 
 
@@ -159,6 +162,60 @@ def test_iter_varKoder_images_skip_unparseable_false_yields_everything(tmp_path,
     found = {p.name for p in iter_varKoder_images(tmp_path, skip_unparseable=False)}
     assert found == {good_name, bad_name}
     assert capsys.readouterr().err == ""
+
+
+def test_iter_varKoder_images_skips_malformed_multiframe_name_by_default(tmp_path, capsys):
+    # The multiframe branch of get_metadata_from_img_filename is a separate
+    # code path from the single-frame one exercised above; give it its own
+    # sync-conflict-copy coverage.
+    good_name = "good@stack+cgr+k7.apng"
+    bad_name = "sample@stack+cgr+k7 2.apng"  # iCloud/Dropbox sync conflict copy
+    (tmp_path / good_name).touch()
+    (tmp_path / bad_name).touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    assert found == {good_name}
+
+    err = capsys.readouterr().err
+    assert "ignored 1 file(s)" in err
+    assert bad_name in err
+
+
+def test_iter_varKoder_images_caps_skipped_listing_at_ten(tmp_path, capsys):
+    good_name = f"good@{format_bp_human_readable(500000)}+cgr+k7.png"
+    (tmp_path / good_name).touch()
+    bad_names = {f"notavarkode{i}.png" for i in range(15)}
+    for bad_name in bad_names:
+        (tmp_path / bad_name).touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    assert found == {good_name}
+
+    err_lines = capsys.readouterr().err.splitlines()
+    assert err_lines[0] == "Warning: ignored 15 file(s) whose names are not valid varKoder image names:"
+    path_lines = err_lines[1:11]
+    more_lines = err_lines[11:]
+
+    # Exactly 10 individual path lines, all distinct and all genuinely
+    # among the skipped bad files (rglob order is not guaranteed, so we
+    # don't assert which 10).
+    assert len(path_lines) == 10
+    assert len(set(path_lines)) == 10
+    listed_names = {Path(line.strip()).name for line in path_lines}
+    assert listed_names <= bad_names
+
+    # Then exactly one trailing "... and N more" line accounting for the rest.
+    assert more_lines == ["  ... and 5 more"]
+
+
+def test_iter_varKoder_images_recurses_into_subdirectories(tmp_path):
+    subdir = tmp_path / "sub"
+    subdir.mkdir()
+    good_name = f"good@{format_bp_human_readable(500000)}+cgr+k7.png"
+    (subdir / good_name).touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    assert found == {good_name}
 
 
 def test_collect_images_skips_malformed_names_instead_of_raising(tmp_path, capsys):
