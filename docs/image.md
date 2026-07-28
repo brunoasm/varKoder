@@ -133,7 +133,7 @@ Note:
 | argument | description |
 | --- | --- |
 | `-h`, `--help` | show help message and exit. |
-| `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
+| `-R SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-vv`, `--version` |  shows varKoder version. |
 | `-x`, `--overwrite` | overwrite existing results. By default samples are skipped if files exist. |
@@ -152,6 +152,7 @@ Note:
 | `-D`, `--no-deduplicate` |        do not attempt to remove duplicates in reads. See notes below for details. |
 | `-X`, `--no-image` |       clean and split raw reads, but do not generate image. You must provide a folder to save intermediate files with `--int-folder` to keep the processed reads. |
 | `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. This is applied to both forward and reverse reads in the case of paired ends. (default: 10,10) |
+| `-S`, `--stack` | consolidate all input-size images of a sample into a single multi-frame image (animated PNG / APNG), with one frame per input amount, instead of writing one file per input amount. Off by default. See *Multi-frame (stacked) images* under *Output* below. |
 
 ## Image command tips
 
@@ -170,11 +171,13 @@ The defaults for optional arguments were chosen based on our sets. Here are some
 
 varKodes will be saved as png images to a folder named `images` (or another name is the `--outdir` argument is provided). To avoid file system problems, `varKoder` will automatically create a random subfolder structure if there are thousands of input samples, so that no folder has more than a few thousand files. Each image will be named with the following convention:
 
-```sample@[thousands_of_bp]K+k[kmer_length].png```
+```sample@[bp_amount]+[kmer_mapping]+k[kmer_length].png```
+
+where `bp_amount` is the (human-readable, zero-padded) number of base pairs used, e.g. `00500K` or `00010M`.
 
 For example:
 
-```ugandensis_12@00010000K+k7.png``` is a varKode of the species `Acridocarpus`, sample id `ugandensis_12`, made from 10 million base pairs and for a kmer length of `7`.
+```ugandensis_12@00010M+cgr+k7.png``` is a varKode of the species `Acridocarpus`, sample id `ugandensis_12`, made from 10 million base pairs, using the `cgr` mapping, for a kmer length of `7`.
 
 The labels associated with this image will be saved by default as image EXIF metadata with the key `varkoderKeywords`. These include, for example, the taxon name **Acridocarpus** and a flag about the DNA quality. The metadata will be read by `varKoder` during training time and can also be accessed with programs such as [exiftool](https://exiftool.org/) or your [operating system](https://www.adobe.com/creativecloud/file-types/image/raster/exif-file.html).
 
@@ -187,7 +190,23 @@ By default, only the stats file and final images are saved. Intermediate files (
  `clean_reads`: fastq files adapter removed and merged (also trimmed if `--max-bp` provided)
  `split_fastqs`: subsampled fastq files from clean reads
  `Xmer_counts`: `dsk` kmer count files (with `X` being the kmer length)
- 
+
+### Multi-frame (stacked) images
+
+By default, `varKoder image` writes one image file per input amount (e.g. a sample may produce `sample@00001M+cgr+k7.png`, `sample@00002M+cgr+k7.png`, and so on). With the `--stack` (`-S`) option, all of these are instead consolidated into a **single multi-frame image** in animated-PNG (APNG) format, with one frame per input amount. This can make large training sets easier to move around and organize, since there is exactly one file per sample.
+
+Stacked images follow this naming convention, using the literal token `stack` in place of the base-pair amount:
+
+```sample@stack+[mapping]+k[kmer_length].apng```
+
+For example, `ugandensis_12@stack+cgr+k7.apng` holds every input-size varKode for sample `ugandensis_12` (CGR mapping, k-mer length 7) in one file.
+
+Key points about the format:
+
+ - **Frames are ordered largest-input-first, so frame 0 is the representative frame** (the varKode built from the most data). Any program that opens the file without iterating frames — including older versions of varKoder and generic image viewers — sees this representative frame, so stacked images degrade gracefully.
+ - The per-frame base-pair amounts are stored in the image metadata (`varkoderFrameSizes` key), and the file carries a `varkoderFormatVersion` marker. All other metadata (labels, quality flag, mapping) is stored once and applies to the whole sample.
+ - Stacked and unstacked images are fully interchangeable everywhere else in varKoder: `train`, `query`, and `convert` all accept a mix of `.png` and `.apng` files. During training, one frame is drawn at random per stacked sample each epoch (this replaces having separate per-size files); during query, the representative frame is used unless `--all-frames` is requested (see the [query documentation](query.md)).
+
 ## Note on quality labeling:
 
 When producing *varKodes*, we use `fastp` xml output to evaluate sequence quality. fastp outputs average base pair frequecies for each position along reads. Briefly, in high-quality sample, we expect that base pair frequencies do not change throughout a read. This is because reads are randomly placed throughout a genome, so the base pair frequencies in each position will converge to the genomic composition. However, multiple process that can affect the quality of a prediction can change that. For example:

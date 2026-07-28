@@ -20,12 +20,13 @@ import os
 
 from varKoder.core.config import (
     SAMPLE_BP_SEP, BP_KMER_SEP, MAPPING_CHOICES,
-    DEFAULT_KMER_SIZE, LABEL_SAMPLE_SEP, LABELS_SEP, QUAL_THRESH
+    DEFAULT_KMER_SIZE, LABEL_SAMPLE_SEP, LABELS_SEP, QUAL_THRESH,
+    MULTIFRAME_EXT, MULTIFRAME_BP_TOKEN
 )
 from varKoder.core.utils import (
     eprint, get_kmer_mapping, get_metadata_from_img_filename,
     get_varKoder_labels, get_varKoder_qual, get_varKoder_freqsd,
-    format_bp_human_readable
+    format_bp_human_readable, iter_varKoder_images
 )
 
 from PIL import Image
@@ -94,32 +95,53 @@ def process_remapping(f_data: Dict[str, Any], output_mapping: str, sum_rc: bool 
     # Skip if the file already exists
     if os.path.exists(f_data['outfile_path']) and not os.access(f_data['outfile_path'], os.W_OK):
         return
-    
+
     # Open the image
     image = Image.open(f_data['path'])
-    
-    # Remap the image
-    new_img = remap(image, 
-                    f_data['img_kmer_size'], 
-                    f_data['img_kmer_mapping'], 
-                    output_mapping,
-                    sum_rc
-                   )
-    
-    # Create a PngInfo object and add the necessary info
+
+    # Capture the file-level tEXt (frame 0 for multi-frame images) before seeking.
+    info_items = dict(image.info)
+
+    # Build the metadata, updating the mapping key to the target mapping.
     pnginfo = PngInfo()
-    for k, v in image.info.items():
-        # Update mapping info
+    for k, v in info_items.items():
         if k == 'varkoderMapping':
             pnginfo.add_text(k, output_mapping)
         else:
             pnginfo.add_text(k, str(v))
-    
+
     # Create the necessary directories
     f_data['outfile_path'].parent.mkdir(parents=True, exist_ok=True)
-    
-    # Save the new image
-    new_img.save(f_data['outfile_path'], optimize=True, pnginfo=pnginfo)
+
+    if f_data.get('multiframe'):
+        # Remap every frame independently and re-save as a multi-frame APNG. Frame count
+        # and order are preserved, so varkoderFrameSizes/varkoderFormatVersion carry through.
+        n_frames = getattr(image, 'n_frames', 1)
+        frames = []
+        for i in range(n_frames):
+            image.seek(i)
+            frame = image.convert('L')  # remap operates on one grayscale frame at a time
+            frames.append(remap(frame,
+                                 f_data['img_kmer_size'],
+                                 f_data['img_kmer_mapping'],
+                                 output_mapping,
+                                 sum_rc))
+        frames[0].save(f_data['outfile_path'],
+                       save_all=True,
+                       append_images=frames[1:],
+                       default_image=False,
+                       pnginfo=pnginfo,
+                       optimize=True)
+    else:
+        # Remap the single-frame image
+        new_img = remap(image,
+                        f_data['img_kmer_size'],
+                        f_data['img_kmer_mapping'],
+                        output_mapping,
+                        sum_rc
+                       )
+        # Save the new image
+        new_img.save(f_data['outfile_path'], optimize=True, pnginfo=pnginfo)
 
 
 class ConvertCommand:
@@ -154,7 +176,7 @@ class ConvertCommand:
             List of dictionaries with image information
         """
         image_files = []
-        for f in Path(self.args.input).rglob("*.png"):
+        for f in iter_varKoder_images(self.args.input):
             try:
                 img_metadata = get_metadata_from_img_filename(f)
                 if self.args.input_mapping:  # If input mapping passed as argument, it has priority
@@ -168,10 +190,21 @@ class ConvertCommand:
                     'bp': None,
                     'img_kmer_mapping': self.args.input_mapping,
                     'img_kmer_size': self.args.kmer_size,
-                    'path': f
+                    'path': f,
+                    'multiframe': False,
                 }
 
-            if img_metadata['sample'] and img_metadata['bp']:
+            if img_metadata.get('multiframe'):
+                fname = (
+                         f"{img_metadata['sample']}{SAMPLE_BP_SEP}"
+                         f"{MULTIFRAME_BP_TOKEN}{BP_KMER_SEP}"
+                         f"{self.args.output_mapping}{BP_KMER_SEP}"
+                         f"k{img_metadata['img_kmer_size']}{MULTIFRAME_EXT}"
+                        )
+                img_metadata['outfile_path'] = (Path(self.args.outdir)/
+                                                Path(*img_metadata['path'].relative_to(Path(self.args.input)).parent.parts[1:])/
+                                                fname)
+            elif img_metadata['sample'] and img_metadata['bp']:
                 fname = (
                          f"{img_metadata['sample']}{SAMPLE_BP_SEP}"
                          f"{format_bp_human_readable(int(img_metadata['bp']))}{BP_KMER_SEP}"
@@ -183,7 +216,7 @@ class ConvertCommand:
                                                 fname)
             else:
                 img_metadata['outfile_path'] = Path(self.args.outdir)/Path(*img_metadata['path'].parts[1:])
-                
+
             image_files.append(img_metadata)
         
         return image_files

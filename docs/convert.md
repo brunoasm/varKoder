@@ -32,7 +32,7 @@ These two images represent the same kmer counts, with individual kmers mapping t
 | argument | description |
 | --- | --- |
 | `-h`, `--help` | show help message and exit. |
-| `-d SEED`, `--seed SEED` |  optional random seed. Not relevant for the convert command. |
+| `-R SEED`, `--seed SEED` |  optional random seed. Not relevant for the convert command. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of threads to process images in parallel. (default: 1) |

@@ -23,6 +23,29 @@ def synthetic_images(tmp_path):
     return pd.DataFrame(rows), labels
 
 
+MULTIFRAME_LEVELS = [20, 130, 240]
+
+
+@pytest.fixture
+def multiframe_images(tmp_path):
+    """Four 3-frame APNGs; frame k is a constant gray level MULTIFRAME_LEVELS[k].
+
+    Frame 0 is the representative (largest-bp) frame, matching what
+    ``varKoder image --stack`` writes. 3 train / 1 valid.
+    """
+    labels = ["alpha", "beta"]
+    rows = []
+    for i in range(4):
+        frames = [
+            Image.fromarray(np.full((64, 64), lv, dtype="uint8")).convert("RGB")
+            for lv in MULTIFRAME_LEVELS
+        ]
+        p = tmp_path / f"stacked_{i}.apng"
+        frames[0].save(p, save_all=True, append_images=frames[1:], format="PNG")
+        rows.append({"path": str(p), "labels": labels[i % 2], "is_valid": i >= 3})
+    return pd.DataFrame(rows), labels, MULTIFRAME_LEVELS
+
+
 @pytest.fixture
 def tiny_timm_learner(synthetic_images):
     """A CPU resnet18 vision_learner with random weights (no download)."""

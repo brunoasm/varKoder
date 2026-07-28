@@ -22,16 +22,20 @@ from collections import OrderedDict, defaultdict
 from typing import Dict, List, Tuple, Optional, Any, Union
 
 from varKoder.core.config import (
-    LABELS_SEP, BP_KMER_SEP, SAMPLE_BP_SEP, QUAL_THRESH, 
+    LABELS_SEP, BP_KMER_SEP, SAMPLE_BP_SEP, QUAL_THRESH,
     MAPPING_CHOICES, DEFAULT_KMER_SIZE, DEFAULT_KMER_MAPPING
 )
 from varKoder.core.utils import (
     eprint, get_kmer_mapping, process_input, get_varKoder_labels,
-    get_varKoder_qual, get_varKoder_freqsd, get_metadata_from_img_filename
+    get_varKoder_qual, get_varKoder_freqsd, get_metadata_from_img_filename,
+    get_varKoder_frame_sizes, iter_varKoder_images, format_bp_human_readable
 )
+# Import for its side effect: registers VarKodeImage / SelectRandomFrame under their
+# canonical module path so load_learner can unpickle models trained with this feature.
+import varKoder.core.imaging  # noqa: F401
 
 from varKoder.commands.image import (
-    clean_reads, split_fastq, count_kmers, make_image, 
+    clean_reads, split_fastq, count_kmers, make_image,
     run_clean2img, run_clean2img_wrapper
 )
 
@@ -84,9 +88,11 @@ class QueryCommand:
         elif args.keep_images:
             self.images_d = Path(args.outdir) / "query_images"
             self.images_d.mkdir(parents=True, exist_ok=True)
-        elif args.int_folder:
-            self.images_d = Path(tempfile.mkdtemp(prefix="barcoding_img_"))
         else:
+            # Query images live under the intermediate dir. With --int-folder this is the
+            # user-provided folder (kept); otherwise it is the auto-created temp dir that
+            # is removed at the end of run(). This avoids leaking an untracked temp
+            # directory when --int-folder is used without --keep-images.
             self.images_d = self.inter_dir / "images"
         
         # Set up kmer mapping
@@ -104,13 +110,13 @@ class QueryCommand:
         """
         if self.args.images:
             # Input is already images, just collect them
-            return [img for img in self.images_d.rglob("*.png")]
-        
-        # Check if input directory contains PNG files
+            return list(iter_varKoder_images(self.images_d))
+
+        # Check if input directory contains image files
         inpath = Path(self.args.input)
-        png_files = list(inpath.glob("*.png"))
-        
-        # If PNG files are found, suggest using the --images flag
+        png_files = list(inpath.glob("*.png")) + list(inpath.glob("*.apng"))
+
+        # If image files are found, suggest using the --images flag
         if png_files:
             eprint("ERROR: Found PNG files in input directory.")
             eprint("If your input directory contains pre-generated images, use the --images flag:")
@@ -163,8 +169,8 @@ class QueryCommand:
                         pass
             
             eprint("All images prepared, saved in", str(self.images_d))
-            
-            return [img for img in self.images_d.rglob("*.png")]
+
+            return list(iter_varKoder_images(self.images_d))
         
         except KeyError as e:
             if str(e) == "'labels'":
@@ -181,7 +187,7 @@ class QueryCommand:
         Preserves the prior device heuristic: use a GPU only when one is
         available AND there are enough images (>=128) to be worth it.
         """
-        n_images = len([img for img in self.images_d.rglob("*.png")])
+        n_images = len(list(iter_varKoder_images(self.images_d)))
         gpu_available = torch.backends.mps.is_built() or (
             torch.backends.cuda.is_built() and torch.cuda.device_count()
         )
@@ -208,16 +214,89 @@ class QueryCommand:
         learn.dls.device = device
         return learn
     
+    def _expand_query_items(self, img_paths: List[Path]) -> List[Dict[str, Any]]:
+        """
+        Turn discovered image paths into per-prediction items.
+
+        Each item is a dict with:
+            report_path   - original file to report / read tEXt metadata from
+            loader_path   - file the data loader opens (frame 0 = representative frame)
+            sample, bp, img_kmer_size, img_kmer_mapping - metadata for the output
+
+        Default (representative) behavior yields one item per file, whether single-frame
+        PNG or multi-frame APNG. With ``--all-frames``, each multi-frame file is expanded
+        to one item per frame: the frame is extracted to a temporary single-frame PNG
+        (its frame 0 is that frame) so the standard representative loader gives exactly
+        one prediction per frame.
+        """
+        all_frames = getattr(self.args, "all_frames", False)
+        items: List[Dict[str, Any]] = []
+        frames_dir = self.inter_dir / "all_frames_tmp"
+        frame_counter = 0
+
+        for p in img_paths:
+            meta = get_metadata_from_img_filename(p)
+            sizes = get_varKoder_frame_sizes(p)
+            try:
+                with Image.open(p) as im:
+                    n_frames = getattr(im, "n_frames", 1)
+            except Exception:
+                n_frames = 1
+
+            base_item = {
+                "report_path": p,
+                "sample": meta["sample"],
+                "img_kmer_size": meta["img_kmer_size"],
+                "img_kmer_mapping": meta["img_kmer_mapping"],
+            }
+
+            if all_frames and n_frames > 1:
+                # Copy the sample-level tEXt (not the per-file frame keys) onto each frame.
+                with Image.open(p) as im:
+                    info_text = {
+                        k: v for k, v in im.info.items()
+                        if isinstance(v, str)
+                        and k not in ("varkoderFrameSizes", "varkoderFormatVersion")
+                    }
+                    frames_dir.mkdir(parents=True, exist_ok=True)
+                    for i in range(n_frames):
+                        bp = sizes[i] if i < len(sizes) else None
+                        im.seek(i)
+                        frame = im.convert("L")
+                        pnginfo = PngInfo()
+                        for k, v in info_text.items():
+                            pnginfo.add_text(k, v)
+                        bp_h = format_bp_human_readable(int(bp)) if bp is not None else "NA"
+                        tmp_path = frames_dir / (
+                            f"{frame_counter:06d}_{meta['sample']}{SAMPLE_BP_SEP}{bp_h}"
+                            f"{BP_KMER_SEP}{meta['img_kmer_mapping']}"
+                            f"{BP_KMER_SEP}k{meta['img_kmer_size']}.png"
+                        )
+                        frame_counter += 1
+                        frame.save(tmp_path, optimize=True, pnginfo=pnginfo)
+                        items.append({**base_item, "loader_path": tmp_path, "bp": bp})
+            else:
+                # One item per file; representative (largest-bp) frame.
+                bp = meta["bp"]
+                if bp is None:
+                    bp = sizes[0] if sizes else None
+                items.append({**base_item, "loader_path": p, "bp": bp})
+
+        return items
+
     def run(self) -> None:
         """
         Run the query command.
         """
         # Prepare images (either process raw reads or collect existing images)
         img_paths = self.prepare_images()
-        
+
         if not img_paths:
             raise Exception("No images found to query. Please check your input.")
-        
+
+        # Expand into per-prediction items (one per file, or one per frame with --all-frames)
+        items = self._expand_query_items(img_paths)
+
         # Extract metadata from images
         actual_labels = []
         qual_flags = []
@@ -226,8 +305,9 @@ class QueryCommand:
         query_bp = []
         query_klen = []
         query_mapping = []
-        
-        for p in img_paths:
+
+        for it in items:
+            p = it["report_path"]
             try:
                 labs = ";".join(get_varKoder_labels(p))
             except (AttributeError, TypeError):
@@ -243,20 +323,17 @@ class QueryCommand:
             except (AttributeError, TypeError):
                 freq_sd = np.nan
 
-            img_metadatada = get_metadata_from_img_filename(p)
-
-            
-            sample_ids.append(img_metadatada['sample'])
-            query_bp.append(img_metadatada['bp'])
-            query_klen.append(img_metadatada['img_kmer_size'])
-            query_mapping.append(img_metadatada['img_kmer_mapping'])
+            sample_ids.append(it["sample"])
+            query_bp.append(it["bp"])
+            query_klen.append(it["img_kmer_size"])
+            query_mapping.append(it["img_kmer_mapping"])
             actual_labels.append(labs)
             qual_flags.append(qual_flag)
             freq_sds.append(freq_sd)
-        
+
         # Start output dataframe
         common_data = {
-            "varKode_image_path": img_paths,
+            "varKode_image_path": [it["report_path"] for it in items],
             "sample_id": sample_ids,
             "query_basepairs": query_bp,
             "query_kmer_len": query_klen,
@@ -266,11 +343,11 @@ class QueryCommand:
             "possible_low_quality": qual_flags,
             "basefrequency_sd": freq_sds,
         }
-        
+
         # Load model
         learn = self.load_model()
         # Create data loader for inference
-        df = pd.DataFrame({"path": img_paths})
+        df = pd.DataFrame({"path": [it["loader_path"] for it in items]})
         query_dl = learn.dls.test_dl(df, bs=self.args.max_batch_size)
         
         # Make predictions
@@ -322,9 +399,17 @@ class QueryCommand:
         output_df.to_csv(outdir / "predictions.csv", index=False)
         
         eprint("Predictions saved to", str(outdir / "predictions.csv"))
-        
-        # Clean up temporary directory if created
-        if not self.args.int_folder and not self.args.keep_images and self.inter_dir.is_dir():
+
+        # Remove the scratch dir used to extract individual frames for --all-frames
+        frames_dir = self.inter_dir / "all_frames_tmp"
+        if frames_dir.is_dir():
+            shutil.rmtree(frames_dir, ignore_errors=True)
+
+        # Clean up the intermediate directory if we created it. --keep-images is not a
+        # reason to keep it: kept images are written to <outdir>/query_images, outside
+        # inter_dir, so removing it here cannot discard them. Only --int-folder, which
+        # means the directory belongs to the user, prevents removal.
+        if not self.args.int_folder and self.inter_dir.is_dir():
             shutil.rmtree(self.inter_dir)
 
 

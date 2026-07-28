@@ -39,7 +39,7 @@ from varKoder.core.config import (
 )
 from varKoder.core.utils import (
     eprint, get_metadata_from_img_filename, get_varKoder_labels,
-    get_varKoder_qual
+    get_varKoder_qual, iter_varKoder_images
 )
 from varKoder.core.preprocessing import make_dataloaders
 from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
@@ -247,7 +247,7 @@ def train_nn(
     dls = make_dataloaders(
         df, architecture, is_multilabel, bs=batch_size, device=device,
         num_workers=num_workers, max_lighting=max_lighting, p_lighting=p_lighting,
-        random_erasing=random_erasing,
+        random_erasing=random_erasing, valid_pct=valid_pct, verbose=True,
     )
 
     # Create learner
@@ -393,10 +393,10 @@ class TrainCommand:
         """
         eprint("Collecting image files for training...")
         
-        # Collect all image files
+        # Collect all image files (single-frame PNG and multi-frame APNG)
         image_files = []
         f_counter = 0
-        for f in Path(self.args.input).rglob("*.png"):
+        for f in iter_varKoder_images(self.args.input):
             image_files.append(get_metadata_from_img_filename(f))
             f_counter += 1
             if f_counter % 1000 == 0:

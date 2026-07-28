@@ -25,5 +25,6 @@ dependencies:
     - "pyarrow>=14.0.1"
     - humanfriendly
     - tenacity
+    - "pillow>=8.3"
     - safetensors
     - pytest

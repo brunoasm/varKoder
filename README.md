@@ -157,7 +157,17 @@ Follow these links for detailed information for each command. The help for the c
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
 4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
 
-Trained models are distributed and stored as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`), both for the published model on Hugging Face Hub and for models produced by `varKoder train`. The older `.pkl` format is **deprecated**: it still works with `--model`/`--pretrained-model`, but loading it prints a security warning, since unpickling executes arbitrary code. See [train.md](docs/train.md#output) and [query.md](docs/query.md#models) for details.
+### Trained model files
+
+`varKoder train` saves models as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`), and `varKoder query` loads that format. The older fastai `.pkl` format is **deprecated**: it still works with `--model`/`--pretrained-model`, but loading it prints a security warning.
+
+> **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local `.pkl` files and to models downloaded from the Hugging Face hub — including the current default model, which is still published as a `.pkl` and will be republished as safetensors when it is next retrained. Only load `.pkl` models from sources you trust.
+
+See [train.md](docs/train.md#output) and [query.md](docs/query.md#models) for details.
+
+### Multi-frame (stacked) images
+
+varKoder normally writes one image per input amount for each sample. Optionally, `varKoder image --stack` consolidates all input-size images of a sample into a single multi-frame [animated PNG (APNG)](https://en.wikipedia.org/wiki/APNG) file (one frame per input amount), so there is exactly one file per sample. Frame 0 is the representative (largest-input) frame, so older readers and older versions of varKoder degrade gracefully to that frame. Stacked (`.apng`) and unstacked (`.png`) images are interchangeable across `train`, `query`, and `convert`; at query time use `--all-frames` to get a prediction for every frame instead of just the representative one. See the [image command documentation](docs/image.md#multi-frame-stacked-images) for details.
 
 ## Examples
 

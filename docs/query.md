@@ -13,7 +13,7 @@ If the input folder contains raw reads in fastq format (either gzipped or not), 
 If the input folder contains subfolders and each subfolder contains one or more fastq files (gzipped or not), each subfolder will be considered an independent query and the varKode will be built from all fastq files contained in each subfolder. Paired reads may be merged, similar to the `image` command. One model prediction will be made for each varKode (i. e. each subfolder)
 
 ### varKodes
-If the input folder contains images in the `png` format and the option `--images` is used, we will assume these are varKodes and use them directly in model prediction. No sequence will be processed.
+If the input folder contains images (single-frame `png` varKodes and/or multi-frame `apng` stacks produced with `varKoder image --stack`) and the option `--images` is used, we will assume these are varKodes and use them directly in model prediction. No sequence will be processed. For multi-frame stacks, the representative (largest-input) frame is used by default; use `--all-frames` to instead predict on every frame.
 
 ## Arguments
 
@@ -26,13 +26,13 @@ If the input folder contains images in the `png` format and the option `--images
 | argument | description |
 | --- | --- |
 | `-h`, `--help` | show help message and exit. |
-| `-d SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
+| `-R SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
 | `-l MODEL`, `--model MODEL` | trained model to use for prediction: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-1`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
-| `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for png files in the input folder. It will report the predictions for these png files. |
+| `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for `png` and multi-frame `apng` files in the input folder. It will report the predictions for these image files. |
 | `-k KMER_SIZE`, `--kmer-size KMER_SIZE` | size of kmers to count. Sizes from 5 to 9 are supported at the moment. (default: 7) |
 | `-p KMER_MAPPING`, `--kmer-mapping KMER_MAPPING` | method to map kmers to pixels if input data is sequences. This sets the correspondence between specific kmers and coordinates in the image produced. The possible values are: `varKode`, which produces varKodes; `cgr` (default), which produces a rfCGR. See the [convert command documentation](convert.md) for more details.|
 | `-n N_THREADS`, `--n-threads N_THREADS` | number of samples to preprocess in parallel. See tips in `image` command on usage. (default: 1) |
@@ -48,6 +48,7 @@ If the input folder contains images in the `png` format and the option `--images
 | `-T FRONT_BP,TAIL_BP`, `--trim-bp FRONT_BP,TAIL_BP` | number of base pairs to trim from the beginning and end of each read, separated by comma. This is applied to both forward and reverse reads in the case of paired ends.  (default: 10,10) |
 | `-M MAX_BP`, `--max-bp MAX_BP` | number of post-cleaning basepairs to use for making image. You can use SI abbreviations (e. g. 1M for 1 million or 150K for 150 thousand bp). Set to 0 to use all of the available data. (default: 200M) |
 | `-b MAX_BATCH_SIZE`, `--max-batch-size MAX_BATCH_SIZE` | maximum batch size when using GPU for prediction. (default: 64) |
+| `-F`, `--all-frames` | for multi-frame (stacked, `.apng`) images, output one prediction per frame instead of a single prediction from the representative (largest) frame. Has no effect on single-frame images. See *Output* below. |
 
 ## Query command tips
 
@@ -69,11 +70,15 @@ If the `--images` argument is used, `varKoder query` will not attempt to process
 2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), which is downloaded and loaded as weights-only safetensors.
 3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory or Hugging Face repo when one is available.
 
+> **Security note:** varKoder currently distributes trained models as fastai `.pkl` files, which are Python pickles loaded via fastai's `load_learner`. Loading one executes code stored in that file, so only use models — local `--model` paths or Hugging Face repositories, including the default model — from sources you trust.
+
 ## Output
 
 The main output is a table in `csv` format saved as `predictions.csv` in the output folder. The columns included depend on whether the model used for predictions is single-label or multi-label. In addition to this output table, varKodes produced from a raw reads input can be saved to the same folder with the option `--keep-images` and intermediate files will be stored in the folder provided with `--int-folder` if this option is used. Naming conventions for varKode image files are described in the `image` command above. 
 
 By default, only the top prediction (if single-label) or predictions above threshold (if multi-label) are included in the table. To also include the predicted confidence of all possible labels, use the argument `--include-probs`. CAUTION: if there are many possible labels in the trained model (for example, thousands) this can generate a very large output file.
+
+For multi-frame (stacked, `.apng`) inputs, there is normally **one row per file**, corresponding to the representative (largest-input) frame. If `--all-frames` is used, there is instead **one row per frame**: the same `varKode_image_path` appears once per frame, and the `query_basepairs` column distinguishes them by the input amount of each frame. This lets you inspect how a prediction changes with the amount of input data. Single-frame `.png` inputs always produce one row per file and are unaffected by `--all-frames`.
 
 ### Multi-label:
 
@@ -117,7 +122,7 @@ Query a set of fastq files using the default pretrained model:
 varKoder query path/to/fastq_files query_results
 ```
 
-This processes the fastq files to generate varKodes, then uses the default Hugging Face model (brunoasm/vit_large_patch32_224.NCBI_SRA) to predict labels with a confidence threshold of 0.5.
+This processes the fastq files to generate varKodes, then uses the default Hugging Face model (brunoasm/vit_large_patch32_224.NCBI_SRA) to predict labels with the default confidence threshold of 0.7.
 
 ### Example 2: Using Your Custom-trained Model
 

@@ -32,14 +32,14 @@ import subprocess
 import traceback
 
 from varKoder.core.config import (
-    LABELS_SEP, BP_KMER_SEP, SAMPLE_BP_SEP, QUAL_THRESH, 
+    LABELS_SEP, BP_KMER_SEP, SAMPLE_BP_SEP, QUAL_THRESH,
     MAPPING_CHOICES, DEFAULT_KMER_SIZE, DEFAULT_KMER_MAPPING,
     FASTP_CMD, DSK_CMD, DSK2ASCII_CMD, REFORMAT_CMD, PIGZ_CMD,
-    LABEL_SAMPLE_SEP
+    LABEL_SAMPLE_SEP, MULTIFRAME_EXT, MULTIFRAME_BP_TOKEN, FORMAT_VERSION
 )
 from varKoder.core.utils import (
     eprint, get_kmer_mapping, process_input, stats_to_csv, read_stats, is_fasta_file,
-    format_bp_human_readable
+    format_bp_human_readable, parse_bp_human_readable
 )
 
 from PIL import Image
@@ -935,6 +935,164 @@ def count_kmers(
 
     return stats
 
+def compute_kmer_array(infile, kmer_mapping, threads=1, verbose=False):
+    """
+    Count k-mers from a dsk file and turn them into an 8-bit grayscale array.
+
+    This is the pixel computation shared by single-frame and multi-frame image
+    generation: it runs dsk2ascii, maps canonical k-mers to pixels, log-bins the
+    counts and rescales to uint8.
+
+    Args:
+        infile: Path to k-mer counts (dsk) file
+        kmer_mapping: K-mer mapping table
+        threads: Number of threads to use
+        verbose: Whether to print verbose output
+
+    Returns:
+        numpy.uint8 array (height x width) ready for Image.fromarray (grayscale "L")
+    """
+    with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
+        # first, dump dsk results as ascii, save in a pandas df and merge with mapping
+        # mapping has kmers and their reverse complements, so we need to aggregate
+        # to get only canonical kmers
+        # when running in parallel, sometimes dsk fails, hard to know the reason
+        # so we retry a few times before admitting defeat
+        for attempt in Retrying(
+            stop=stop_after_attempt(5),
+            wait=wait_random_exponential(multiplier=1, max=60),
+        ):
+            with attempt:
+                command = [
+                        DSK2ASCII_CMD,
+                        "-c",
+                        "-file",
+                        str(infile),
+                        "-nb-cores",
+                        str(threads),
+                        "-out",
+                        str(Path(outdir) / "dsk.txt"),
+                        "-verbose",
+                        "0",
+                    ]
+                dsk_out = subprocess.run(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+        if verbose:
+            eprint(' '.join(command))
+            eprint(dsk_out.stderr.decode())
+
+        dsk_out = dsk_out.stdout.decode("UTF-8")
+        counts = pd.read_csv(
+            StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
+        )
+        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("mean").reset_index()
+
+        counts.loc[:, "count"] = counts["count"].fillna(0)
+
+        # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
+        array_width = kmer_mapping["x"].max() + 1
+        array_height = kmer_mapping["y"].max() + 1
+
+        # Now let's create the image:
+        kmer_array = np.zeros(shape=[array_height, array_width])
+        kmer_array[counts["x"],counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
+        kmer_array = kmer_array.transpose() #PIL images have flipped x and y coords
+        kmer_array = np.flip(kmer_array,0) #In PIL images, 0 is top in vertical axis (axis 0 after transposed)
+
+        bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
+        kmer_array = np.digitize(kmer_array, bins, right=False) - 1
+
+        kmer_array = np.uint8(kmer_array)
+
+    return kmer_array
+
+
+def make_multiframe_image(
+    frames_by_bp,
+    outfolder,
+    sample,
+    mapping_code,
+    kmer_size,
+    labels=[],
+    base_sd=0,
+    base_sd_thresh=QUAL_THRESH,
+    subfolder_levels=0,
+    overwrite=False,
+):
+    """
+    Assemble all input-size arrays of a single sample into one multi-frame APNG.
+
+    Frames are written in the order given (expected largest-bp-first, matching
+    split_fastq). Frame 0 is therefore the representative (largest-bp) frame and is
+    what legacy single-frame readers see.
+
+    Args:
+        frames_by_bp: List of (bp:int, uint8 array) tuples, sorted largest-bp-first
+        outfolder: Output directory
+        sample: Sample name
+        mapping_code: K-mer mapping method code
+        kmer_size: K-mer size
+        labels: List of labels
+        base_sd: Base frequency standard deviation
+        base_sd_thresh: Base frequency standard deviation threshold
+        subfolder_levels: Number of subfolder levels
+        overwrite: Whether to overwrite existing files
+
+    Returns:
+        OrderedDict: Statistics dictionary
+    """
+    outfile = (sample +
+               SAMPLE_BP_SEP +
+               MULTIFRAME_BP_TOKEN +
+               BP_KMER_SEP +
+               mapping_code +
+               BP_KMER_SEP +
+               "k" + str(kmer_size) +
+               MULTIFRAME_EXT
+              )
+    if subfolder_levels:
+        hsh = list(hashlib.md5(outfile.encode("UTF-8")).hexdigest())
+        for i in range(subfolder_levels):
+            outfolder = outfolder / hsh.pop()
+    Path(outfolder).mkdir(exist_ok=True, parents=True)
+
+    if not overwrite and (outfolder / outfile).is_file():
+        eprint("File exists. Skipping multi-frame image for sample:", str(sample))
+        return OrderedDict()
+
+    start_time = pd.Timestamp.now()
+
+    frames = [Image.fromarray(arr) for _, arr in frames_by_bp]
+
+    # Metadata: the four existing keys are identical across frames (they are per-sample),
+    # plus the per-frame bp amounts and a format-version marker.
+    metadata = PngInfo()
+    metadata.add_text("varkoderKeywords", LABELS_SEP.join(labels))
+    metadata.add_text("varkoderBaseFreqSd", str(base_sd))
+    metadata.add_text("varkoderLowQualityFlag", str(base_sd > base_sd_thresh))
+    metadata.add_text("varkoderMapping", mapping_code)
+    metadata.add_text("varkoderFrameSizes", ",".join(str(int(bp)) for bp, _ in frames_by_bp))
+    metadata.add_text("varkoderFormatVersion", FORMAT_VERSION)
+
+    frames[0].save(
+        Path(outfolder) / outfile,
+        save_all=True,
+        append_images=frames[1:],
+        default_image=False,
+        pnginfo=metadata,
+        optimize=True,
+    )
+
+    done_time = pd.Timestamp.now()
+    stats = OrderedDict()
+    stats["k" + str(kmer_size) + "_img_time"] = (done_time - start_time).total_seconds()
+
+    return stats
+
+
 def make_image(
     infile,
     outfolder,
@@ -991,73 +1149,18 @@ def make_image(
     start_time = pd.Timestamp.now()
     kmer_size = len(kmer_mapping.index[0])
 
-    with tempfile.TemporaryDirectory(prefix="dsk") as outdir:
-        # first, dump dsk results as ascii, save in a pandas df and merge with mapping
-        # mapping has kmers and their reverse complements, so we need to aggregate
-        # to get only canonical kmers
-        # when running in parallel, sometimes dsk fails, hard to know the reason
-        # so we retry a few times before admitting defeat
-        for attempt in Retrying(
-            stop=stop_after_attempt(5),
-            wait=wait_random_exponential(multiplier=1, max=60),
-        ):
-            with attempt:
-                command = [
-                        DSK2ASCII_CMD,
-                        "-c",
-                        "-file",
-                        str(infile),
-                        "-nb-cores",
-                        str(threads),
-                        "-out",
-                        str(Path(outdir) / "dsk.txt"),
-                        "-verbose",
-                        "0",
-                    ]
-                dsk_out = subprocess.run(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-        if verbose:
-            eprint(' '.join(command))
-            eprint(dsk_out.stderr.decode())
-            
-        dsk_out = dsk_out.stdout.decode("UTF-8")
-        counts = pd.read_csv(
-            StringIO(dsk_out), sep=" ", names=["sequence", "count"], index_col=0
-        )
-        counts = kmer_mapping.join(counts).groupby(["x", "y"]).agg("mean").reset_index()
+    kmer_array = compute_kmer_array(infile, kmer_mapping, threads=threads, verbose=verbose)
+    img = Image.fromarray(kmer_array)
 
+    # Now let's add the labels and other metadata:
+    metadata = PngInfo()
+    metadata.add_text("varkoderKeywords", LABELS_SEP.join(labels))
+    metadata.add_text("varkoderBaseFreqSd", str(base_sd))
+    metadata.add_text("varkoderLowQualityFlag", str(base_sd > base_sd_thresh))
+    metadata.add_text("varkoderMapping", mapping_code)
 
-        counts.loc[:, "count"] = counts["count"].fillna(0)
-
-        # Now we will place counts in an array, log the counts and rescale to use 8 bit integers
-        array_width = kmer_mapping["x"].max() + 1
-        array_height = kmer_mapping["y"].max() + 1
-
-        # Now let's create the image:
-        kmer_array = np.zeros(shape=[array_height, array_width])
-        kmer_array[counts["x"],counts["y"]] = (counts["count"] + 1)  # we do +1 so empty cells are different from zero-count
-        kmer_array = kmer_array.transpose() #PIL images have flipped x and y coords
-        kmer_array = np.flip(kmer_array,0) #In PIL images, 0 is top in vertical axis (axis 0 after transposed)
-
-        
-        bins = np.quantile(kmer_array, np.arange(0, 1, 1 / 256))
-        kmer_array = np.digitize(kmer_array, bins, right=False) - 1
-        
-        kmer_array = np.uint8(kmer_array)
-        img = Image.fromarray(kmer_array, mode="L")
-
-        # Now let's add the labels and other metadata:
-        metadata = PngInfo()
-        metadata.add_text("varkoderKeywords", LABELS_SEP.join(labels))
-        metadata.add_text("varkoderBaseFreqSd", str(base_sd))
-        metadata.add_text("varkoderLowQualityFlag", str(base_sd > base_sd_thresh))
-        metadata.add_text("varkoderMapping", mapping_code)
-
-        # finally, save the image
-        img.save(Path(outfolder) / outfile, optimize=True, pnginfo=metadata)
+    # finally, save the image
+    img.save(Path(outfolder) / outfile, optimize=True, pnginfo=metadata)
 
     done_time = pd.Timestamp.now()
     stats = OrderedDict()
@@ -1219,40 +1322,89 @@ def run_clean2img(
         img_key = "k" + str(args.kmer_size) + "_img_time"
 
         stats[str(x["sample"])][img_key] = 0
-        for infile in kmer_counts_d.glob(x["sample"] + SAMPLE_BP_SEP + "*"):
-            base_sd = get_basefrequency_sd(
-                Path(inter_dir, "clean_reads").glob(str(x["sample"]) + "_fastp_*.json")
-            )
-            stats[str(x["sample"])]["base_frequencies_sd"] = base_sd
-            
-            try:
-                img_stats = make_image(
-                    infile=infile,
-                    outfolder=images_d,
-                    kmer_mapping=kmer_mapping,
-                    overwrite=args.overwrite,
-                    threads=cores_per_process,
-                    verbose=args.verbose,
-                    labels=x["labels"],
-                    base_sd=base_sd,
-                    subfolder_levels=subfolder_levels,
-                    mapping_code = args.kmer_mapping
-                )
-            except (IndexError, pd.errors.ParserError) as e:
-                eprint("IMAGE FAIL:", infile)
-                if args.verbose:
-                    eprint(e)
-                    traceback.print_exc()
-                eprint("SKIPPING IMAGE")
-                stats[str(x["sample"])].update({"failed_step": "image"})
-                continue
-            try:
-                stats[str(x["sample"])][img_key] += img_stats[img_key]
-            except KeyError as e:
-                if e.args[0] == img_key:
-                    pass
-                else:
-                    raise (e)
+
+        base_sd = get_basefrequency_sd(
+            Path(inter_dir, "clean_reads").glob(str(x["sample"]) + "_fastp_*.json")
+        )
+        stats[str(x["sample"])]["base_frequencies_sd"] = base_sd
+
+        stack = getattr(args, "stack", False) and args.command == "image"
+
+        if stack:
+            # Consolidate all input-size arrays for this sample into one multi-frame APNG.
+            frames_by_bp = []
+            for infile in kmer_counts_d.glob(x["sample"] + SAMPLE_BP_SEP + "*"):
+                # Recover the bp amount from the intermediate filename:
+                # "sample@<bp>+k7.fq.h5" -> "sample@<bp>" -> "<bp>"
+                in_basename = str(Path(infile).name.removesuffix("".join(Path(infile).suffixes)))
+                in_base1, _in_k = in_basename.split(BP_KMER_SEP)
+                bp = parse_bp_human_readable(in_base1.rsplit(SAMPLE_BP_SEP, 1)[1])
+                try:
+                    arr = compute_kmer_array(
+                        infile, kmer_mapping, threads=cores_per_process, verbose=args.verbose
+                    )
+                except (IndexError, pd.errors.ParserError) as e:
+                    eprint("IMAGE FAIL:", infile)
+                    if args.verbose:
+                        eprint(e)
+                        traceback.print_exc()
+                    eprint("SKIPPING FRAME")
+                    stats[str(x["sample"])].update({"failed_step": "image"})
+                    continue
+                frames_by_bp.append((bp, arr))
+
+            if frames_by_bp:
+                # Largest-bp first so frame 0 is the representative frame.
+                frames_by_bp.sort(key=lambda t: t[0], reverse=True)
+                try:
+                    img_stats = make_multiframe_image(
+                        frames_by_bp=frames_by_bp,
+                        outfolder=images_d,
+                        sample=str(x["sample"]),
+                        mapping_code=args.kmer_mapping,
+                        kmer_size=args.kmer_size,
+                        labels=x["labels"],
+                        base_sd=base_sd,
+                        subfolder_levels=subfolder_levels,
+                        overwrite=args.overwrite,
+                    )
+                    stats[str(x["sample"])][img_key] += img_stats.get(img_key, 0)
+                except Exception as e:
+                    eprint("IMAGE FAIL (multi-frame):", x["sample"])
+                    if args.verbose:
+                        eprint(e)
+                        traceback.print_exc()
+                    stats[str(x["sample"])].update({"failed_step": "image"})
+        else:
+            for infile in kmer_counts_d.glob(x["sample"] + SAMPLE_BP_SEP + "*"):
+                try:
+                    img_stats = make_image(
+                        infile=infile,
+                        outfolder=images_d,
+                        kmer_mapping=kmer_mapping,
+                        overwrite=args.overwrite,
+                        threads=cores_per_process,
+                        verbose=args.verbose,
+                        labels=x["labels"],
+                        base_sd=base_sd,
+                        subfolder_levels=subfolder_levels,
+                        mapping_code = args.kmer_mapping
+                    )
+                except (IndexError, pd.errors.ParserError) as e:
+                    eprint("IMAGE FAIL:", infile)
+                    if args.verbose:
+                        eprint(e)
+                        traceback.print_exc()
+                    eprint("SKIPPING IMAGE")
+                    stats[str(x["sample"])].update({"failed_step": "image"})
+                    continue
+                try:
+                    stats[str(x["sample"])][img_key] += img_stats[img_key]
+                except KeyError as e:
+                    if e.args[0] == img_key:
+                        pass
+                    else:
+                        raise (e)
 
         eprint("Images done for", x["sample"])
     return stats

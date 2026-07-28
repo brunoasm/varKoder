@@ -21,6 +21,7 @@ dependencies = [
     "humanfriendly",
     "tenacity",
     "huggingface_hub[fastai]",
+    "pillow>=8.3",
     "safetensors",
 ]
 

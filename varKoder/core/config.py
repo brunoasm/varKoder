@@ -20,6 +20,12 @@ LABELS_SEP = ";"
 BP_KMER_SEP = "+"
 SAMPLE_BP_SEP = "@"
 
+# Multi-frame (APNG) image conventions
+MULTIFRAME_EXT = ".apng"          # extension for stacked, multi-frame images
+MULTIFRAME_BP_TOKEN = "stack"     # non-numeric sentinel replacing the bp segment in the filename
+IMAGE_GLOBS = ("*.png", "*.apng")  # patterns used to discover varKoder images
+FORMAT_VERSION = "2"              # value stored in the varkoderFormatVersion tEXt chunk
+
 # Quality thresholds
 QUAL_THRESH = 0.01
 
