@@ -286,6 +286,16 @@ else
     echo "${color}Warning: stacked images or trained model not found. Skipping stacked query test.$reset"
 fi
 
+# Test querying multi-frame (stacked) images with --all-frames against the
+# default Hugging Face model, which exercises a different model-loading path
+# than the locally trained .pkl used above.
+if [ -n "$(find images_stacked -name '*.apng' 2>/dev/null)" ]; then
+    echo "${color}Testing query on stacked images with --all-frames and the default model...$reset"
+    run_command "Q_STACK_HF" "$prefix $Q_STACK_HF_CMD -n $NCORES"
+else
+    echo "${color}Warning: stacked images not found. Skipping stacked query test with default model.$reset"
+fi
+
 # Test query command with FASTA images using default model
 if [ -d "images_fasta" ] && [ -n "$(find images_fasta -name '*.png' 2>/dev/null)" ]; then
     echo "${color}Testing query with FASTA images using default model...$reset"
@@ -330,6 +340,7 @@ else
             "Q1") echo "${color} (Query from FASTQ)$reset" ;;
             "Q2") echo "${color} (Query from images)$reset" ;;
             "Q_STACK") echo "${color} (Query from stacked images, --all-frames)$reset" ;;
+            "Q_STACK_HF") echo "${color} (Query from stacked images, --all-frames, default model)$reset" ;;
             "Q_FASTA") echo "${color} (Query from FASTA images with default model)$reset" ;;
             *) echo "" ;;
         esac
@@ -338,7 +349,7 @@ fi
 
 echo -e "\n${color}Commands that failed:$reset"
 failed=false
-for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_FASTA; do
+for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_STACK_HF Q_FASTA; do
     if [[ " ${successful_commands[*]} " != *" $cmd "* ]]; then
         # Get the exit code using the appropriate array type
         exit_code=""
@@ -371,7 +382,7 @@ if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
     echo "${color}-------------------------------------------------------------------$reset"
     
     # Loop through commands with the appropriate array method
-    for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_FASTA; do
+    for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_STACK_HF Q_FASTA; do
         wall_time=""
         cpu_time=""
         memory=""
