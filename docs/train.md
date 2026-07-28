@@ -30,7 +30,7 @@ There are two modes of training:
 | argument | description |
 | --- | --- |
 | -h, --help | show help message and exit |
-| -d SEED, --seed SEED | random seed passed to `pytorch`. |
+| -R SEED, --seed SEED | random seed passed to `pytorch`. |
 | -x , --overwrite | overwrite existing results. |
 | `-vv`, `--version` |  shows varKoder version. |
 | -n NUM_WORKERS, --num-workers NUM_WORKERS | number of CPUs used for data loading. See https://docs.fast.ai/data.load.html#dataloader. The default (0) uses the main process. |

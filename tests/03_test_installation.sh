@@ -229,6 +229,16 @@ else
     echo "${color}Warning: ${TESTDIR_FASTA}_input.csv not found. Skipping FASTA image test.$reset"
 fi
 run_command "C" "$prefix $C_CMD -n $NCORES"
+
+# Test multi-frame (stacked, APNG) image generation and converting a stacked image
+echo "${color}Testing multi-frame (--stack) image generation...$reset"
+run_command "IM_STACK" "$prefix $IM_STACK_CMD -n $NCORES"
+if [ -n "$(find images_stacked -name '*.apng' 2>/dev/null)" ]; then
+    run_command "C_STACK" "$prefix $C_STACK_CMD -n $NCORES"
+else
+    echo "${color}Warning: no stacked .apng images found. Skipping stacked convert test.$reset"
+fi
+
 run_command "T1" "$prefix $T1_CMD -n $NCORES"
 run_command "T2" "$prefix $T2_CMD -n $NCORES"
 
@@ -237,18 +247,21 @@ if [ -f "trained_pretrained/input_data.csv" ]; then
     # Create fastq_query directory if it doesn't exist
     mkdir -p fastq_query
     
-    while IFS=, read -r sample bp kmer_mapping kmer_size path labels pos_qual is_valid; do
-        if [ "$is_valid" = "True" ]; then
-            # Find the source directory
-            source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
-            if [ -n "$source_dir" ]; then
-                # Remove ./ prefix from source_dir if present for clean symlink paths
-                clean_source_dir="${source_dir#./}"
-                # Create relative symlink in fastq_query directory
-                (cd fastq_query && ln -sf "../$clean_source_dir" "$sample")
-            fi
+    # Select validation samples by column NAME (robust to column additions/reordering
+    # in input_data.csv, e.g. the 'multiframe' column added for stacked images).
+    awk -F, 'NR==1{for(i=1;i<=NF;i++){if($i=="sample")s=i; if($i=="is_valid")v=i}; next}
+             s && v && $v=="True"{print $s}' trained_pretrained/input_data.csv | sort -u |
+    while read -r sample; do
+        [ -z "$sample" ] && continue
+        # Find the source directory
+        source_dir=$(find "./Bembidion" -type d -name "$sample" | head -n 1)
+        if [ -n "$source_dir" ]; then
+            # Remove ./ prefix from source_dir if present for clean symlink paths
+            clean_source_dir="${source_dir#./}"
+            # Create relative symlink in fastq_query directory
+            (cd fastq_query && ln -sf "../$clean_source_dir" "$sample")
         fi
-    done < trained_pretrained/input_data.csv
+    done
 else
     echo "${color}Warning: trained_pretrained/input_data.csv not found. Skipping query folder creation.$reset"
 fi
@@ -263,6 +276,24 @@ if [ -d "inferences_Bembidion/query_images" ]; then
     run_command "Q2" "$prefix $Q2_CMD -n $NCORES"
 else
     echo "${color}Warning: Required directory for Q2 command not found. Skipping.$reset"
+fi
+
+# Test querying multi-frame (stacked) images with --all-frames
+if [ -n "$(find images_stacked -name '*.apng' 2>/dev/null)" ] && [ -f "trained_pretrained/trained_model.pkl" ]; then
+    echo "${color}Testing query on stacked images with --all-frames...$reset"
+    run_command "Q_STACK" "$prefix $Q_STACK_CMD -n $NCORES"
+else
+    echo "${color}Warning: stacked images or trained model not found. Skipping stacked query test.$reset"
+fi
+
+# Test querying multi-frame (stacked) images with --all-frames against the
+# default Hugging Face model, which exercises a different model-loading path
+# than the locally trained .pkl used above.
+if [ -n "$(find images_stacked -name '*.apng' 2>/dev/null)" ]; then
+    echo "${color}Testing query on stacked images with --all-frames and the default model...$reset"
+    run_command "Q_STACK_HF" "$prefix $Q_STACK_HF_CMD -n $NCORES"
+else
+    echo "${color}Warning: stacked images not found. Skipping stacked query test with default model.$reset"
 fi
 
 # Test query command with FASTA images using default model
@@ -301,11 +332,15 @@ else
         case $cmd in
             "IM") echo "${color} (Image generation from FASTQ)$reset" ;;
             "IM_FASTA") echo "${color} (Image generation from FASTA, 1 Kbp min)$reset" ;;
+            "IM_STACK") echo "${color} (Multi-frame/APNG image generation)$reset" ;;
             "C") echo "${color} (Image conversion)$reset" ;;
+            "C_STACK") echo "${color} (Multi-frame image conversion)$reset" ;;
             "T1") echo "${color} (Training with pre-trained weights, $finetune_epochs epochs)$reset" ;;
             "T2") echo "${color} (Training from scratch, $pretrain_epochs epochs)$reset" ;;
             "Q1") echo "${color} (Query from FASTQ)$reset" ;;
             "Q2") echo "${color} (Query from images)$reset" ;;
+            "Q_STACK") echo "${color} (Query from stacked images, --all-frames)$reset" ;;
+            "Q_STACK_HF") echo "${color} (Query from stacked images, --all-frames, default model)$reset" ;;
             "Q_FASTA") echo "${color} (Query from FASTA images with default model)$reset" ;;
             *) echo "" ;;
         esac
@@ -314,7 +349,7 @@ fi
 
 echo -e "\n${color}Commands that failed:$reset"
 failed=false
-for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
+for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_STACK_HF Q_FASTA; do
     if [[ " ${successful_commands[*]} " != *" $cmd "* ]]; then
         # Get the exit code using the appropriate array type
         exit_code=""
@@ -347,7 +382,7 @@ if [[ "$use_time" == "Y" || "$use_time" == "y" ]]; then
     echo "${color}-------------------------------------------------------------------$reset"
     
     # Loop through commands with the appropriate array method
-    for cmd in IM IM_FASTA C T1 T2 Q1 Q2 Q_FASTA; do
+    for cmd in IM IM_FASTA IM_STACK C C_STACK T1 T2 Q1 Q2 Q_STACK Q_STACK_HF Q_FASTA; do
         wall_time=""
         cpu_time=""
         memory=""
@@ -378,4 +413,4 @@ fi
 
 echo -e "\n${color}ALL TESTS CONCLUDED$reset"
 echo "${color}If you want to remove files generated, use this command:$reset"
-echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images images_fasta images_varkode inferences* trained* stats.csv Bembidion$reset"
+echo "${color}rm -rf Bembidion_fasta Bembidion_fasta_input.csv fastq_query images* inferences* trained* stats.csv Bembidion$reset"

@@ -34,10 +34,17 @@ IM_CMD="image --seed 1 -k 7 -c 1 -m 500K -M 20M -o ./images $TESTDIR"
 IM_FASTA_CMD="image --seed 1 -k 7 -c 1 -m 1K -M 20M -o ./images_fasta ${TESTDIR_FASTA}_input.csv"
 Q_FASTA_CMD="query --seed 6 --images --threshold 0.5 --keep-images ./images_fasta ./inferences_fasta"
 C_CMD="convert --overwrite -k 7 varKode ./images ./images_varkode"
+IM_STACK_CMD="image --overwrite --seed 1 -k 7 -c 1 -m 500K -M 20M -S -o ./images_stacked $TESTDIR"
+C_STACK_CMD="convert --overwrite -k 7 varKode ./images_stacked ./images_stacked_varkode"
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
 Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained/trained_model.pkl fastq_query/ inferences_Bembidion"
 Q2_CMD="query --overwrite --threshold 0.5 --seed 5 -k 7 -c 1 -M 20M -I inferences_Bembidion/query_images inferences_SRA"
+Q_STACK_CMD="query --overwrite --seed 7 --images --all-frames --include-probs --model trained_pretrained/trained_model.pkl ./images_stacked inferences_stacked"
+# Same multi-frame path, but against the default Hugging Face model (vit_large)
+# rather than a locally trained one. No --include-probs: that model has ~28k
+# labels, which would make predictions.csv about 92 MB.
+Q_STACK_HF_CMD="query --overwrite --seed 8 --images --all-frames --threshold 0.5 ./images_stacked inferences_stacked_hf"
 SING_PULL="singularity pull --force varKoder.sif docker://brunoasm/varkoder"
 LOCAL_PREFIX="varKoder"
 

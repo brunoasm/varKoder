@@ -132,12 +132,18 @@ def get_varKoder_frame_sizes(img_path):
 
     Returns:
         List of integers (bp per frame, in frame order). Empty list if the
-        metadata is absent (e.g. legacy single-frame PNGs).
+        metadata is absent (e.g. legacy single-frame PNGs) or malformed.
     """
     raw = Image.open(img_path).info.get("varkoderFrameSizes")
     if not raw:
         return []
-    return [int(x) for x in str(raw).split(",") if x != ""]
+    # Be robust to malformed metadata in externally-supplied images: a bad
+    # varkoderFrameSizes chunk should not crash a whole query run.
+    try:
+        return [int(x) for x in str(raw).split(",") if x != ""]
+    except ValueError:
+        eprint(f"Warning: could not parse varkoderFrameSizes in {img_path}; ignoring.")
+        return []
 
 
 def iter_varKoder_images(root):

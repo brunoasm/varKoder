@@ -157,6 +157,14 @@ Follow these links for detailed information for each command. The help for the c
 3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
 4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
 
+### Trained model files
+
+> **Security note:** varKoder currently distributes trained models as fastai `.pkl` files. A `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local files passed with `--model` and to models downloaded from the Hugging Face hub, including the default model. Only load models from sources you trust.
+
+### Multi-frame (stacked) images
+
+varKoder normally writes one image per input amount for each sample. Optionally, `varKoder image --stack` consolidates all input-size images of a sample into a single multi-frame [animated PNG (APNG)](https://en.wikipedia.org/wiki/APNG) file (one frame per input amount), so there is exactly one file per sample. Frame 0 is the representative (largest-input) frame, so older readers and older versions of varKoder degrade gracefully to that frame. Stacked (`.apng`) and unstacked (`.png`) images are interchangeable across `train`, `query`, and `convert`; at query time use `--all-frames` to get a prediction for every frame instead of just the representative one. See the [image command documentation](docs/image.md#multi-frame-stacked-images) for details.
+
 ## Examples
 
 Here are quick links to example sections for each command:

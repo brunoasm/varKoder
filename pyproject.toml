@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varKoder"
-version = "1.7.0"
+version = "1.7.1"
 description = "A tool that uses variation in K-mer frequencies as DNA barcodes."
 authors = [
     {name = "Bruno de Medeiros", email = "bdemedeiros@fieldmuseum.org"},
@@ -21,6 +21,7 @@ dependencies = [
     "humanfriendly",
     "tenacity",
     "huggingface_hub[fastai]",
+    "pillow>=8.3",
 ]
 
 [project.scripts]
