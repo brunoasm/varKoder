@@ -38,8 +38,12 @@ IM_STACK_CMD="image --overwrite --seed 1 -k 7 -c 1 -m 500K -M 20M -S -o ./images
 C_STACK_CMD="convert --overwrite -k 7 varKode ./images_stacked ./images_stacked_varkode"
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
-Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained/trained_model.pkl fastq_query/ inferences_Bembidion"
+# Loads the weights-only artifact by pointing --model at the training output
+# directory (varkoder_model.safetensors + config.json). Q_STACK below covers the
+# deprecated .pkl in the same directory.
+Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained fastq_query/ inferences_Bembidion"
 Q2_CMD="query --overwrite --threshold 0.5 --seed 5 -k 7 -c 1 -M 20M -I inferences_Bembidion/query_images inferences_SRA"
+# Deliberately loads the deprecated .pkl, to keep that path covered.
 Q_STACK_CMD="query --overwrite --seed 7 --images --all-frames --include-probs --model trained_pretrained/trained_model.pkl ./images_stacked inferences_stacked"
 # Same multi-frame path, but against the default Hugging Face model (vit_large)
 # rather than a locally trained one. No --include-probs: that model has ~28k

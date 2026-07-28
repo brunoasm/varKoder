@@ -30,7 +30,9 @@ RUN pip install --no-cache-dir \
     pyarrow>=14.0.1 \
     pandas \
     humanfriendly \
-    tenacity
+    tenacity \
+    safetensors \
+    "pillow>=8.3"
 
 # Install build dependencies, build DSK, and clean up in a single layer
 RUN apt-get update && \
