@@ -108,7 +108,7 @@ For multi-frame (stacked, `.apng`) inputs, there is normally **one row per file*
  *  `trained_model_path`: path to model used to make predictions.
  *  `prediction_type`: Single label
  *  `best_pred_label`: the best taxonomic prediction.
- *  `best_pred_prob`: the confidence of the best prediction.
+ *  `best_pred_prob`: the confidence of the best prediction, as a probability between 0 and 1 (the model's outputs for a sample sum to 1 across all labels).
  *  `actual_labels`: labels in the metadata of a given varKode file. These are not used in the query command, just reported for comparison.
  *  `possible_low_quality`: whether sample possibly has low quality. See [Notes on quality labelling](image.md) for details.
  *  `basefrequency_sd`: standard deviation of base frequencies in the sample, recorded when the varKode was generated.
