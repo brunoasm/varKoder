@@ -16,6 +16,6 @@ def test_query_loads_local_dir(tiny_timm_learner, synthetic_images, tmp_path, mo
     qc.images_d = tmp_path  # no images needed for load_model path
     monkeypatch.setattr(
         "varKoder.commands.query.torch.backends.mps.is_built", lambda: False)
-    learn = qc.load_model()
+    learn = qc.load_model(n_images=1)
     assert learn.dls.vocab is not None
     assert qc.is_multilabel is False

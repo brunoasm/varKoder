@@ -181,13 +181,20 @@ class QueryCommand:
             else:
                 raise
     
-    def load_model(self) -> Any:
+    def load_model(self, n_images: int) -> Any:
         """Load the model for inference from safetensors weights (or legacy pkl).
 
         Preserves the prior device heuristic: use a GPU only when one is
         available AND there are enough images (>=128) to be worth it.
+
+        Args:
+            n_images: Number of images being queried, used only for the
+                GPU-vs-CPU heuristic. Callers should pass the count from
+                their own scan of ``self.images_d`` (e.g. via
+                ``prepare_images()``) rather than triggering a second scan
+                here, since ``iter_varKoder_images`` warns on skipped files
+                and re-scanning would print that warning twice.
         """
-        n_images = len(list(iter_varKoder_images(self.images_d)))
         gpu_available = torch.backends.mps.is_built() or (
             torch.backends.cuda.is_built() and torch.cuda.device_count()
         )
@@ -344,7 +351,7 @@ class QueryCommand:
         }
 
         # Load model
-        learn = self.load_model()
+        learn = self.load_model(len(img_paths))
         # Create data loader for inference
         df = pd.DataFrame({"path": [it["loader_path"] for it in items]})
         query_dl = learn.dls.test_dl(df, bs=self.args.max_batch_size)
