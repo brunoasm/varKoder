@@ -1,10 +1,14 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 from varKoder.core.utils import (
     format_bp_human_readable,
     get_metadata_from_img_filename,
+    get_varKoder_frame_sizes,
     parse_bp_human_readable,
 )
 
@@ -90,3 +94,29 @@ def test_get_metadata_legacy_multiframe_format():
 def test_get_metadata_rejects_malformed_names(name):
     with pytest.raises(ValueError):
         get_metadata_from_img_filename(Path(name))
+
+
+def _save_png_with_text(path, **text_items):
+    info = PngInfo()
+    for k, v in text_items.items():
+        info.add_text(k, v)
+    Image.fromarray(np.zeros((4, 4, 3), dtype="uint8")).save(path, pnginfo=info)
+
+
+def test_get_varKoder_frame_sizes_valid(tmp_path):
+    p = tmp_path / "valid.png"
+    _save_png_with_text(p, varkoderFrameSizes="10,20,30")
+    assert get_varKoder_frame_sizes(p) == [10, 20, 30]
+
+
+def test_get_varKoder_frame_sizes_absent(tmp_path):
+    p = tmp_path / "absent.png"
+    _save_png_with_text(p)  # no varkoderFrameSizes chunk at all
+    assert get_varKoder_frame_sizes(p) == []
+
+
+def test_get_varKoder_frame_sizes_malformed(tmp_path, capsys):
+    p = tmp_path / "malformed.png"
+    _save_png_with_text(p, varkoderFrameSizes="10,abc,30")
+    assert get_varKoder_frame_sizes(p) == []
+    assert "could not parse varkoderFrameSizes" in capsys.readouterr().err
