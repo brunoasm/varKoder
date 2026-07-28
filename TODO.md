@@ -9,27 +9,27 @@ Delete this file (or move anything unfinished into an issue) before tagging.
 
 ### Where we are
 
-32 tests, and 26 of them sit in just two areas — the suite was written to guard
-the safetensors work, not the program as a whole.
+66 tests. The two biggest areas are now `core/utils.py` (added by item 1
+below) and model save/resolve/rebuild/fidelity — the suite was originally
+written to guard the safetensors work, not the program as a whole, and that's
+still true outside those two areas.
 
 | Area | Tests | File |
 | --- | --- | --- |
+| `core/utils.py` (parsing, formatting, image discovery) | 33 | `test_utils.py` |
 | Model save / resolve / rebuild / fidelity | 16 | `test_model_io_{save,roundtrip,resolve,compat}.py`, `test_push_fidelity.py` |
 | Preprocessing + multi-frame pipeline | 9 | `test_preprocessing.py` |
 | Custom architectures | 3 | `test_custom_models.py` |
 | `export_trained_model` | 1 | `test_train_export.py` |
 | `QueryCommand.load_model` | 1 | `test_query_load.py` |
 | `train` CLI defaults | 1 | `test_cli_defaults.py` |
+| `convert` arbitrary-name regression (item 2 fix) | 1 | `test_convert_arbitrary_names.py` |
 | Fixture smoke test | 1 | `test_smoke.py` |
 
-The whole suite runs in ~7 s. That speed is worth protecting.
+The whole suite runs in a few seconds. That speed is worth protecting.
 
 ### What is not covered at all
 
-- **`core/utils.py`** — nothing. Includes `get_metadata_from_img_filename`,
-  which is what crashes in item 2 below, plus `iter_varKoder_images`,
-  `get_varKoder_frame_sizes`, `parse_bp_human_readable`,
-  `format_bp_human_readable`.
 - **`image` command** — k-mer counting, image array shape per mapping/k, APNG
   writing under `--stack`, tEXt metadata, quality flagging.
 - **`convert` command** — nothing, single-frame or multi-frame.
@@ -47,15 +47,16 @@ conversion, or the query output table. Only `tests/03` would, and that takes
 
 ### Proposed work, highest value first
 
-1. **`core/utils.py` unit tests.** Cheapest coverage in the repo, pure functions,
-   no fixtures needed. Round-trip `format_bp_human_readable` /
-   `parse_bp_human_readable`; parse valid varKode names across the naming
-   generations the function already claims to support (current
-   `sample@bp+mapping+kN.png`, the v0.x two-field form, and multi-frame
-   `sample@stack+mapping+kN.apng`); `iter_varKoder_images` finds `.png` and
-   `.apng` and ignores everything else (`config.IMAGE_GLOBS`, config.py:26);
-   `get_varKoder_frame_sizes` on valid, absent and malformed metadata — `main`
-   already made that tolerant in e294531, so lock it.
+1. **DONE** — **`core/utils.py` unit tests.** Cheapest coverage in the repo,
+   pure functions, no fixtures needed. Landed as `tests/test_utils.py` (33
+   tests): round-trips `format_bp_human_readable` / `parse_bp_human_readable`;
+   parses valid varKode names across the naming generations the function
+   already claims to support (current `sample@bp+mapping+kN.png`, the v0.x
+   two-field form, and multi-frame `sample@stack+mapping+kN.apng`);
+   `iter_varKoder_images` finds `.png` and `.apng`, ignores everything else,
+   recurses into subdirectories, and skips unparseable names by default (see
+   item 2 below); `get_varKoder_frame_sizes` on valid, absent and malformed
+   metadata.
 
 2. **`query` output-table tests.** The user-facing contract, currently
    integration-only. Assert the exact column set for single-label vs multi-label
@@ -103,62 +104,33 @@ conversion, or the query output table. Only `tests/03` would, and that takes
 
 ---
 
-## 2. Fix the unparseable-filename crash
+## 2. Fix the unparseable-filename crash — RESOLVED
 
-### The bug
+A single foreign or sync-conflict filename (e.g. an iCloud/Dropbox/OneDrive
+`...+k7 2.png` conflict copy) used to raise an opaque `ValueError` out of
+`get_metadata_from_img_filename` and abort an entire `train`/`query` run.
 
-One file whose name does not parse aborts an entire run:
+Fix: `iter_varKoder_images` in `varKoder/core/utils.py` gained a
+`skip_unparseable` parameter, defaulting to `True`. In that default mode it
+skips files whose names don't parse instead of raising, printing one warning
+with the total count plus a listing of the skipped paths (capped to the first
+10, with a "... and N more" line beyond that). All three commands (`train`,
+`query`, `convert`) route their directory scans through this function, so they
+inherit the behaviour automatically — except `convert`, which was given an
+explicit `skip_unparseable=False` override, since it has a real, working
+feature of remapping arbitrarily-named images when the caller passes explicit
+`--input-mapping`/`--kmer-size` overrides; an unconditional filter would have
+silently broken that.
 
-```
-ValueError: invalid literal for int() with base 10: '7 2'
-```
+Per the user's own decision at the time, this fix ships in 1.8.0 only — it is
+not backported to a 1.7.2 patch, even though `core/utils.py` was otherwise
+untouched by the safetensors branch and the bug also affects 1.7.1 and
+earlier.
 
-Raised at `varKoder/core/utils.py:306`, `int(img_kmer_size[1:])`, inside
-`get_metadata_from_img_filename`. It is called while scanning input directories
-from all three commands:
-
-- `varKoder/commands/train.py:400` (`collect_images`)
-- `varKoder/commands/query.py:237` (`_expand_query_items`)
-- `varKoder/commands/convert.py:181`
-
-So a single stray file kills a training run that may be hours in.
-
-### How to reproduce
-
-```bash
-touch "tests/images/whatever@00500K+cgr+k7 2.png"
-varKoder train --overwrite tests/images /tmp/out
-```
-
-Real-world trigger: this repo lives under an iCloud-synced `~/Documents`, and
-deleting then regenerating `tests/images*` makes iCloud restore the
-not-yet-synced deletions as `...+k7 2.png` conflict copies. Dropbox and OneDrive
-produce the same class of name. It cost two bogus integration runs on
-2026-07-28. Users keeping varKodes in a synced folder will hit it.
-
-### Decisions needed
-
-- **Skip or fail?** Recommend **skip with a warning** plus a count in the summary
-  ("ignored N files whose names are not varKode names"), because a recursive scan
-  of a user's directory will legitimately meet foreign files. A hard failure is
-  defensible for `train` only if the message names the offending files — the
-  current opaque `ValueError` is the worst of both.
-- **Where to enforce it.** Cleanest is probably to have `iter_varKoder_images`
-  (utils.py:149) yield only names that parse, so all three commands inherit the
-  behaviour, rather than patching three call sites. Check that `convert.py:181`
-  and `query.py:237` actually route through it first — `train.py:399` does.
-- **Which release.** `core/utils.py` is untouched by the safetensors branch
-  (zero diff vs `main`), so this affects **1.7.1 and earlier too**. Decide: fix
-  in 1.8.0, or also cut a 1.7.2 patch.
-- **Scope of tolerance.** Note `utils.py:297` does
-  `name.removesuffix('.png')`, so double-check `.apng` and unexpected extensions
-  behave sensibly once names are validated.
-
-### Tests to add with the fix
-
-Pure-function tests in the new `tests/test_utils.py` from item 1: a set of
-malformed names (`+k7 2`, missing `@`, missing `+`, empty k-mer field,
-non-numeric bp, a plain `notavarkode.png`) are rejected/skipped rather than
-raising; and a directory containing one good image plus each malformed name
-yields exactly the good one. Then an integration-level assertion that `train`
-completes with a warning instead of dying.
+Tests: `tests/test_utils.py` covers malformed single-frame and multi-frame
+names (rejected by `get_metadata_from_img_filename`, skipped-with-warning by
+`iter_varKoder_images`), the warning-cap behaviour, and that `skip_unparseable`
+can be disabled; `tests/test_convert_arbitrary_names.py` locks in `convert`'s
+arbitrary-name override; and a `TrainCommand.collect_images` test in
+`tests/test_utils.py` confirms `train` completes with a warning instead of
+raising.
