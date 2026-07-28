@@ -131,3 +131,29 @@ def test_iter_varKoder_images_finds_png_and_apng_only(tmp_path):
 
     found = {p.name for p in iter_varKoder_images(tmp_path)}
     assert found == {"a@00500K+cgr+k7.png", "b@stack+cgr+k7.apng"}
+
+
+def test_iter_varKoder_images_skips_unparseable_names_by_default(tmp_path, capsys):
+    good_name = f"good@{format_bp_human_readable(500000)}+cgr+k7.png"
+    (tmp_path / good_name).touch()
+    (tmp_path / "sample1@00500K+cgr+k7 2.png").touch()  # sync conflict copy
+    (tmp_path / "notavarkode.png").touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path)}
+    assert found == {good_name}
+
+    err = capsys.readouterr().err
+    assert "ignored 2 file(s)" in err
+    assert "sample1@00500K+cgr+k7 2.png" in err
+    assert "notavarkode.png" in err
+
+
+def test_iter_varKoder_images_skip_unparseable_false_yields_everything(tmp_path, capsys):
+    good_name = f"good@{format_bp_human_readable(500000)}+cgr+k7.png"
+    bad_name = "notavarkode.png"
+    (tmp_path / good_name).touch()
+    (tmp_path / bad_name).touch()
+
+    found = {p.name for p in iter_varKoder_images(tmp_path, skip_unparseable=False)}
+    assert found == {good_name, bad_name}
+    assert capsys.readouterr().err == ""

@@ -146,20 +146,48 @@ def get_varKoder_frame_sizes(img_path):
         return []
 
 
-def iter_varKoder_images(root):
+def iter_varKoder_images(root, skip_unparseable=True):
     """
     Recursively yield all varKoder image files (single-frame PNG and multi-frame APNG)
     under a directory.
 
+    A recursive scan of a user's directory will legitimately encounter files
+    whose names are not valid varKoder image names (foreign files, or
+    sync-conflict copies from iCloud/Dropbox/OneDrive that insert a suffix
+    like " 2" before the extension). By default such names are skipped with
+    a warning instead of raising, so one bad file cannot abort a whole
+    train/query run. Pass ``skip_unparseable=False`` to get every matching
+    file regardless of whether its name parses -- ``convert`` uses this,
+    since it supports remapping arbitrarily-named images when the caller
+    passes explicit ``--input-mapping``/``--kmer-size`` overrides.
+
     Args:
         root: Directory to search
+        skip_unparseable: If True (default), skip files whose names do not
+            parse as varKoder image names (see get_metadata_from_img_filename),
+            printing one warning listing how many and which were skipped.
 
     Yields:
         Path objects for each matching image file
     """
     root = Path(root)
+    skipped = []
     for pattern in IMAGE_GLOBS:
-        yield from root.rglob(pattern)
+        for f in root.rglob(pattern):
+            if skip_unparseable:
+                try:
+                    get_metadata_from_img_filename(f)
+                except ValueError:
+                    skipped.append(f)
+                    continue
+            yield f
+    if skipped:
+        eprint(
+            f"Warning: ignored {len(skipped)} file(s) whose names are not "
+            "valid varKoder image names:"
+        )
+        for f in skipped:
+            eprint(f"  {f}")
 
 
 def format_bp_human_readable(bp_count):
