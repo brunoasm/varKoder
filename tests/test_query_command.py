@@ -215,6 +215,31 @@ def test_query_single_label_output_columns_and_best_pred(tmp_path):
     assert out_df["best_pred_prob"].tolist() == pytest.approx([0.9, 0.8, 0.55, 0.5])
 
 
+def test_query_include_probs_adds_one_column_per_vocab_label(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    vocab = ["alpha", "beta"]
+    learn = _tiny_single_label_learner(df, vocab)
+
+    fake_pp = torch.tensor([
+        [0.9, 0.1],
+        [0.2, 0.8],
+        [0.55, 0.45],
+        [0.5, 0.5],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=False, include_probs=True)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "best_pred_label", "best_pred_prob", "alpha", "beta",
+    ]
+    assert out_df["alpha"].tolist() == pytest.approx([0.9, 0.2, 0.55, 0.5])
+    assert out_df["beta"].tolist() == pytest.approx([0.1, 0.8, 0.45, 0.5])
+
+
 def test_default_inter_dir_removed_after_run(tmp_path):
     df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
     learn = _tiny_single_label_learner(df, ["alpha", "beta"])
