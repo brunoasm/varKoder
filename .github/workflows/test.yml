@@ -26,3 +26,6 @@ jobs:
 
       - name: Run test suite
         run: pytest -v
+
+      - name: Run training smoke tests (slow, no external tools needed)
+        run: pytest -v -m slow tests/test_train_smoke.py
