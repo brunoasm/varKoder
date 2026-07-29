@@ -130,8 +130,16 @@ pytest
 ```
 
 By default, `pytest` skips slower tests (marked `@pytest.mark.slow`, e.g.
-ones needing external tools like `dsk`/`fastp` or exercising real training).
-Run `pytest -m slow` to include them.
+ones needing external tools like `dsk`/`fastp` or exercising real training)
+and network-dependent tests (marked `@pytest.mark.network`, e.g. ones that
+hit the Hugging Face Hub). Run `pytest -m slow` to run just the slow ones,
+`pytest -m network` to run just the network ones, or `pytest -m ''` to run
+the whole suite regardless of marker.
+
+Note: this `-m` filtering applies even when selecting a specific test by
+name, e.g. `pytest tests/test_x.py::test_something` — if that test is marked
+`slow` or `network`, it will still be reported as deselected. Add `-m ''` to
+override the default filter when running such a test directly.
 
 ### Test installation
 
