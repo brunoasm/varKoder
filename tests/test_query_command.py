@@ -1,11 +1,20 @@
 import argparse
+import tempfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
+import torch
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
+from fastai.losses import BCEWithLogitsLossFlat
+from fastai.vision.all import (
+    ColReader, ColSplitter, DataBlock, ImageBlock, MultiCategoryBlock,
+    Resize, ResizeMethod, vision_learner,
+)
 
 from varKoder.commands.query import QueryCommand
+from varKoder.core.utils import format_bp_human_readable
 
 
 def _save_single_frame(path, **text_items):
@@ -80,3 +89,84 @@ def test_expand_query_items_all_frames_expands_multiframe_only(tmp_path):
     assert len({it["loader_path"] for it in multi_items}) == 3  # 3 distinct temp files
     for it in multi_items:
         assert it["loader_path"].parent == cmd.inter_dir / "all_frames_tmp"
+
+
+def _make_query_ready_images(tmp_path, label_sets):
+    rng = np.random.default_rng(0)
+    rows = []
+    for i, lab in enumerate(label_sets):
+        arr = (rng.random((32, 32, 3)) * 255).astype("uint8")
+        p = tmp_path / f"sample{i}@{format_bp_human_readable(500000 + i)}+cgr+k7.png"
+        info = PngInfo()
+        info.add_text("varkoderKeywords", lab)
+        info.add_text("varkoderLowQualityFlag", "False")
+        info.add_text("varkoderBaseFreqSd", "0.01")
+        info.add_text("varkoderMapping", "cgr")
+        Image.fromarray(arr).save(p, pnginfo=info)
+        rows.append({"path": str(p), "labels": lab, "is_valid": i >= len(label_sets) - 1})
+    return pd.DataFrame(rows)
+
+
+def _tiny_multilabel_learner(df, vocab):
+    dbl = DataBlock(
+        blocks=(ImageBlock, MultiCategoryBlock(vocab=vocab, encoded=False)),
+        splitter=ColSplitter(),
+        get_x=ColReader("path"),
+        get_y=ColReader("labels", label_delim=";"),
+        item_tfms=Resize(32, method=ResizeMethod.Squish),
+    )
+    dls = dbl.dataloaders(df, bs=2, device="cpu", num_workers=0)
+    return vision_learner(
+        dls, "resnet18", pretrained=False, normalize=True,
+        loss_func=BCEWithLogitsLossFlat(),
+    )
+
+
+def _run_query(tmp_path, learn, is_multilabel, threshold=0.7, include_probs=False):
+    outdir = tmp_path / "out"
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(outdir), model="unused",
+        threshold=threshold, include_probs=include_probs, max_batch_size=2,
+        int_folder=None, keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = is_multilabel
+    cmd.load_model = lambda n: learn
+    cmd.run()
+    return pd.read_csv(outdir / "predictions.csv")
+
+
+def test_query_multilabel_output_columns_and_threshold_boundary(tmp_path):
+    df = _make_query_ready_images(
+        tmp_path, ["alpha", "beta", "alpha;beta", "beta"]
+    )
+    vocab = ["alpha", "beta"]
+    learn = _tiny_multilabel_learner(df, vocab)
+
+    # Row 0: exactly at threshold (boundary is inclusive, >=).
+    # Row 1: just below threshold (excluded).
+    # Row 2: both above. Row 3: both below.
+    fake_pp = torch.tensor([
+        [0.7, 0.0],
+        [0.69, 0.0],
+        [0.9, 0.8],
+        [0.1, 0.2],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=True, threshold=0.7)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "prediction_threshold", "predicted_labels",
+    ]
+    assert "best_pred_label" not in out_df.columns
+    assert "best_pred_prob" not in out_df.columns
+
+    assert out_df["predicted_labels"].where(pd.notna(out_df["predicted_labels"]), None).tolist() == ["alpha", None, "alpha;beta", None]
