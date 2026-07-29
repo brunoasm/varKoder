@@ -116,6 +116,23 @@ singularity exec --no-home --cleanenv --nv  -B $(pwd):/home -B /tmp:/tmp --pwd /
 ```
 
 
+### Unit tests
+
+This repository also has a `pytest` suite covering core utility functions,
+the preprocessing pipeline, and model I/O. Unlike the integration tests
+below, it needs no downloads and runs in a few seconds:
+
+```bash
+cd /path/to/varKoder
+conda activate varKoder
+pip install -e '.[test]'
+pytest
+```
+
+By default, `pytest` skips slower tests (marked `@pytest.mark.slow`, e.g.
+ones needing external tools like `dsk`/`fastp` or exercising real training).
+Run `pytest -m slow` to include them.
+
 ### Test installation
 
 This repository has scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). The test script also prints examples of **varKoder** usage for you to get more familiar with the software. Using the default options in the test script, the tests should take only a few minutes and produce a series of images, trained models, and predictions.
