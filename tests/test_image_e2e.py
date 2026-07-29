@@ -37,6 +37,7 @@ def _run_image(tmp_path, extra_args=()):
         "-i", str(int_dir),
         "-f", str(tmp_path / "stats.csv"),  # else defaults to ./stats.csv in cwd
         "-x",
+        "-R", "0",  # deterministic subsampling
         *extra_args,
     ])
     run_image_command(args, np.random.default_rng(args.seed))
