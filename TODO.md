@@ -9,7 +9,7 @@ Delete this file (or move anything unfinished into an issue) before tagging.
 
 ### Where we are
 
-66 tests. The two biggest areas are now `core/utils.py` (added by item 1
+81 tests. The two biggest areas are now `core/utils.py` (added by item 1
 below) and model save/resolve/rebuild/fidelity — the suite was originally
 written to guard the safetensors work, not the program as a whole, and that's
 still true outside those two areas.
@@ -19,22 +19,22 @@ still true outside those two areas.
 | `core/utils.py` (parsing, formatting, image discovery) | 33 | `test_utils.py` |
 | Model save / resolve / rebuild / fidelity | 16 | `test_model_io_{save,roundtrip,resolve,compat}.py`, `test_push_fidelity.py` |
 | Preprocessing + multi-frame pipeline | 9 | `test_preprocessing.py` |
+| `query` output tables, `--all-frames`, temp-dir cleanup | 8 | `test_query_command.py` |
+| End-to-end `image` command (dimensions, `--stack`, metadata) | 2 | `test_image_e2e.py` |
+| `convert` single-frame and stack remap | 2 | `test_convert_remap.py` |
+| 1-epoch training smoke test + `--resume` | 2 | `test_train_smoke.py` |
 | Custom architectures | 3 | `test_custom_models.py` |
 | `export_trained_model` | 1 | `test_train_export.py` |
 | `QueryCommand.load_model` | 1 | `test_query_load.py` |
 | `train` CLI defaults | 1 | `test_cli_defaults.py` |
 | `convert` arbitrary-name regression (item 2 fix) | 1 | `test_convert_arbitrary_names.py` |
+| `multiframe_images` fixture validity | 1 | `test_multiframe_images_fixture.py` |
 | Fixture smoke test | 1 | `test_smoke.py` |
 
 The whole suite runs in a few seconds. That speed is worth protecting.
 
 ### What is not covered at all
 
-- **`image` command** — k-mer counting, image array shape per mapping/k, APNG
-  writing under `--stack`, tEXt metadata, quality flagging.
-- **`convert` command** — nothing, single-frame or multi-frame.
-- **The training loop** — `export_trained_model` is tested, but `fit`/`fine_tune`,
-  per-epoch checkpointing and `--resume` are not.
 - **Sequence processing** — fastq/fasta handling, read cleaning, dsk, dedup.
 - **`query` beyond `load_model`** — `_expand_query_items`, `--all-frames` frame
   extraction, `predictions.csv` contents, threshold handling, temp-dir cleanup.
@@ -58,33 +58,38 @@ conversion, or the query output table. Only `tests/03` would, and that takes
    item 2 below); `get_varKoder_frame_sizes` on valid, absent and malformed
    metadata.
 
-2. **`query` output-table tests.** The user-facing contract, currently
+2. **DONE** — **`query` output-table tests.** The user-facing contract, currently
    integration-only. Assert the exact column set for single-label vs multi-label
    (they differ, and `best_pred_prob` is single-label only); `_expand_query_items`
    yields one item per file by default and one per frame under `--all-frames`,
    with `report_path` staying the original file and per-frame `query_basepairs`;
    `--threshold` boundary behaviour. Also lock the temp-dir cleanup that `main`
    fixed in cc4a9c8 and d6be8ad (`--int-folder`, `--keep-images`) — those are
-   exactly the kind of leak that silently regresses.
+   exactly the kind of leak that silently regresses. Landed as
+   `tests/test_query_command.py` (8 tests).
 
-3. **`convert` tests.** Reuse the existing `multiframe_images` fixture in
+3. **DONE** — **`convert` tests.** Reuse the existing `multiframe_images` fixture in
    `conftest.py`. Single-frame remap produces the expected size and preserves
    metadata; a stack remaps every frame and comes back with the same frame count
    and order (frame 0 still representative); output naming is
-   `sample@stack+mapping+kN.apng`.
+   `sample@stack+mapping+kN.apng`. Landed as `tests/test_convert_remap.py`
+   (2 tests).
 
-4. **A tiny end-to-end `image` test.** One small synthetic fastq (or fasta) →
+4. **DONE** — **A tiny end-to-end `image` test.** One small synthetic fastq (or fasta) →
    assert an image is produced with the expected dimensions for a given
    mapping/k, the filename parses back to the inputs, and `--stack` yields one
    APNG whose frames are ordered largest-bp-first with `varkoderFrameSizes` and
    `varkoderFormatVersion` set. This is the biggest coverage win but the most
    work; it needs a committed miniature fastq fixture, which the repo does not
-   have today (`tests/Bembidion` is downloaded, not committed).
+   have today (`tests/Bembidion` is downloaded, not committed). Landed as
+   `tests/test_image_e2e.py` (2 tests), backed by the committed
+   `tests/fixtures/tiny_reads/` fixture (see its README for the generation
+   recipe).
 
-5. **A 1-epoch training smoke test.** Custom arch on CPU over the synthetic
+5. **DONE** — **A 1-epoch training smoke test.** Custom arch on CPU over the synthetic
    fixture: assert the four output files appear, then resume from the checkpoint
    and assert `progress.json` advances. Guards the resume feature, which has no
-   automated coverage at all.
+   automated coverage at all. Landed as `tests/test_train_smoke.py` (2 tests).
 
 ### Suite-level decisions to make
 
@@ -98,8 +103,11 @@ conversion, or the query output table. Only `tests/03` would, and that takes
 - **DONE** — **README.** The "Unit tests" subsection documents the pytest
   suite, that it needs no downloads, and how to opt into `slow`/`network`
   tests.
-- **Fixture strategy.** Decide whether to commit a miniature fastq/fasta so
-  image-level tests can run without SRA. Keep it small enough to live in git.
+- **DONE** — **Fixture strategy.** Decide whether to commit a miniature
+  fastq/fasta so image-level tests can run without SRA. Keep it small enough
+  to live in git. A tiny synthetic fastq fixture was committed under
+  `tests/fixtures/tiny_reads/` (see its README for the generation recipe) —
+  decided and shipped.
 
 ---
 
