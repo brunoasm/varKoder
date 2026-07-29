@@ -44,7 +44,7 @@ def test_single_frame_remap_size_and_metadata(tmp_path):
 
 
 def test_stack_remap_preserves_frame_count_order_and_naming(tmp_path, multiframe_images):
-    df, labels, levels = multiframe_images
+    df, _labels, levels = multiframe_images
 
     indir = tmp_path / "in"
     indir.mkdir()

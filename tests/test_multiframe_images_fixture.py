@@ -4,7 +4,7 @@ from PIL import Image
 
 
 def test_multiframe_images_have_valid_varkoder_names_and_metadata(multiframe_images):
-    df, labels, levels = multiframe_images
+    df, labels, _levels = multiframe_images
 
     for row_path in df["path"]:
         p = Path(row_path)
