@@ -35,15 +35,26 @@ The whole suite runs in a few seconds. That speed is worth protecting.
 
 ### What is not covered at all
 
-- **Sequence processing** — fastq/fasta handling, read cleaning, dsk, dedup.
-- **`query` beyond `load_model`** — `_expand_query_items`, `--all-frames` frame
-  extraction, `predictions.csv` contents, threshold handling, temp-dir cleanup.
+- **Sequence processing** — fastq/fasta handling, read cleaning, dsk, dedup
+  (beyond what the e2e `image` test in `tests/test_image_e2e.py` exercises
+  end-to-end for one tiny fixture; no unit-level coverage of `clean_reads`,
+  `split_fastq`, etc. in isolation).
 - **Network paths** — the HF `from_pretrained_fastai` fallback and
   `hf_hub_download`. Deliberate (offline default), but see markers below.
 
-Consequence: the fast suite would not catch a regression in image generation,
-conversion, or the query output table. Only `tests/03` would, and that takes
-~25 minutes and needs the SRA download.
+**DONE** — `query` beyond `load_model` (`_expand_query_items`, `--all-frames`
+frame extraction, `predictions.csv` contents, threshold handling, temp-dir
+cleanup) is now covered by `tests/test_query_command.py` (8 tests).
+
+Consequence: the default (fast) suite now catches a regression in conversion
+or the query output table (`tests/test_convert_remap.py`,
+`tests/test_query_command.py`), and CI runs both those plus the training
+smoke test (`tests/test_train_smoke.py`, wired into `.github/workflows/test.yml`
+as a second `-m slow` step). Image generation (`tests/test_image_e2e.py`) is
+covered locally under `pytest -m slow`, but not yet in CI — it needs `dsk`/
+`fastp`/`reformat.sh` on `PATH`, which the current pip-only CI job doesn't
+install; a follow-up conda/bioconda step would close that. `tests/03` remains
+the only end-to-end check against real SRA data, and still takes ~25 minutes.
 
 ### Proposed work, highest value first
 
