@@ -60,3 +60,27 @@ def test_image_produces_expected_dimensions_and_parseable_name(tmp_path):
     assert meta["img_kmer_mapping"] == "cgr"
     assert meta["img_kmer_size"] == 5
     assert meta["multiframe"] is False
+
+
+def test_image_stack_produces_multiframe_apng_with_metadata(tmp_path):
+    outdir = _run_image(tmp_path, extra_args=["-S"])
+
+    out_path = outdir / "sample1@stack+cgr+k5.apng"
+    assert out_path.is_file()
+
+    expected_side = int(get_kmer_mapping(5, "cgr")["x"].max() + 1)
+    with Image.open(out_path) as img:
+        assert img.size == (expected_side, expected_side)
+        assert img.n_frames == 3
+        assert img.info.get("varkoderFrameSizes") == "4800,2000,1000"
+        assert img.info.get("varkoderFormatVersion") == "2"
+        assert img.info.get("varkoderKeywords") == "TestTaxon"
+
+    meta = get_metadata_from_img_filename(out_path)
+    assert meta["sample"] == "sample1"
+    assert meta["bp"] is None
+    assert meta["multiframe"] is True
+
+    # Largest-bp-first: frame sizes are already in descending order.
+    frame_sizes = [int(x) for x in img.info["varkoderFrameSizes"].split(",")]
+    assert frame_sizes == sorted(frame_sizes, reverse=True)
