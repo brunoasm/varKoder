@@ -88,17 +88,16 @@ conversion, or the query output table. Only `tests/03` would, and that takes
 
 ### Suite-level decisions to make
 
-- **Markers.** Introduce `@pytest.mark.slow` (and maybe `network`) so the default
-  `pytest` run stays a few seconds while heavier tests are opt-in
-  (`-m "not slow"` by default via `addopts` in `pyproject.toml`). Needed before
-  adding items 4 and 5, and would let us finally test the HF fallback under
-  `-m network`.
-- **CI.** `.github/workflows/` has only `docker.yml`; nothing runs pytest. Add a
-  workflow — decide the Python/OS matrix (package requires `>=3.11`; we develop
-  on ARM macOS, users are mostly Linux).
-- **README.** The testing section documents only `01_download_fastqs.sh` and
-  `03_test_installation.sh`. Mention the pytest suite and that it needs no
-  downloads.
+- **DONE** — **Markers.** `@pytest.mark.slow` and `@pytest.mark.network` are
+  introduced, and `addopts` in `pyproject.toml` excludes both by default
+  (`-m "not slow and not network"`). Still needed before adding items 4 and 5,
+  and before we can finally test the HF fallback under `-m network`.
+- **DONE** — **CI.** Added `.github/workflows/test.yml`, which runs the pytest
+  suite on push to `main` and on pull requests (single Python 3.11 job on
+  `ubuntu-latest`; no matrix).
+- **DONE** — **README.** The "Unit tests" subsection documents the pytest
+  suite, that it needs no downloads, and how to opt into `slow`/`network`
+  tests.
 - **Fixture strategy.** Decide whether to commit a miniature fastq/fasta so
   image-level tests can run without SRA. Keep it small enough to live in git.
 
