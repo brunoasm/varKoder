@@ -264,3 +264,32 @@ def test_user_supplied_int_folder_not_removed_after_run(tmp_path):
     cmd.run()
 
     assert user_dir.is_dir()
+
+
+def test_keep_images_survives_while_inter_dir_still_removed(tmp_path):
+    outdir = tmp_path / "out"
+    kept_images_d = outdir / "query_images"
+    kept_images_d.mkdir(parents=True)
+    df = _make_query_ready_images(kept_images_d, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(kept_images_d), outdir=str(outdir),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=None, keep_images=True, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = tmp_path / "auto_inter"  # separate from kept_images_d
+    cmd.inter_dir.mkdir()
+    cmd.images_d = kept_images_d
+    cmd.is_multilabel = False
+    cmd.load_model = lambda n: learn
+
+    cmd.run()
+
+    assert not cmd.inter_dir.is_dir()
+    assert kept_images_d.is_dir()
+    assert list(kept_images_d.glob("*.png"))
