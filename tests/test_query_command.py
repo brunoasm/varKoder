@@ -135,7 +135,7 @@ def _run_query(tmp_path, learn, is_multilabel, threshold=0.7, include_probs=Fals
     cmd.inter_dir.mkdir()
     cmd.images_d = tmp_path
     cmd.is_multilabel = is_multilabel
-    cmd.load_model = lambda n: learn
+    cmd.load_model = lambda *a, **kw: learn
     cmd.run()
     return pd.read_csv(outdir / "predictions.csv")
 
@@ -232,7 +232,7 @@ def test_default_inter_dir_removed_after_run(tmp_path):
     cmd.inter_dir.mkdir()
     cmd.images_d = tmp_path
     cmd.is_multilabel = False
-    cmd.load_model = lambda n: learn
+    cmd.load_model = lambda *a, **kw: learn
 
     cmd.run()
 
@@ -258,7 +258,7 @@ def test_user_supplied_int_folder_not_removed_after_run(tmp_path):
     cmd.inter_dir = user_dir
     cmd.images_d = tmp_path
     cmd.is_multilabel = False
-    cmd.load_model = lambda n: learn
+    cmd.load_model = lambda *a, **kw: learn
 
     cmd.run()
 
@@ -285,7 +285,7 @@ def test_keep_images_survives_while_inter_dir_still_removed(tmp_path):
     cmd.inter_dir.mkdir()
     cmd.images_d = kept_images_d
     cmd.is_multilabel = False
-    cmd.load_model = lambda n: learn
+    cmd.load_model = lambda *a, **kw: learn
 
     cmd.run()
 
