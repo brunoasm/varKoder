@@ -70,3 +70,21 @@ def test_one_epoch_smoke_writes_expected_outputs(tmp_path):
         "frozen_done": 0,
         "unfrozen_done": 1,
     }
+
+
+def test_resume_continues_training_and_advances_progress(tmp_path):
+    indir = tmp_path / "in"
+    indir.mkdir()
+    _make_train_images(indir)
+    outdir = tmp_path / "out"
+
+    run_train_command(_train_args(indir, outdir, epochs=1))
+
+    checkpoint_dir = outdir / "checkpoints"
+    progress_before = json.loads((checkpoint_dir / "progress.json").read_text())
+    assert progress_before["unfrozen_done"] == 1
+
+    run_train_command(_train_args(indir, outdir, epochs=2, resume=True))
+
+    progress_after = json.loads((checkpoint_dir / "progress.json").read_text())
+    assert progress_after["unfrozen_done"] == 2
