@@ -4,12 +4,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
-from fastai.losses import BCEWithLogitsLossFlat
+from fastai.losses import BCEWithLogitsLossFlat, CrossEntropyLossFlat
 from fastai.vision.all import (
-    ColReader, ColSplitter, DataBlock, ImageBlock, MultiCategoryBlock,
+    CategoryBlock, ColReader, ColSplitter, DataBlock, ImageBlock, MultiCategoryBlock,
     Resize, ResizeMethod, vision_learner,
 )
 
@@ -170,3 +171,46 @@ def test_query_multilabel_output_columns_and_threshold_boundary(tmp_path):
     assert "best_pred_prob" not in out_df.columns
 
     assert out_df["predicted_labels"].where(pd.notna(out_df["predicted_labels"]), None).tolist() == ["alpha", None, "alpha;beta", None]
+
+
+def _tiny_single_label_learner(df, vocab):
+    dbl = DataBlock(
+        blocks=(ImageBlock, CategoryBlock(vocab=vocab)),
+        splitter=ColSplitter(),
+        get_x=ColReader("path"),
+        get_y=ColReader("labels"),
+        item_tfms=Resize(32, method=ResizeMethod.Squish),
+    )
+    dls = dbl.dataloaders(df, bs=2, device="cpu", num_workers=0)
+    return vision_learner(
+        dls, "resnet18", pretrained=False, normalize=True,
+        loss_func=CrossEntropyLossFlat(),
+    )
+
+
+def test_query_single_label_output_columns_and_best_pred(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    vocab = ["alpha", "beta"]
+    learn = _tiny_single_label_learner(df, vocab)
+
+    fake_pp = torch.tensor([
+        [0.9, 0.1],
+        [0.2, 0.8],
+        [0.55, 0.45],
+        [0.5, 0.5],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=False)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "best_pred_label", "best_pred_prob",
+    ]
+    assert "prediction_threshold" not in out_df.columns
+    assert "predicted_labels" not in out_df.columns
+
+    assert out_df["best_pred_label"].tolist() == ["alpha", "beta", "alpha", "alpha"]
+    assert out_df["best_pred_prob"].tolist() == pytest.approx([0.9, 0.8, 0.55, 0.5])
