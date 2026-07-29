@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -73,6 +74,8 @@ def test_one_epoch_smoke_writes_expected_outputs(tmp_path):
 
 
 def test_resume_continues_training_and_advances_progress(tmp_path):
+    import fastai.vision.all as fastai_vision
+
     indir = tmp_path / "in"
     indir.mkdir()
     _make_train_images(indir)
@@ -84,7 +87,23 @@ def test_resume_continues_training_and_advances_progress(tmp_path):
     progress_before = json.loads((checkpoint_dir / "progress.json").read_text())
     assert progress_before["unfrozen_done"] == 1
 
-    run_train_command(_train_args(indir, outdir, epochs=2, resume=True))
+    # Mock fit_one_cycle during resumed training to verify it requests only the
+    # remaining epoch (1) rather than the full target (2), proving resume doesn't
+    # silently retrain from scratch off the checkpointed weights.
+    captured_calls = []
+    original_fit_one_cycle = fastai_vision.Learner.fit_one_cycle
+
+    def mock_fit_one_cycle(self, n_epoch, *args, **kwargs):
+        captured_calls.append(n_epoch)
+        return original_fit_one_cycle(self, n_epoch, *args, **kwargs)
+
+    with patch.object(fastai_vision.Learner, "fit_one_cycle", mock_fit_one_cycle):
+        run_train_command(_train_args(indir, outdir, epochs=2, resume=True))
+
+    # The unfrozen phase should be called with n_epoch=1 (the remaining epoch to train)
+    # Frozen phase is skipped (unfrozen_done=1, so remaining_frozen=0, phase="unfrozen")
+    assert len(captured_calls) == 1, f"Expected one fit_one_cycle call, but got {len(captured_calls)}: {captured_calls}"
+    assert captured_calls[0] == 1, f"Expected fit_one_cycle called with n_epoch=1 (remaining), but got n_epoch={captured_calls[0]}"
 
     progress_after = json.loads((checkpoint_dir / "progress.json").read_text())
     assert progress_after["unfrozen_done"] == 2
