@@ -72,14 +72,18 @@ def test_stack_remap_preserves_frame_count_order_and_naming(tmp_path, multiframe
         assert img.info.get("varkoderFrameSizes") == "3000000,1000000,300000"
         assert img.info.get("varkoderMapping") == "varKode"
 
-        frame_means = []
+        frame_levels = []
         for i in range(img.n_frames):
             img.seek(i)
-            frame_means.append(np.array(img.convert("L")).mean())
+            arr = np.array(img.convert("L"))
+            frame_levels.append(int(np.unique(arr[arr > 0])[0]))
 
-    # Frame order preserved: MULTIFRAME_LEVELS is [20, 130, 240] (ascending),
-    # so the representative frame 0 is the *darkest*, not the brightest --
-    # brightness has no inherent meaning here, it's just a per-frame constant
-    # the fixture assigns in list order. The invariant remap must preserve is
-    # that order, so the output means stay ascending too.
-    assert frame_means == sorted(frame_means)
+    # Frame order preserved: each output frame is a pure pixel permutation of
+    # its input frame (the k-mer coordinate remap), so it has exactly one
+    # non-zero pixel value -- the original frame's constant gray level. Check
+    # those levels against the fixture's actual per-frame levels in order,
+    # rather than just checking monotonicity: a regression that wrote the
+    # same frame three times (e.g. append_images=[frames[0]] * n) would still
+    # produce a monotonic (constant) sequence of means, but would fail this
+    # exact-identity check.
+    assert frame_levels == levels
