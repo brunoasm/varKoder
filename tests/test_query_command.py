@@ -214,3 +214,53 @@ def test_query_single_label_output_columns_and_best_pred(tmp_path):
 
     assert out_df["best_pred_label"].tolist() == ["alpha", "beta", "alpha", "alpha"]
     assert out_df["best_pred_prob"].tolist() == pytest.approx([0.9, 0.8, 0.55, 0.5])
+
+
+def test_default_inter_dir_removed_after_run(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(tmp_path / "out"),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=None, keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = tmp_path / "auto_inter"
+    cmd.inter_dir.mkdir()
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = False
+    cmd.load_model = lambda n: learn
+
+    cmd.run()
+
+    assert not cmd.inter_dir.is_dir()
+
+
+def test_user_supplied_int_folder_not_removed_after_run(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    user_dir = tmp_path / "user_owned_inter"
+    user_dir.mkdir()
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(tmp_path / "out"),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=str(user_dir), keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = user_dir
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = False
+    cmd.load_model = lambda n: learn
+
+    cmd.run()
+
+    assert user_dir.is_dir()
