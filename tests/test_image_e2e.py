@@ -12,13 +12,13 @@ from varKoder.core.utils import get_kmer_mapping, get_metadata_from_img_filename
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "tiny_reads"
 
 REQUIRED_TOOLS = ["dsk", "dsk2ascii", "fastp", "reformat.sh"]
-missing = [t for t in REQUIRED_TOOLS if shutil.which(t) is None]
+_MISSING_TOOLS = [t for t in REQUIRED_TOOLS if shutil.which(t) is None]
 
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
-        bool(missing),
-        reason=f"missing external tool(s) required by `image`: {missing}",
+        bool(_MISSING_TOOLS),
+        reason=f"missing external tool(s) required by `image`: {_MISSING_TOOLS}",
     ),
 ]
 
