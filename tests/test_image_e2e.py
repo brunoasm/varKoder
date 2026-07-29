@@ -1,0 +1,62 @@
+import shutil
+import tempfile
+from pathlib import Path
+
+import numpy as np
+import pytest
+from PIL import Image
+
+from varKoder.cli import setup_parser
+from varKoder.commands.image import run_image_command
+from varKoder.core.utils import get_kmer_mapping, get_metadata_from_img_filename
+
+FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "tiny_reads"
+
+REQUIRED_TOOLS = ["dsk", "dsk2ascii", "fastp", "reformat.sh"]
+missing = [t for t in REQUIRED_TOOLS if shutil.which(t) is None]
+
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        bool(missing),
+        reason=f"missing external tool(s) required by `image`: {missing}",
+    ),
+]
+
+
+def _run_image(tmp_path, extra_args=()):
+    outdir = tmp_path / "images"
+    int_dir = tmp_path / "intermediate"
+    parser = setup_parser()
+    args = parser.parse_args([
+        "image", str(FIXTURE_ROOT),
+        "-o", str(outdir),
+        "-k", "5",
+        "-p", "cgr",
+        "-m", "1K",
+        "-M", "10K",
+        "-i", str(int_dir),
+        "-f", str(tmp_path / "stats.csv"),  # else defaults to ./stats.csv in cwd
+        "-x",
+        *extra_args,
+    ])
+    run_image_command(args, np.random.default_rng(args.seed))
+    return outdir
+
+
+def test_image_produces_expected_dimensions_and_parseable_name(tmp_path):
+    outdir = _run_image(tmp_path)
+
+    out_path = outdir / "sample1@04800+cgr+k5.png"
+    assert out_path.is_file()
+
+    expected_side = int(get_kmer_mapping(5, "cgr")["x"].max() + 1)
+    with Image.open(out_path) as img:
+        assert img.size == (expected_side, expected_side)
+
+    meta = get_metadata_from_img_filename(out_path)
+    assert meta["sample"] == "sample1"
+    assert meta["bp"] == 4800
+    assert meta["img_kmer_mapping"] == "cgr"
+    assert meta["img_kmer_size"] == 5
+    assert meta["multiframe"] is False
