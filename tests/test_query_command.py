@@ -1,6 +1,4 @@
 import argparse
-import tempfile
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -133,7 +131,8 @@ def _run_query(tmp_path, learn, is_multilabel, threshold=0.7, include_probs=Fals
     )
     cmd.np_rng = np.random.default_rng(0)
     cmd.all_stats = {}
-    cmd.inter_dir = Path(tempfile.mkdtemp(prefix="barcoding_"))
+    cmd.inter_dir = tmp_path / "inter"
+    cmd.inter_dir.mkdir()
     cmd.images_d = tmp_path
     cmd.is_multilabel = is_multilabel
     cmd.load_model = lambda n: learn
