@@ -50,10 +50,11 @@ def test_stack_remap_preserves_frame_count_order_and_naming(tmp_path, multiframe
     indir.mkdir()
     outdir = tmp_path / "out"
 
-    # Move just one fixture-generated sample into its own input directory.
+    # Copy just one fixture-generated sample into its own input directory,
+    # leaving the multiframe_images fixture's own directory state untouched.
     src = Path(df["path"].iloc[0])
     dest = indir / src.name
-    shutil.move(str(src), dest)
+    shutil.copy(str(src), dest)
 
     args = argparse.Namespace(
         input=str(indir), outdir=str(outdir), output_mapping="varKode",
