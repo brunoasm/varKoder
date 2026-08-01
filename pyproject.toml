@@ -15,6 +15,10 @@ requires-python = ">=3.11"
 dependencies = [
     "torch",
     "fastai",
+    # Required, not optional: varKoder/commands/train.py imports fastai.distributed,
+    # which references accelerate.Accelerator in a decorator. Without accelerate that
+    # import raises NameError, so `varKoder train` cannot even be imported.
+    "accelerate",
     "timm",
     "pyarrow",
     "pandas",
