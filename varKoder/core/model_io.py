@@ -155,6 +155,11 @@ def build_learner(config, device="cpu", state_dict=None):
             norm_tfm.std = norm_tfm.std.to(device)
             learn.dls.add_tfms([norm_tfm], "after_batch")
     learn.model = learn.model.to(device)
+    # NOTE: the returned learner's dls carries the two placeholder rows above, whose
+    # files are gone with the temp dir. Only the transform pipeline is reusable, which
+    # is all inference needs (learn.dls.test_dl(df) builds fresh items from its own
+    # dataframe). Anything that reads the learner's own items -- one_batch(),
+    # show_batch(), get_preds() with no dl -- will raise FileNotFoundError.
     return learn
 
 
