@@ -27,7 +27,7 @@ There are two possible strategies for image classification using *varKoder*:
   
   * Single-label: in this strategy, each image is associated with a single label. Instead of predicting the confidence in each label independently, *varKoder* will output which of the labels used in training is the best one for a given query sample. This may be more straightforward to handle, since there will always be a response. But we found it to be more prone to errors. Evaluating the confidence in a particular prediction is also less straigthforward.
 
-See options below in [Usage](#Usage) section on how to implement each strategy.
+See options below in [Usage](#usage) section on how to implement each strategy.
 
 ## Installation
 
@@ -116,6 +116,31 @@ singularity exec --no-home --cleanenv --nv  -B $(pwd):/home -B /tmp:/tmp --pwd /
 ```
 
 
+### Unit tests
+
+This repository also has a `pytest` suite covering core utility functions,
+the preprocessing pipeline, and model I/O. Unlike the integration tests
+below, it needs no downloads and runs in a few seconds:
+
+```bash
+cd /path/to/varKoder
+conda activate varKoder
+pip install -e '.[test]'
+pytest
+```
+
+By default, `pytest` skips slower tests (marked `@pytest.mark.slow`, e.g.
+ones needing external tools like `dsk`/`fastp` or exercising real training)
+and network-dependent tests (marked `@pytest.mark.network`, e.g. ones that
+hit the Hugging Face Hub). Run `pytest -m slow` to run just the slow ones,
+`pytest -m network` to run just the network ones, or `pytest -m ''` to run
+the whole suite regardless of marker.
+
+Note: this `-m` filtering applies even when selecting a specific test by
+name, e.g. `pytest tests/test_x.py::test_something` — if that test is marked
+`slow` or `network`, it will still be reported as deselected. Add `-m ''` to
+override the default filter when running such a test directly.
+
 ### Test installation
 
 This repository has scripts to test the installation using `image`, `train` and `query` commands on data downloaded from the NCBI using [fastq-dump](https://rnnh.github.io/bioinfo-notebook/docs/fastq-dump.html). The test script also prints examples of **varKoder** usage for you to get more familiar with the software. Using the default options in the test script, the tests should take only a few minutes and produce a series of images, trained models, and predictions.
@@ -152,14 +177,18 @@ varKoder convert -h
 
 Follow these links for detailed information for each command. The help for the convert command includes details on the two kinds of images that varKoder can use(varKodes and rfCGRs)
 
-1. [Creating varKodes or rfCGRs with `varKoder.py image`](docs/image.md)
-2. [Training an image classification model `varKoder.py train`](docs/train.md)
-3. [Identifying an unknown sample with `varKoder.py query`](docs/query.md)
-4. [Converting between varKodes and rfCGRs with `varKoder.py convert`](docs/convert.md)
+1. [Creating varKodes or rfCGRs with `varKoder image`](docs/image.md)
+2. [Training an image classification model `varKoder train`](docs/train.md)
+3. [Identifying an unknown sample with `varKoder query`](docs/query.md)
+4. [Converting between varKodes and rfCGRs with `varKoder convert`](docs/convert.md)
 
 ### Trained model files
 
-> **Security note:** varKoder currently distributes trained models as fastai `.pkl` files. A `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local files passed with `--model` and to models downloaded from the Hugging Face hub, including the default model. Only load models from sources you trust.
+`varKoder train` saves models as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`), and `varKoder query` loads that format. The older fastai `.pkl` format is **deprecated**: it still works with `--model`/`--pretrained-model`, but loading it prints a security warning.
+
+> **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local `.pkl` files and to models downloaded from the Hugging Face hub — including the current default model, which is still published as a `.pkl` and will be republished as safetensors when it is next retrained. Only load `.pkl` models from sources you trust.
+
+See [train.md](docs/train.md#output) and [query.md](docs/query.md#models) for details.
 
 ### Multi-frame (stacked) images
 

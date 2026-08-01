@@ -22,134 +22,95 @@ import tempfile
 import shutil
 
 from fastai.vision.all import (
-    aug_transforms, vision_learner, CategoryBlock, ImageBlock, 
-    MultiCategoryBlock, DataBlock, ColReader, ColSplitter,
-    Learner, cnn_learner, accuracy, error_rate, Resize, ResizeMethod
+    vision_learner, Learner, cnn_learner, accuracy, error_rate
 )
-from fastai.vision.augment import RandomErasing
 from fastai.callback.mixup import MixUp, CutMix
 from fastai.torch_core import set_seed, default_device, defaults
-from fastai.learner import load_learner
 from fastai.losses import CrossEntropyLossFlat
 from fastai.callback.core import Callback, CancelValidException
 from fastai.metrics import accuracy, accuracy_multi, PrecisionMulti, RecallMulti, RocAuc
 from fastai.distributed import to_parallel, detach_parallel
 
-from torch.nn import CrossEntropyLoss, Module, Sequential, Linear, Flatten, LazyLinear, ReLU, Dropout, Conv1d, MaxPool1d
+from torch.nn import CrossEntropyLoss
 from timm.loss import AsymmetricLossMultiLabel
-from timm import create_model
 
 from varKoder.core.config import (
-    LABELS_SEP, CUSTOM_ARCHS
+    LABELS_SEP, CUSTOM_ARCHS, DEFAULT_ARCHITECTURE, DEFAULT_MODEL
 )
 from varKoder.core.utils import (
     eprint, get_metadata_from_img_filename, get_varKoder_labels,
     get_varKoder_qual, iter_varKoder_images
 )
-from varKoder.core.imaging import VarKodeImage, SelectRandomFrame
+from varKoder.core.preprocessing import make_dataloaders
+from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
+from varKoder.models.custom import instantiate_custom_model
 
-from PIL.Image import Resampling
 
-# Define classes for custom models
-class Arias2022Head(Module):
-    def __init__(self, n_classes):
-        super(Arias2022Head, self).__init__()
-        self.head = Sequential(Linear(64, n_classes))
-    def forward(self, x):
-        return self.head(x)
+def export_trained_model(learn, outdir, *, architecture, is_multilabel):
+    """Write both the legacy pkl (deprecated) and the safetensors artifact."""
+    outdir = Path(outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    # FutureWarning, not DeprecationWarning: Python's default filters hide
+    # DeprecationWarning outside __main__, so a DeprecationWarning raised from this
+    # module would never reach the user it is addressed to.
+    warnings.warn(
+        "Exporting trained_model.pkl is deprecated and will be removed in a "
+        "future release; use the safetensors artifact (varkoder_model.safetensors "
+        "+ config.json).",
+        FutureWarning, stacklevel=2,
+    )
+    # config must store the base timm name, never the "hf-hub:" form
+    if architecture.startswith("hf-hub:"):
+        architecture = recover_architecture(learn)
+    learn.export(outdir / "trained_model.pkl")
+    save_varkoder_model(learn, outdir, architecture=architecture,
+                        is_multilabel=is_multilabel)
+    with open(outdir / "labels.txt", "w") as f:
+        f.write("\n".join(learn.dls.vocab))
 
-class Arias2022Body(Module):
-    def __init__(self):
-        super(Arias2022Body, self).__init__()
-        self.body = Sequential(
-                Flatten(), #reshape to 1D array
-                LazyLinear(512),
-                ReLU(),
-                Dropout(0.5),
-                Linear(512, 64),
-                ReLU(),
-                Dropout(0.5))
+def resolve_pretrained_source(architecture, pretrained_model, random_weights):
+    """Decide what training starts from.
 
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.body(x)
-        return x
+    Returns the model source to fine-tune from, or None to build ``architecture``
+    from scratch (timm pretrained weights, or random with ``--random-weights``).
 
-class Fiannaca2018Head(Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Head, self).__init__()
-        self.head = Sequential(Linear(500, n_classes))
+    An explicitly requested ``--architecture`` wins over the *default*
+    ``--pretrained-model``: otherwise `train --architecture resnet18` would
+    silently fine-tune the published vision transformer instead, and for the
+    custom architectures -- whose layer shapes are incompatible with it, so none
+    of its weights would even load -- it would train something the caller never
+    asked for. Requesting both explicitly is a conflict rather than a precedence
+    question, so it raises instead of quietly picking one.
+    """
+    arch_requested = architecture != DEFAULT_ARCHITECTURE
+    model_requested = pretrained_model != DEFAULT_MODEL
+    pretrained_off = not pretrained_model or str(pretrained_model).lower() == "none"
 
-    def forward(self, x):
-        return self.head(x)
+    if arch_requested and model_requested and not pretrained_off:
+        raise ValueError(
+            f"--architecture {architecture} conflicts with --pretrained-model "
+            f"{pretrained_model}: a pretrained model already determines the "
+            "architecture. Pass only one of them, or use --pretrained-model none "
+            "to train from --architecture."
+        )
 
-class Fiannaca2018Body(Module):
-    def __init__(self):
-        super(Fiannaca2018Body, self).__init__()
-        self.flatten = Flatten()
-        self.body = Sequential(
-            Conv1d(1, 5, kernel_size=5),  # First convolutional layer
-            ReLU(),
-            MaxPool1d(kernel_size=2),  # Pooling layer
+    if pretrained_off or random_weights:
+        return None
+    if arch_requested:
+        eprint(
+            "Using requested --architecture", architecture,
+            "instead of the default pretrained model", str(pretrained_model) + ".",
+        )
+        return None
+    return pretrained_model
 
-            Conv1d(5, 10, kernel_size=5),  # Second convolutional layer
-            ReLU(),
-            MaxPool1d(kernel_size=2),  # Pooling layer
-
-            Flatten(),
-            LazyLinear(500),  # Adjust the size based on the output of previous layers
-            ReLU())
-
-    def forward(self, x):
-        x = x[:, 0, :, :] #keep only one channel
-        x = self.flatten(x)
-        x = x.unsqueeze(1)
-        x = self.body(x)
-        return x
-
-class Fiannaca2018Model(Module):
-    def __init__(self,n_classes):
-        super(Fiannaca2018Model, self).__init__()
-        self.model = Sequential(Fiannaca2018Body(),Fiannaca2018Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
-
-class Arias2022Model(Module):
-    def __init__(self,n_classes):
-        super(Arias2022Model, self).__init__()
-        self.model = Sequential(Arias2022Body(),Arias2022Head(n_classes))
-
-    def forward(self, x):
-        x = self.model(x)
-        return x
 
 def build_custom_model(architecture, dls):
-    """
-    Build a custom model architecture for training.
-    
-    Args:
-        architecture: Model architecture name
-        dls: DataLoaders object
-        
-    Returns:
-        Custom model
-    """
-    if architecture == 'arias2022':
-        custom_model = Arias2022Model(len(dls.vocab))
-    elif architecture == 'fiannaca2018':
-        custom_model = Fiannaca2018Model(len(dls.vocab))
-    else:
-        raise Exception('Custom models must be one of: fiannaca2018 arias2022')
-
-    # Initialize LazyLinear with dummy batch
-    xb, yb = dls.one_batch()
-    input_image_size = xb.shape[-2:]  
-    dummy_batch = torch.randn((1, 1, input_image_size[0], input_image_size[1]))  
-    custom_model(dummy_batch)
-
-    return custom_model
+    xb, _ = dls.one_batch()
+    input_image_size = xb.shape[-2:]
+    return instantiate_custom_model(
+        architecture, len(dls.vocab), (1, input_image_size[0], input_image_size[1])
+    )
 
 class SkipValidationCallback(Callback):
     """Callback to skip validation during training."""
@@ -321,71 +282,13 @@ def train_nn(
     batch_size = min(batch_size, max_bs)
     batch_size = max(batch_size, min_bs)
 
-    # Set kind of splitter for DataBlock
-    if "is_valid" in df.columns:
-        sptr = ColSplitter()
-    else:
-        sptr = RandomSplitter(valid_pct=valid_pct)
-
-    # Randomly draw one frame per multi-frame sample each epoch (training only; a no-op
-    # for legacy single-frame images). Must run before any Resize/ToTensor so a frame is
-    # chosen while the item is still a VarKodeImage.
-    item_transforms = [SelectRandomFrame()]
-    if architecture not in CUSTOM_ARCHS:
-        default_cfg = create_model(architecture, pretrained=False).default_cfg
-        if "fixed_input_size" in default_cfg.keys() and default_cfg["fixed_input_size"]:
-            item_transforms.append(Resize(
-                size=default_cfg["input_size"][1:],
-                method=ResizeMethod.Squish,
-                resamples=(Resampling.BOX, Resampling.BOX),
-            ))
-            eprint(
-                "Model architecture",
-                architecture,
-                "requires image resizing to",
-                str(default_cfg["input_size"][1:]),
-            )
-            eprint("This will be done automatically.")
-            
-
-    # Set batch transforms
-    transforms = aug_transforms(
-        do_flip=False,
-        max_rotate=0,
-        max_zoom=1,
-        max_lighting=max_lighting,
-        max_warp=0,
-        p_affine=0,
-        p_lighting=p_lighting,
-    )
-    
-    # Add RandomErasing if requested
-    if random_erasing:
-        transforms.append(RandomErasing())
-
-    # Set DataBlock
-    if is_multilabel:
-        blocks = (ImageBlock(cls=VarKodeImage), MultiCategoryBlock)
-        get_y = ColReader("labels", label_delim=";")
-    else:
-        blocks = (ImageBlock(cls=VarKodeImage), CategoryBlock)
-        get_y = ColReader("labels")
-
-    dbl = DataBlock(
-        blocks=blocks,
-        splitter=sptr,
-        get_x=ColReader("path"),
-        get_y=get_y,
-        item_tfms=item_transforms,
-        batch_tfms=transforms,
-    )
-
     # Create data loaders with calculated batch size and appropriate device
     device = torch.device('cpu') if force_cpu else default_device()
-    dls = dbl.dataloaders(df, 
-        bs=batch_size, 
-        device=device, 
-        num_workers=num_workers)
+    dls = make_dataloaders(
+        df, architecture, is_multilabel, bs=batch_size, device=device,
+        num_workers=num_workers, max_lighting=max_lighting, p_lighting=p_lighting,
+        random_erasing=random_erasing, valid_pct=valid_pct, verbose=True,
+    )
 
     # Create learner
     if is_multilabel:
@@ -682,19 +585,17 @@ class TrainCommand:
 
             train_architecture = self.args.architecture
 
-            if self.args.pretrained_model:
-                eprint("Loading pretrained model from file:", str(self.args.pretrained_model))
-                past_learn = load_learner(self.args.pretrained_model, cpu=load_on_cpu)
-                model_state_dict = past_learn.model.state_dict()
-                # Recover the base timm architecture from the loaded model so training can
-                # rebuild it offline (the "hf-hub:" default would otherwise fetch its config
-                # from Hugging Face even with pretrained=False).
-                try:
-                    train_architecture = past_learn.model[0].model.default_cfg["architecture"]
-                except Exception:
-                    pass  # keep --architecture (e.g. custom archs) as a fallback
+            pretrained_source = resolve_pretrained_source(
+                self.args.architecture,
+                self.args.pretrained_model,
+                self.args.random_weights,
+            )
+            if pretrained_source is not None:
+                eprint("Loading pretrained model from:", str(pretrained_source))
+                pre_state, pre_config = resolve_model(pretrained_source)
+                model_state_dict = pre_state
+                train_architecture = pre_config["architecture"]
                 pretrained = False
-                del past_learn
 
             elif not self.args.random_weights and self.args.architecture not in CUSTOM_ARCHS:
                 pretrained = True
@@ -780,13 +681,13 @@ class TrainCommand:
         
         # 10. Save results
         outdir = Path(self.args.outdir)
-        outdir.mkdir(parents=True, exist_ok=True)
-        
-        learn.export(outdir / "trained_model.pkl")
-        with open(outdir / "labels.txt", "w") as outfile:
-            outfile.write("\n".join(learn.dls.vocab))
+        export_trained_model(
+            learn, outdir,
+            architecture=train_architecture,
+            is_multilabel=not self.args.single_label,
+        )
         image_files.to_csv(outdir / "input_data.csv", index=False)
-        
+
         eprint("Model, labels, and data table saved to directory", str(outdir))
 
 

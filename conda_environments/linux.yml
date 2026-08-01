@@ -26,3 +26,5 @@ dependencies:
     - humanfriendly
     - tenacity
     - "pillow>=8.3"
+    - safetensors
+    - pytest

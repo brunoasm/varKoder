@@ -266,7 +266,7 @@ else
     echo "${color}Warning: trained_pretrained/input_data.csv not found. Skipping query folder creation.$reset"
 fi
 
-if [ -d "fastq_query" ] && [ -f "trained_pretrained/trained_model.pkl" ]; then
+if [ -d "fastq_query" ] && [ -f "trained_pretrained/varkoder_model.safetensors" ]; then
     run_command "Q1" "$prefix $Q1_CMD -n $NCORES"
 else
     echo "${color}Warning: Required files or directories for Q1 command not found. Skipping.$reset"

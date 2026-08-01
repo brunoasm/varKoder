@@ -176,7 +176,7 @@ class ConvertCommand:
             List of dictionaries with image information
         """
         image_files = []
-        for f in iter_varKoder_images(self.args.input):
+        for f in iter_varKoder_images(self.args.input, skip_unparseable=False):
             try:
                 img_metadata = get_metadata_from_img_filename(f)
                 if self.args.input_mapping:  # If input mapping passed as argument, it has priority
@@ -184,7 +184,7 @@ class ConvertCommand:
                 if self.args.kmer_size:  # If input kmer size passed as argument, it has priority
                     img_metadata['img_kmer_size'] = self.args.kmer_size
 
-            except:
+            except ValueError:
                 img_metadata = {
                     'sample': None,
                     'bp': None,

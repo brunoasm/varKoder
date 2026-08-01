@@ -1,0 +1,324 @@
+import argparse
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
+from fastai.losses import BCEWithLogitsLossFlat, CrossEntropyLossFlat
+from fastai.vision.all import (
+    CategoryBlock, ColReader, ColSplitter, DataBlock, ImageBlock, MultiCategoryBlock,
+    Resize, ResizeMethod, vision_learner,
+)
+
+from varKoder.commands.query import QueryCommand
+from varKoder.core.utils import format_bp_human_readable
+
+
+def _save_single_frame(path, **text_items):
+    info = PngInfo()
+    for k, v in text_items.items():
+        info.add_text(k, v)
+    Image.fromarray(np.zeros((8, 8, 3), dtype="uint8")).save(path, pnginfo=info)
+
+
+def _save_multiframe(path, levels, **text_items):
+    info = PngInfo()
+    for k, v in text_items.items():
+        info.add_text(k, v)
+    frames = [Image.fromarray(np.full((8, 8), lv, dtype="uint8")).convert("L") for lv in levels]
+    frames[0].save(path, save_all=True, append_images=frames[1:], pnginfo=info)
+
+
+def _make_query_command(tmp_path, all_frames=False):
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(all_frames=all_frames)
+    cmd.inter_dir = tmp_path / "inter"
+    return cmd
+
+
+def test_expand_query_items_default_one_item_per_file(tmp_path):
+    single_path = tmp_path / "sample1@00500K+cgr+k7.png"
+    _save_single_frame(single_path, varkoderKeywords="alpha")
+
+    multi_path = tmp_path / "sample2@stack+cgr+k7.apng"
+    _save_multiframe(
+        multi_path, [200, 130, 20],
+        varkoderKeywords="beta", varkoderFrameSizes="3000000,1000000,300000",
+    )
+
+    cmd = _make_query_command(tmp_path, all_frames=False)
+    items = cmd._expand_query_items([single_path, multi_path])
+
+    assert len(items) == 2
+    assert items[0]["report_path"] == single_path
+    assert items[0]["loader_path"] == single_path
+    assert items[0]["bp"] == 500000
+
+    assert items[1]["report_path"] == multi_path
+    assert items[1]["loader_path"] == multi_path
+    assert items[1]["bp"] == 3000000  # representative = frame 0 = largest bp
+
+
+def test_expand_query_items_all_frames_expands_multiframe_only(tmp_path):
+    single_path = tmp_path / "sample1@00500K+cgr+k7.png"
+    _save_single_frame(single_path, varkoderKeywords="alpha")
+
+    multi_path = tmp_path / "sample2@stack+cgr+k7.apng"
+    _save_multiframe(
+        multi_path, [200, 130, 20],
+        varkoderKeywords="beta", varkoderFrameSizes="3000000,1000000,300000",
+    )
+
+    cmd = _make_query_command(tmp_path, all_frames=True)
+    items = cmd._expand_query_items([single_path, multi_path])
+
+    # Single-frame file: unaffected, still exactly one item.
+    single_items = [it for it in items if it["report_path"] == single_path]
+    assert len(single_items) == 1
+    assert single_items[0]["loader_path"] == single_path
+
+    # Multiframe file: one item per frame, report_path stays the original
+    # file for every expanded item, bp follows varkoderFrameSizes in order.
+    multi_items = [it for it in items if it["report_path"] == multi_path]
+    assert len(multi_items) == 3
+    assert [it["bp"] for it in multi_items] == [3000000, 1000000, 300000]
+    assert all(it["report_path"] == multi_path for it in multi_items)
+    assert len({it["loader_path"] for it in multi_items}) == 3  # 3 distinct temp files
+    for it in multi_items:
+        assert it["loader_path"].parent == cmd.inter_dir / "all_frames_tmp"
+
+
+def _make_query_ready_images(tmp_path, label_sets):
+    rng = np.random.default_rng(0)
+    rows = []
+    for i, lab in enumerate(label_sets):
+        arr = (rng.random((32, 32, 3)) * 255).astype("uint8")
+        p = tmp_path / f"sample{i}@{format_bp_human_readable(500000 + i)}+cgr+k7.png"
+        info = PngInfo()
+        info.add_text("varkoderKeywords", lab)
+        info.add_text("varkoderLowQualityFlag", "False")
+        info.add_text("varkoderBaseFreqSd", "0.01")
+        info.add_text("varkoderMapping", "cgr")
+        Image.fromarray(arr).save(p, pnginfo=info)
+        rows.append({"path": str(p), "labels": lab, "is_valid": i >= len(label_sets) - 1})
+    return pd.DataFrame(rows)
+
+
+def _tiny_multilabel_learner(df, vocab):
+    dbl = DataBlock(
+        blocks=(ImageBlock, MultiCategoryBlock(vocab=vocab, encoded=False)),
+        splitter=ColSplitter(),
+        get_x=ColReader("path"),
+        get_y=ColReader("labels", label_delim=";"),
+        item_tfms=Resize(32, method=ResizeMethod.Squish),
+    )
+    dls = dbl.dataloaders(df, bs=2, device="cpu", num_workers=0)
+    return vision_learner(
+        dls, "resnet18", pretrained=False, normalize=True,
+        loss_func=BCEWithLogitsLossFlat(),
+    )
+
+
+def _run_query(tmp_path, learn, is_multilabel, threshold=0.7, include_probs=False):
+    outdir = tmp_path / "out"
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(outdir), model="unused",
+        threshold=threshold, include_probs=include_probs, max_batch_size=2,
+        int_folder=None, keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = tmp_path / "inter"
+    cmd.inter_dir.mkdir()
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = is_multilabel
+    cmd.load_model = lambda *a, **kw: learn
+    cmd.run()
+    return pd.read_csv(outdir / "predictions.csv")
+
+
+def test_query_multilabel_output_columns_and_threshold_boundary(tmp_path):
+    df = _make_query_ready_images(
+        tmp_path, ["alpha", "beta", "alpha;beta", "beta"]
+    )
+    vocab = ["alpha", "beta"]
+    learn = _tiny_multilabel_learner(df, vocab)
+
+    # Row 0: exactly at threshold (boundary is inclusive, >=).
+    # Row 1: just below threshold (excluded).
+    # Row 2: both above. Row 3: both below.
+    fake_pp = torch.tensor([
+        [0.7, 0.0],
+        [0.69, 0.0],
+        [0.9, 0.8],
+        [0.1, 0.2],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=True, threshold=0.7)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "prediction_threshold", "predicted_labels",
+    ]
+    assert "best_pred_label" not in out_df.columns
+    assert "best_pred_prob" not in out_df.columns
+
+    # Compare via pd.isna rather than Series.where(..., None): under pandas 3 the
+    # column read back from csv has the new `str` dtype, whose missing value is not
+    # a Python None, so .where(cond, None) would yield nan here and pass under
+    # pandas 2 only.
+    predicted = [None if pd.isna(x) else x for x in out_df["predicted_labels"]]
+    assert predicted == ["alpha", None, "alpha;beta", None]
+
+
+def _tiny_single_label_learner(df, vocab):
+    dbl = DataBlock(
+        blocks=(ImageBlock, CategoryBlock(vocab=vocab)),
+        splitter=ColSplitter(),
+        get_x=ColReader("path"),
+        get_y=ColReader("labels"),
+        item_tfms=Resize(32, method=ResizeMethod.Squish),
+    )
+    dls = dbl.dataloaders(df, bs=2, device="cpu", num_workers=0)
+    return vision_learner(
+        dls, "resnet18", pretrained=False, normalize=True,
+        loss_func=CrossEntropyLossFlat(),
+    )
+
+
+def test_query_single_label_output_columns_and_best_pred(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    vocab = ["alpha", "beta"]
+    learn = _tiny_single_label_learner(df, vocab)
+
+    fake_pp = torch.tensor([
+        [0.9, 0.1],
+        [0.2, 0.8],
+        [0.55, 0.45],
+        [0.5, 0.5],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=False)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "best_pred_label", "best_pred_prob",
+    ]
+    assert "prediction_threshold" not in out_df.columns
+    assert "predicted_labels" not in out_df.columns
+
+    assert out_df["best_pred_label"].tolist() == ["alpha", "beta", "alpha", "alpha"]
+    assert out_df["best_pred_prob"].tolist() == pytest.approx([0.9, 0.8, 0.55, 0.5])
+
+
+def test_query_include_probs_adds_one_column_per_vocab_label(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    vocab = ["alpha", "beta"]
+    learn = _tiny_single_label_learner(df, vocab)
+
+    fake_pp = torch.tensor([
+        [0.9, 0.1],
+        [0.2, 0.8],
+        [0.55, 0.45],
+        [0.5, 0.5],
+    ])
+    learn.get_preds = lambda **kwargs: (fake_pp, None)
+
+    out_df = _run_query(tmp_path, learn, is_multilabel=False, include_probs=True)
+
+    assert list(out_df.columns) == [
+        "varKode_image_path", "sample_id", "query_basepairs", "query_kmer_len",
+        "query_mapping", "trained_model_path", "actual_labels",
+        "possible_low_quality", "basefrequency_sd", "prediction_type",
+        "best_pred_label", "best_pred_prob", "alpha", "beta",
+    ]
+    assert out_df["alpha"].tolist() == pytest.approx([0.9, 0.2, 0.55, 0.5])
+    assert out_df["beta"].tolist() == pytest.approx([0.1, 0.8, 0.45, 0.5])
+
+
+def test_default_inter_dir_removed_after_run(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(tmp_path / "out"),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=None, keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = tmp_path / "auto_inter"
+    cmd.inter_dir.mkdir()
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = False
+    cmd.load_model = lambda *a, **kw: learn
+
+    cmd.run()
+
+    assert not cmd.inter_dir.is_dir()
+
+
+def test_user_supplied_int_folder_not_removed_after_run(tmp_path):
+    df = _make_query_ready_images(tmp_path, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    user_dir = tmp_path / "user_owned_inter"
+    user_dir.mkdir()
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(tmp_path), outdir=str(tmp_path / "out"),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=str(user_dir), keep_images=False, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = user_dir
+    cmd.images_d = tmp_path
+    cmd.is_multilabel = False
+    cmd.load_model = lambda *a, **kw: learn
+
+    cmd.run()
+
+    assert user_dir.is_dir()
+
+
+def test_keep_images_survives_while_inter_dir_still_removed(tmp_path):
+    outdir = tmp_path / "out"
+    kept_images_d = outdir / "query_images"
+    kept_images_d.mkdir(parents=True)
+    df = _make_query_ready_images(kept_images_d, ["alpha", "beta", "alpha", "beta"])
+    learn = _tiny_single_label_learner(df, ["alpha", "beta"])
+    learn.get_preds = lambda **kwargs: (torch.zeros(4, 2), None)
+
+    cmd = QueryCommand.__new__(QueryCommand)
+    cmd.args = argparse.Namespace(
+        images=True, input=str(kept_images_d), outdir=str(outdir),
+        model="unused", threshold=0.7, include_probs=False, max_batch_size=2,
+        int_folder=None, keep_images=True, all_frames=False, overwrite=True,
+    )
+    cmd.np_rng = np.random.default_rng(0)
+    cmd.all_stats = {}
+    cmd.inter_dir = tmp_path / "auto_inter"  # separate from kept_images_d
+    cmd.inter_dir.mkdir()
+    cmd.images_d = kept_images_d
+    cmd.is_multilabel = False
+    cmd.load_model = lambda *a, **kw: learn
+
+    cmd.run()
+
+    assert not cmd.inter_dir.is_dir()
+    assert kept_images_d.is_dir()
+    assert list(kept_images_d.glob("*.png"))
