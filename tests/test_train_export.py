@@ -14,4 +14,6 @@ def test_export_writes_both_and_warns(tiny_timm_learner, tmp_path):
     assert (tmp_path / MODEL_WEIGHTS_FILENAME).exists()
     assert (tmp_path / MODEL_CONFIG_FILENAME).exists()
     assert (tmp_path / "labels.txt").exists()
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    # FutureWarning specifically: DeprecationWarning is hidden by Python's default
+    # filters outside __main__, so it would never reach a user running varKoder train.
+    assert any(issubclass(w.category, FutureWarning) for w in caught)

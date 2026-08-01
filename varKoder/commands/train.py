@@ -50,11 +50,14 @@ def export_trained_model(learn, outdir, *, architecture, is_multilabel):
     """Write both the legacy pkl (deprecated) and the safetensors artifact."""
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    # FutureWarning, not DeprecationWarning: Python's default filters hide
+    # DeprecationWarning outside __main__, so a DeprecationWarning raised from this
+    # module would never reach the user it is addressed to.
     warnings.warn(
         "Exporting trained_model.pkl is deprecated and will be removed in a "
         "future release; use the safetensors artifact (varkoder_model.safetensors "
         "+ config.json).",
-        DeprecationWarning, stacklevel=2,
+        FutureWarning, stacklevel=2,
     )
     # config must store the base timm name, never the "hf-hub:" form
     if architecture.startswith("hf-hub:"):
