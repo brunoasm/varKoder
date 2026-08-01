@@ -169,7 +169,12 @@ def test_query_multilabel_output_columns_and_threshold_boundary(tmp_path):
     assert "best_pred_label" not in out_df.columns
     assert "best_pred_prob" not in out_df.columns
 
-    assert out_df["predicted_labels"].where(pd.notna(out_df["predicted_labels"]), None).tolist() == ["alpha", None, "alpha;beta", None]
+    # Compare via pd.isna rather than Series.where(..., None): under pandas 3 the
+    # column read back from csv has the new `str` dtype, whose missing value is not
+    # a Python None, so .where(cond, None) would yield nan here and pass under
+    # pandas 2 only.
+    predicted = [None if pd.isna(x) else x for x in out_df["predicted_labels"]]
+    assert predicted == ["alpha", None, "alpha;beta", None]
 
 
 def _tiny_single_label_learner(df, vocab):
