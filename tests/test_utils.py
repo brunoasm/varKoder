@@ -92,6 +92,11 @@ def test_get_metadata_legacy_multiframe_format():
         "sample1@notanumber+cgr+k7.png",    # non-numeric bp field
         "notavarkode.png",                  # no '@', no '+' at all
         "sample1@a@00500K+cgr+k7.png",      # extra '@'
+        # Same malformed shapes for the multi-frame branch, which must reject
+        # exactly what the single-frame branch rejects.
+        "sample1@a@stack+cgr+k7.apng",      # extra '@'
+        "sample_no_at_sign+cgr+k7.apng",    # missing '@' sample/bp separator
+        "sample1@stack+cgr+k.apng",         # empty k-mer size field
     ],
 )
 def test_get_metadata_rejects_malformed_names(name):

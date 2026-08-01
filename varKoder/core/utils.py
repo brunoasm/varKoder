@@ -312,7 +312,10 @@ def get_metadata_from_img_filename(img_path):
     # Multi-frame (APNG) images use a non-numeric sentinel in place of the bp segment
     # (e.g. "sample@stack+cgr+k7.apng"). There is no single bp value, so bp is None.
     if name.endswith(MULTIFRAME_EXT):
-        sample_name, split2 = name.removesuffix(MULTIFRAME_EXT).rsplit(SAMPLE_BP_SEP, 1)
+        # Plain split, like the single-frame branch below: a name with more than one
+        # SAMPLE_BP_SEP raises ValueError and is treated as not a varKoder image.
+        # rsplit here would have made an extra '@' parse for .apng but not for .png.
+        sample_name, split2 = name.removesuffix(MULTIFRAME_EXT).split(SAMPLE_BP_SEP)
         try:
             _bp_token, img_kmer_mapping, img_kmer_size = split2.split(BP_KMER_SEP)
         except ValueError:  # backwards compatible with varKoder v0.X layout
