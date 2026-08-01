@@ -35,7 +35,7 @@ from torch.nn import CrossEntropyLoss
 from timm.loss import AsymmetricLossMultiLabel
 
 from varKoder.core.config import (
-    LABELS_SEP, CUSTOM_ARCHS
+    LABELS_SEP, CUSTOM_ARCHS, DEFAULT_ARCHITECTURE, DEFAULT_MODEL
 )
 from varKoder.core.utils import (
     eprint, get_metadata_from_img_filename, get_varKoder_labels,
@@ -64,6 +64,43 @@ def export_trained_model(learn, outdir, *, architecture, is_multilabel):
                         is_multilabel=is_multilabel)
     with open(outdir / "labels.txt", "w") as f:
         f.write("\n".join(learn.dls.vocab))
+
+def resolve_pretrained_source(architecture, pretrained_model, random_weights):
+    """Decide what training starts from.
+
+    Returns the model source to fine-tune from, or None to build ``architecture``
+    from scratch (timm pretrained weights, or random with ``--random-weights``).
+
+    An explicitly requested ``--architecture`` wins over the *default*
+    ``--pretrained-model``: otherwise `train --architecture resnet18` would
+    silently fine-tune the published vision transformer instead, and for the
+    custom architectures -- whose layer shapes are incompatible with it, so none
+    of its weights would even load -- it would train something the caller never
+    asked for. Requesting both explicitly is a conflict rather than a precedence
+    question, so it raises instead of quietly picking one.
+    """
+    arch_requested = architecture != DEFAULT_ARCHITECTURE
+    model_requested = pretrained_model != DEFAULT_MODEL
+    pretrained_off = not pretrained_model or str(pretrained_model).lower() == "none"
+
+    if arch_requested and model_requested and not pretrained_off:
+        raise ValueError(
+            f"--architecture {architecture} conflicts with --pretrained-model "
+            f"{pretrained_model}: a pretrained model already determines the "
+            "architecture. Pass only one of them, or use --pretrained-model none "
+            "to train from --architecture."
+        )
+
+    if pretrained_off or random_weights:
+        return None
+    if arch_requested:
+        eprint(
+            "Using requested --architecture", architecture,
+            "instead of the default pretrained model", str(pretrained_model) + ".",
+        )
+        return None
+    return pretrained_model
+
 
 def build_custom_model(architecture, dls):
     xb, _ = dls.one_batch()
@@ -545,14 +582,14 @@ class TrainCommand:
 
             train_architecture = self.args.architecture
 
-            use_pretrained = (
-                self.args.pretrained_model
-                and str(self.args.pretrained_model).lower() != "none"
-                and not self.args.random_weights
+            pretrained_source = resolve_pretrained_source(
+                self.args.architecture,
+                self.args.pretrained_model,
+                self.args.random_weights,
             )
-            if use_pretrained:
-                eprint("Loading pretrained model from:", str(self.args.pretrained_model))
-                pre_state, pre_config = resolve_model(self.args.pretrained_model)
+            if pretrained_source is not None:
+                eprint("Loading pretrained model from:", str(pretrained_source))
+                pre_state, pre_config = resolve_model(pretrained_source)
                 model_state_dict = pre_state
                 train_architecture = pre_config["architecture"]
                 pretrained = False

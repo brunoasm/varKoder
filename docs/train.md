@@ -40,14 +40,14 @@ There are two modes of training:
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
 | -f VALIDATION_SET_FRACTION, --validation-set-fraction VALIDATION_SET_FRACTION | fraction of samples to be held as a random validation set. If using multi-label, this applies to all samples. If using single-label, this applies to each species. (default: 0.2) |
-| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | model to fine-tune from: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). Overrides `--architecture`, since the architecture is read from the pretrained model itself. Pass `none` to ignore any pretrained model and train from `--architecture` instead. (default: brunoasm/vit_large_patch32_224.NCBI_SRA, the published varKoder model) |
+| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | model to fine-tune from: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). Used when `--architecture` is not given, since a pretrained model already determines the architecture; passing both is an error. Pass `none` to ignore any pretrained model and train from `--architecture` instead. (default: brunoasm/vit_large_patch32_224.NCBI_SRA, the published varKoder model) |
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
 | -B MIN_BATCH_SIZE, --min-batch-size MIN_BATCH_SIZE | minimum batch size for training. (default: 1) |
 | -C, --cpu | force use CPU for training instead of GPU. (default: False) |
 | -r BASE_LEARNING_RATE, --base-learning-rate BASE_LEARNING_RATE | base learning rate used in training. See https://walkwithfastai.com/lr_finder for information on learning rates. (default: 0.005) |
 | -e EPOCHS, --epochs EPOCHS | number of epochs to train. See https://docs.fast.ai/callback.schedule.html#learner.fine_tune (default: 30) |
 | -z FREEZE_EPOCHS, --freeze-epochs FREEZE_EPOCHS | number of freeze epochs to train. Recommended if using a pretrained model, but probably unnecessary if training from scratch. See https://docs.fast.ai/callback. schedule.html#learner.fine_tune (default: 0) |
-| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Takes effect when you opt out of the default pretrained model, i.e. when you pass `--pretrained-model none` or `--random-weights` (otherwise the architecture comes from the pretrained model, see below). (default: vit_large_patch32_224)|
+| -c ARCHITECTURE, --architecture ARCHITECTURE | model architecture. See below for details of possible options. Passing this takes precedence over the default `--pretrained-model`, so training starts from this architecture rather than fine-tuning the published model (see below). (default: vit_large_patch32_224)|
 | -i NEGATIVE_DOWNWEIGHTING, --negative_downweighting NEGATIVE_DOWNWEIGHTING | Parameter controlling strength of loss downweighting for negative samples. See gamma(negative) parameter in https://arxiv.org/abs/2009.14119. Ignored if used with --single-label. (default: 4) |
 | -w, --random-weights | start training with random weights. By default, pretrained model weights are downloaded from timm. See https://github.com/rwightman/pytorch-image-models. (default: False) |
 | -M, --no-metrics | skip calculation of validation loss and metrics (default: False) |
@@ -67,14 +67,14 @@ By default, `varKoder train` fine-tunes an existing pretrained model rather than
 2. A Hugging Face Hub repo id.
 3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory when one is available.
 
-Whenever a pretrained model is used, its architecture is used for training and `--architecture` is ignored. To train from scratch instead, pass `--pretrained-model none` or `--random-weights`; training then starts from `--architecture`, using timm's pretrained weights for that architecture by default, or random weights if `--random-weights` is also given.
+The pretrained model determines the architecture, so `--pretrained-model` and `--architecture` cannot both be given — passing both is an error. To train a specific architecture instead of fine-tuning the published model, just pass `--architecture`: that opts out of the default pretrained model automatically, and varKoder says so on stderr. `--pretrained-model none` and `--random-weights` do the same thing explicitly. In all of those cases training starts from `--architecture`, using timm's pretrained weights for it by default, or random weights if `--random-weights` is given.
 
 ```bash
 # Fine-tune the default published model (architecture comes from that model)
 varKoder train path/to/images output_dir
 
 # Ignore any pretrained model and train a resnet50 from timm's pretrained weights
-varKoder train path/to/images output_dir --pretrained-model none --architecture resnet50
+varKoder train path/to/images output_dir --architecture resnet50
 
 # Continue training from a model you trained previously
 varKoder train path/to/images output_dir --pretrained-model path/to/previous_output_dir
@@ -82,29 +82,29 @@ varKoder train path/to/images output_dir --pretrained-model path/to/previous_out
 
 ## Model architecture
 
-`--architecture` takes effect when you opt out of the default pretrained model, i.e. when you pass `--pretrained-model none` or `--random-weights` (see above). We support three possible inputs here:
+Passing `--architecture` opts out of the default pretrained model (see above). We support three possible inputs here:
 
 1. Models supported by the timm library
 
 You can use as input the name of a model supported by the timm library (see https://huggingface.co/docs/timm/quickstart for details). For example, this will use timm library to train a model using the resnet50 architecture pulled from timm library, starting from timm's pretrained weights for it:
 
-`varKoder train --pretrained-model none --architecture resnet50 input_dir output_dir`
+`varKoder train --architecture resnet50 input_dir output_dir`
 
 2. Models from Hugging Face hub
 
 The timm library allows downloading models from Hugging face hub directly. See
-https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf-hub:' to the model repository on Hugging Face Hub. For example, the following will train from scratch using the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data (note: to instead fine-tune varKoder's published model, just use the default `--pretrained-model`, as shown in the section above):
-`varKoder train --pretrained-model none --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
+https://huggingface.co/docs/hub/timm for possible options. To pull a model, prepend 'hf-hub:' to the model repository on Hugging Face Hub. For example, the following will train using the vit_large_patch32_224 architecture pretrained with varKodes produced from NCBI data (note: to instead fine-tune varKoder's published model, just omit `--architecture`, as shown in the section above):
+`varKoder train --architecture hf-hub:brunoasm/vit_large_patch32_224.NCBI_SRA input_dir output_dir`
 
 3. Models previously used with chaos game representations
 
 We implemented two models previously applied to chaos game representations. In both cases, images are linearized instead of being treated as 2D images. 
 
 To use the model employed by [DeLUCS](https://github.com/Kari-Genomics-Lab/iDeLUCS), use option `arias2022`:
-`varKoder train --pretrained-model none --architecture arias2022 input_dir output_dir`
+`varKoder train --architecture arias2022 input_dir output_dir`
 
 To use the model employed by Fiannaca (2018), use option `fiannaca2018`:
-`varKoder train --pretrained-model none --architecture fiannaca2018 input_dir output_dir`
+`varKoder train --architecture fiannaca2018 input_dir output_dir`
 
 In both cases, there are no pretrained models available, you will have to train starting from random weights.
 
@@ -209,10 +209,10 @@ By default, this fine-tunes the published varKoder model (brunoasm/vit_large_pat
 Train a model using a ResNet50 architecture instead of fine-tuning the default pretrained model:
 
 ```bash
-varKoder train path/to/images resnet50_model --pretrained-model none --architecture resnet50
+varKoder train path/to/images resnet50_model --architecture resnet50
 ```
 
-`--pretrained-model none` disables the default pretrained model so that `--architecture` takes effect; this trains a ResNet50 (starting from timm's pretrained weights for it) instead of the default vision transformer, which may train faster but might have lower accuracy.
+Passing `--architecture` opts out of the default pretrained model; this trains a ResNet50 (starting from timm's pretrained weights for it) instead of the default vision transformer, which may train faster but might have lower accuracy.
 
 ### Example 3: Single-label Classification with Label Smoothing
 

@@ -1,12 +1,16 @@
 """1-epoch training smoke tests for a custom architecture.
 
-Two real pitfalls shape how `_train_args` builds its argv here. First,
-leaving `--pretrained-model` at its default while using a custom
-architecture triggers an unwanted Hugging Face download. Second,
-`--mix-augmentation None` combined with a custom architecture crashes in
-fastai's callback wiring (`Learner(cbs=None)`), and MixUp itself crashes on
-a batch size of 1. So `-B 2` (`--min-batch-size 2`) is passed to keep the
-batch size above 1, while `--mix-augmentation` is left at its default.
+`-m none` is passed explicitly so these tests state, rather than rely on,
+that no Hugging Face download happens. (Passing `-c fiannaca2018` alone
+already opts out of the default pretrained model -- see
+tests/test_train_pretrained_source.py -- but a training test should not be
+where that regresses into a download.)
+
+The other constraint: `--mix-augmentation None` combined with a custom
+architecture crashes in fastai's callback wiring (`Learner(cbs=None)`), and
+MixUp itself crashes on a batch size of 1. So `-B 2` (`--min-batch-size 2`)
+is passed to keep the batch size above 1, while `--mix-augmentation` is left
+at its default.
 """
 
 import json

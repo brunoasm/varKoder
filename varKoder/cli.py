@@ -225,15 +225,21 @@ def setup_parser():
     parser_train.add_argument(
         "-c",
         "--architecture",
-        help="model architecture. Options include all those supported by timm library plus 'arias2022' and 'fiannaca2018'. See documentation for more info. ",
+        help=("model architecture. Options include all those supported by timm library "
+              "plus 'arias2022' and 'fiannaca2018'. Passing this takes precedence over "
+              "the default --pretrained-model, so training starts from this architecture "
+              "instead of fine-tuning the published varKoder model. See documentation "
+              "for more info. "),
         default=DEFAULT_ARCHITECTURE,
     )
     parser_train.add_argument(
         "-m", "--pretrained-model",
         help=("model to fine-tune from: a local model directory, a Hugging Face "
               "repo id, or a legacy .pkl file (deprecated). Defaults to the "
-              "published varKoder model. Pass 'none' to train from --architecture "
-              "instead (timm pretrained weights, or random with --random-weights)."),
+              "published varKoder model, which is used when --architecture is not "
+              "given. Pass 'none' to train from --architecture instead (timm "
+              "pretrained weights, or random with --random-weights). Passing both "
+              "this and --architecture is an error."),
         default=DEFAULT_MODEL,
     )
     parser_train.add_argument(
