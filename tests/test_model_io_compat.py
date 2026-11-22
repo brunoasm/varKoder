@@ -161,3 +161,50 @@ def test_rebuilt_learner_activation_matches_model_kind(synthetic_images, tmp_pat
     pp, _ = sl.get_preds(dl=sl.dls.test_dl(q))
     # softmax: one label per sample, rows sum to 1
     assert torch.allclose(pp.sum(1), torch.ones(len(q)), atol=1e-4)
+
+
+def _rewrite_pickle_module(pkl, old, new):
+    """Rewrite the module path recorded for pickled classes inside a torch.save
+    archive. torch.save uses pickle protocol 2, whose GLOBAL opcode stores
+    "module\\nname\\n" as plain text, so a byte replacement is a faithful edit."""
+    import zipfile
+    src = zipfile.ZipFile(pkl)
+    out = pkl.with_name("legacy_" + pkl.name)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as dst:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename.endswith(".pkl"):
+                assert old.encode() in data
+                data = data.replace(old.encode() + b"\n", new.encode() + b"\n")
+            dst.writestr(info, data)
+    return out
+
+
+def test_custom_arch_pkl_from_1_7_module_path_loads(tmp_path):
+    """varKoder 1.1-1.7 defined the custom architectures in
+    varKoder.commands.train, so their pickles look the classes up there. Those
+    .pkl files must keep loading now that the classes live in
+    varKoder.models.custom."""
+    size = 32
+    labels = ["alpha", "beta"]
+    rng = np.random.default_rng(0)
+    rows = []
+    for i in range(4):
+        arr = (rng.random((size, size, 3)) * 255).astype("uint8")
+        p = tmp_path / f"img_{i}.png"
+        Image.fromarray(arr).save(p)
+        rows.append({"path": str(p), "labels": labels[i % 2], "is_valid": i >= 3})
+    dls = DataBlock(
+        blocks=(ImageBlock, CategoryBlock(vocab=labels, sort=False)),
+        splitter=ColSplitter(), get_x=ColReader("path"), get_y=ColReader("labels"),
+    ).dataloaders(pd.DataFrame(rows), bs=2, device="cpu", num_workers=0)
+    learn = Learner(dls, instantiate_custom_model("fiannaca2018", 2, (1, size, size)),
+                    loss_func=CrossEntropyLossFlat())
+    pkl = tmp_path / "trained_model.pkl"
+    learn.export(pkl)
+    legacy = _rewrite_pickle_module(pkl, "varKoder.models.custom", "varKoder.commands.train")
+
+    with pytest.warns(UserWarning):
+        state, cfg = resolve_model(str(legacy))
+    assert cfg["architecture"] == "fiannaca2018"
+    assert set(state) == set(learn.model.state_dict())

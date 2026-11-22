@@ -44,6 +44,14 @@ from varKoder.core.utils import (
 from varKoder.core.preprocessing import make_dataloaders
 from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
 from varKoder.models.custom import instantiate_custom_model
+# Pickles exported by varKoder 1.1-1.7 record the custom architectures under this
+# module (varKoder.commands.train.Fiannaca2018Model etc.), where they were defined
+# before moving to varKoder.models.custom. Keep the names importable from here or
+# those legacy .pkl models can no longer be unpickled.
+from varKoder.models.custom import (  # noqa: F401  (re-exported for unpickling)
+    Arias2022Body, Arias2022Head, Arias2022Model,
+    Fiannaca2018Body, Fiannaca2018Head, Fiannaca2018Model,
+)
 
 
 def export_trained_model(learn, outdir, *, architecture, is_multilabel):
