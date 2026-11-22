@@ -12,6 +12,7 @@ from pathlib import Path
 
 import torch
 from fastai.vision.all import load_learner
+from fastcore.basics import noop
 from huggingface_hub import HfApi
 
 from varKoder.core.model_io import (
@@ -26,11 +27,17 @@ def verify_fidelity(learn, sample_image_dir, out_dir, atol=1e-5):
     if not imgs:
         raise SystemExit("No sample PNGs found for fidelity check.")
     df = pd.DataFrame({"path": imgs})
-    baseline, _ = learn.get_preds(dl=learn.dls.test_dl(df))
+    # Compare raw model outputs. Without act=noop, get_preds applies whatever
+    # activation each learner's loss defines, and the two losses differ: varKoder
+    # trains with AsymmetricLossMultiLabel or torch's CrossEntropyLoss, which
+    # define none (raw logits), while the rebuilt learner's BCEWithLogitsLossFlat /
+    # CrossEntropyLossFlat give sigmoid / softmax. Identical weights would then
+    # compare logits against probabilities and always fail.
+    baseline, _ = learn.get_preds(dl=learn.dls.test_dl(df), act=noop)
 
     state, cfg = resolve_model(str(out_dir))
     rebuilt = build_learner(cfg, device="cpu", state_dict=state)
-    after, _ = rebuilt.get_preds(dl=rebuilt.dls.test_dl(df))
+    after, _ = rebuilt.get_preds(dl=rebuilt.dls.test_dl(df), act=noop)
     return torch.allclose(baseline, after, atol=atol)
 
 
