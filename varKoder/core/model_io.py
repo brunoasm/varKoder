@@ -240,8 +240,8 @@ def resolve_model(source):
         return state, config
     except EntryNotFoundError:
         # Repo exists but lacks the weights-only artifact: fall back to the
-        # legacy pickled fastai model (deprecated, unsafe). This is the path the
-        # current default model still takes, so give it its own error handling --
+        # legacy pickled fastai model (deprecated, unsafe). Repos published
+        # before varKoder 1.8 take this path, so give it its own error handling --
         # an exception raised in here is NOT caught by the sibling clause below.
         warnings.warn(_PICKLE_WARNING, UserWarning)
         try:

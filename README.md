@@ -186,7 +186,7 @@ Follow these links for detailed information for each command. The help for the c
 
 `varKoder train` saves models as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `varkoder_config.json`), and `varKoder query` loads that format. The older fastai `.pkl` format is **deprecated**: it still works with `--model`/`--pretrained-model`, but loading it prints a security warning.
 
-> **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local `.pkl` files and to models downloaded from the Hugging Face hub — including the current default model, which is still published as a `.pkl` and will be republished as safetensors when it is next retrained. Only load `.pkl` models from sources you trust.
+> **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies both to local `.pkl` files and to `.pkl` models downloaded from the Hugging Face hub. The default model is published as safetensors, so it loads without running pickled code. Only load `.pkl` models from sources you trust.
 
 See [train.md](docs/train.md#output) and [query.md](docs/query.md#models) for details.
 
