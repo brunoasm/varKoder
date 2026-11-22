@@ -120,3 +120,34 @@ def test_resume_continues_training_and_advances_progress(tmp_path):
 
     progress_after = json.loads((checkpoint_dir / "progress.json").read_text())
     assert progress_after["unfrozen_done"] == 2
+
+
+def test_finetune_keeps_source_model_normalization(tmp_path):
+    """Fine-tuning from a model (the default: the published varKoder model) loads
+    its weights with pretrained=False, so fastai adds no Normalize of its own.
+    The source model's stats must still be applied, or its weights see inputs on
+    a different scale than they were trained on -- and the fine-tuned model's
+    config records normalize: null."""
+    from varKoder.core.model_io import build_learner, save_varkoder_model
+
+    indir = tmp_path / "in"
+    indir.mkdir()
+    _make_train_images(indir)
+    stats = {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}
+    src = build_learner(
+        {"architecture": "resnet18", "label_names": ["alpha", "beta"],
+         "is_multilabel": False, "num_classes": 2, "input_size": [3, 32, 32],
+         "normalize": stats},
+        device="cpu",
+    )
+    save_varkoder_model(src, tmp_path / "src", architecture="resnet18",
+                        is_multilabel=False)
+
+    outdir = tmp_path / "out"
+    argv = ["train", str(indir), str(outdir), "-m", str(tmp_path / "src"),
+            "-e", "1", "-z", "0", "-C", "-g", "-M", "-S", "-B", "2", "-x"]
+    run_train_command(setup_parser().parse_args(argv))
+
+    cfg = json.loads((outdir / MODEL_CONFIG_FILENAME).read_text())
+    assert cfg["architecture"] == "resnet18"
+    assert cfg["normalize"] == stats

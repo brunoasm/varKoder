@@ -37,6 +37,23 @@ def _extract_normalize(dls):
     return None
 
 
+def add_normalize(dls, norm, device):
+    """Append Normalize(mean, std) from a config's ``normalize`` entry to ``dls``.
+
+    No-op when ``norm`` is None (the model was trained without normalization) or
+    when the pipeline already normalizes.
+    """
+    if norm is None or _extract_normalize(dls) is not None:
+        return
+    # from_stats(cuda=True) puts stats on the DEFAULT device via to_device;
+    # Normalize.encodes does (x - mean) with no device coercion, so stats
+    # must sit on THIS learner's device. Build on CPU, then move explicitly.
+    norm_tfm = Normalize.from_stats(norm["mean"], norm["std"], cuda=False)
+    norm_tfm.mean = norm_tfm.mean.to(device)
+    norm_tfm.std = norm_tfm.std.to(device)
+    dls.add_tfms([norm_tfm], "after_batch")
+
+
 def recover_architecture(learn):
     """Return the base architecture name of a learner (timm or custom)."""
     from varKoder.models.custom import Fiannaca2018Model, Arias2022Model
@@ -145,15 +162,7 @@ def build_learner(config, device="cpu", state_dict=None):
             if state_dict is not None:
                 learn.model.load_state_dict(state_dict, strict=True)
 
-        norm = config.get("normalize")
-        if norm is not None:
-            # from_stats(cuda=True) puts stats on the DEFAULT device via to_device;
-            # Normalize.encodes does (x - mean) with no device coercion, so stats
-            # must sit on THIS learner's device. Build on CPU, then move explicitly.
-            norm_tfm = Normalize.from_stats(norm["mean"], norm["std"], cuda=False)
-            norm_tfm.mean = norm_tfm.mean.to(device)
-            norm_tfm.std = norm_tfm.std.to(device)
-            learn.dls.add_tfms([norm_tfm], "after_batch")
+        add_normalize(learn.dls, config.get("normalize"), device)
     learn.model = learn.model.to(device)
     # NOTE: the returned learner's dls carries the two placeholder rows above, whose
     # files are gone with the temp dir. Only the transform pipeline is reusable, which

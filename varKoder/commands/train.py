@@ -42,7 +42,9 @@ from varKoder.core.utils import (
     get_varKoder_qual, iter_varKoder_images
 )
 from varKoder.core.preprocessing import make_dataloaders
-from varKoder.core.model_io import save_varkoder_model, recover_architecture, resolve_model
+from varKoder.core.model_io import (
+    save_varkoder_model, recover_architecture, resolve_model, add_normalize,
+)
 from varKoder.models.custom import instantiate_custom_model
 # Pickles exported by varKoder 1.1-1.7 record the custom architectures under this
 # module (varKoder.commands.train.Fiannaca2018Model etc.), where they were defined
@@ -237,7 +239,8 @@ def train_nn(
     force_cpu=False,
     random_erasing=False,
     checkpoint_dir=None,
-    resume_progress=None
+    resume_progress=None,
+    normalize_stats=None,
 ):
     """
     Train a neural network model on varKode images.
@@ -266,6 +269,10 @@ def train_nn(
         no_metrics: Whether to skip metrics computation
         force_cpu: Whether to force CPU usage instead of GPU
         random_erasing: Whether to apply RandomErasing augmentation
+        normalize_stats: {'mean': [...], 'std': [...]} the model being fine-tuned was
+            trained with (its config's ``normalize``). Applied when fastai does not
+            add normalization itself, which it only does for timm weights
+            (``pretrained=True``).
         
     Returns:
         Trained model
@@ -335,6 +342,11 @@ def train_nn(
                                loss_func=loss_fn,
                             )
     
+    # Fine-tuning loads weights itself (pretrained=False), so fastai adds no
+    # Normalize. Feed the weights inputs on the scale they were trained on.
+    if normalize and normalize_stats is not None:
+        add_normalize(learn.dls, normalize_stats, device)
+
     # Only use FP16 if not forcing CPU (FP16 is typically GPU-only)
     if not force_cpu:
         learn = learn.to_fp16()
@@ -566,6 +578,7 @@ class TrainCommand:
         model_state_dict = None
         resume_progress = None
         pretrained = False
+        normalize_stats = None
 
         if self.resuming:
             # Resume from checkpoint: reuse the exact split and architecture recorded at the
@@ -603,6 +616,7 @@ class TrainCommand:
                 pre_state, pre_config = resolve_model(pretrained_source)
                 model_state_dict = pre_state
                 train_architecture = pre_config["architecture"]
+                normalize_stats = pre_config.get("normalize")
                 pretrained = False
 
             elif not self.args.random_weights and self.args.architecture not in CUSTOM_ARCHS:
@@ -684,6 +698,7 @@ class TrainCommand:
             random_erasing=self.args.random_erasing,
             checkpoint_dir=self.checkpoint_dir,
             resume_progress=resume_progress,
+            normalize_stats=normalize_stats,
             **extra_params
         )
         
