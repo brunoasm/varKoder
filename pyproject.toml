@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varKoder"
-version = "1.7.1"
+version = "1.8.0"
 description = "A tool that uses variation in K-mer frequencies as DNA barcodes."
 authors = [
     {name = "Bruno de Medeiros", email = "bdemedeiros@fieldmuseum.org"},
@@ -15,6 +15,10 @@ requires-python = ">=3.11"
 dependencies = [
     "torch",
     "fastai",
+    # Required, not optional: varKoder/commands/train.py imports fastai.distributed,
+    # which references accelerate.Accelerator in a decorator. Without accelerate that
+    # import raises NameError, so `varKoder train` cannot even be imported.
+    "accelerate",
     "timm",
     "pyarrow",
     "pandas",
@@ -22,7 +26,11 @@ dependencies = [
     "tenacity",
     "huggingface_hub[fastai]",
     "pillow>=8.3",
+    "safetensors",
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.scripts]
 varKoder = "varKoder.cli:main"
@@ -33,3 +41,12 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 varKoder = ["kmer_mapping/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-m 'not slow and not network'"
+markers = [
+    "slow: heavier tests (external tools, real training) not run by default; use -m slow to run them",
+    "network: tests that hit the network (e.g. Hugging Face Hub); not run by default; use -m network to run them",
+]

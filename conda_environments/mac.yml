@@ -22,3 +22,5 @@ dependencies:
     - tenacity
     - "huggingface_hub~=0.29.0"
     - "pillow>=8.3"
+    - safetensors
+    - pytest

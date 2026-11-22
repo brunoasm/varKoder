@@ -42,9 +42,7 @@ from varKoder.commands.image import (
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-from fastai.learner import load_learner
-from fastai.torch_core import to_device, to_cpu
-from huggingface_hub import from_pretrained_fastai
+from varKoder.core.model_io import resolve_model, build_learner
 
 
 class QueryCommand:
@@ -183,47 +181,43 @@ class QueryCommand:
             else:
                 raise
     
-    def load_model(self) -> Any:
+    def load_model(self, n_images: int) -> Any:
+        """Load the model for inference from safetensors weights (or legacy pkl).
+
+        Preserves the prior device heuristic: use a GPU only when one is
+        available AND there are enough images (>=128) to be worth it.
+
+        Args:
+            n_images: Number of images being queried, used only for the
+                GPU-vs-CPU heuristic. Callers should pass the count from
+                their own scan of ``self.images_d`` (e.g. via
+                ``prepare_images()``) rather than triggering a second scan
+                here, since ``iter_varKoder_images`` warns on skipped files
+                and re-scanning would print that warning twice.
         """
-        Load the model for inference.
-        
-        Returns:
-            Loaded model
-        """
-        n_images = len(list(iter_varKoder_images(self.images_d)))
-        # Check if GPU is available
-        if torch.backends.mps.is_built() or (torch.backends.cuda.is_built() 
-                                           and torch.cuda.device_count()):
+        gpu_available = torch.backends.mps.is_built() or (
+            torch.backends.cuda.is_built() and torch.cuda.device_count()
+        )
+        if gpu_available:
             eprint("GPU available. Will try to use GPU for processing.")
-            load_on_cpu = False
         else:
-            load_on_cpu = True
             eprint("GPU not available. Using CPU for processing.")
-        
-        try:
-            if n_images >= 128 and not load_on_cpu:
-                eprint(n_images, "images in the input, will use GPU for prediction.")
-                learn = load_learner(self.args.model, cpu=False)
+
+        if gpu_available and n_images >= 128:
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
             else:
-                eprint(n_images, "images in the input, will use CPU for prediction.")
-                learn = load_learner(self.args.model, cpu=True)
-        except FileNotFoundError:
-            eprint('Model', self.args.model, "not found locally, trying Hugging Face hub.")
-            try: 
-                learn = from_pretrained_fastai(self.args.model)
-                if n_images >= 128 and not load_on_cpu:
-                    if torch.backends.cuda.is_built() and torch.cuda.device_count():
-                        learn.model = learn.model.to('cuda')
-                        learn.dls.device = 'cuda'
-                    elif torch.backends.mps.is_built() and torch.backends.mps.is_available():
-                        learn.model = learn.model.to('mps')
-                        learn.dls.device = 'mps'
-                    else:
-                        learn.model = learn.model.to('cpu')
-                        learn.dls.device = 'cpu'
-            except Exception as e:
-                raise Exception(f"Unable to load model '{self.args.model}' locally or from Hugging Face Hub, please check")
-        
+                device = "cpu"
+        else:
+            device = "cpu"
+        eprint(n_images, "images in the input, will use", device, "for prediction.")
+
+        state_dict, config = resolve_model(self.args.model)
+        self.is_multilabel = config["is_multilabel"]
+        learn = build_learner(config, device=device, state_dict=state_dict)
+        learn.dls.device = device
         return learn
     
     def _expand_query_items(self, img_paths: List[Path]) -> List[Dict[str, Any]]:
@@ -357,13 +351,13 @@ class QueryCommand:
         }
 
         # Load model
-        learn = self.load_model()
+        learn = self.load_model(len(img_paths))
         # Create data loader for inference
         df = pd.DataFrame({"path": [it["loader_path"] for it in items]})
         query_dl = learn.dls.test_dl(df, bs=self.args.max_batch_size)
         
         # Make predictions
-        if "MultiLabel" in str(learn.loss_func):
+        if self.is_multilabel:
             eprint(
                 "This is a multilabel classification model, each input may have 0 or more predictions."
             )

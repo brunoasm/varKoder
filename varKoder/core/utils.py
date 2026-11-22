@@ -146,20 +146,54 @@ def get_varKoder_frame_sizes(img_path):
         return []
 
 
-def iter_varKoder_images(root):
+def iter_varKoder_images(root, skip_unparseable=True):
     """
     Recursively yield all varKoder image files (single-frame PNG and multi-frame APNG)
     under a directory.
 
+    A recursive scan of a user's directory will legitimately encounter files
+    whose names are not valid varKoder image names (foreign files, or
+    sync-conflict copies from iCloud/Dropbox/OneDrive that insert a suffix
+    like " 2" before the extension). By default such names are skipped with
+    a warning instead of raising, so one bad file cannot abort a whole
+    train/query run. Pass ``skip_unparseable=False`` to get every matching
+    file regardless of whether its name parses -- ``convert`` uses this,
+    since it supports remapping arbitrarily-named images when the caller
+    passes explicit ``--input-mapping``/``--kmer-size`` overrides.
+
     Args:
         root: Directory to search
+        skip_unparseable: If True (default), skip files whose names do not
+            parse as varKoder image names (see get_metadata_from_img_filename),
+            printing one warning listing how many and which were skipped.
 
     Yields:
         Path objects for each matching image file
     """
     root = Path(root)
+    # NOTE: this summary only prints if the caller fully drains the generator
+    # (list(...) or a complete for-loop); an early break/next() will silently
+    # skip it.
+    skipped = []
     for pattern in IMAGE_GLOBS:
-        yield from root.rglob(pattern)
+        for f in root.rglob(pattern):
+            if skip_unparseable:
+                try:
+                    get_metadata_from_img_filename(f)
+                except ValueError:
+                    skipped.append(f)
+                    continue
+            yield f
+    if skipped:
+        eprint(
+            f"Warning: ignored {len(skipped)} file(s) whose names are not "
+            "valid varKoder image names:"
+        )
+        max_listed = 10
+        for f in skipped[:max_listed]:
+            eprint(f"  {f}")
+        if len(skipped) > max_listed:
+            eprint(f"  ... and {len(skipped) - max_listed} more")
 
 
 def format_bp_human_readable(bp_count):
@@ -169,9 +203,9 @@ def format_bp_human_readable(bp_count):
     
     Examples:
         1868000 -> "01868K"
-        100000567 -> "00100G" 
+        100000567 -> "00100M"
         1898 -> "01898"
-        5000000000 -> "05000M"
+        5000000000 -> "00005G"
         123 -> "00123"
     
     Args:
@@ -278,7 +312,10 @@ def get_metadata_from_img_filename(img_path):
     # Multi-frame (APNG) images use a non-numeric sentinel in place of the bp segment
     # (e.g. "sample@stack+cgr+k7.apng"). There is no single bp value, so bp is None.
     if name.endswith(MULTIFRAME_EXT):
-        sample_name, split2 = name.removesuffix(MULTIFRAME_EXT).rsplit(SAMPLE_BP_SEP, 1)
+        # Plain split, like the single-frame branch below: a name with more than one
+        # SAMPLE_BP_SEP raises ValueError and is treated as not a varKoder image.
+        # rsplit here would have made an extra '@' parse for .apng but not for .png.
+        sample_name, split2 = name.removesuffix(MULTIFRAME_EXT).split(SAMPLE_BP_SEP)
         try:
             _bp_token, img_kmer_mapping, img_kmer_size = split2.split(BP_KMER_SEP)
         except ValueError:  # backwards compatible with varKoder v0.X layout
