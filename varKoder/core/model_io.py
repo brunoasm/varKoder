@@ -19,7 +19,7 @@ from varKoder.core.preprocessing import make_dataloaders
 from varKoder.models.custom import instantiate_custom_model, new_custom_model
 
 MODEL_WEIGHTS_FILENAME = "varkoder_model.safetensors"
-MODEL_CONFIG_FILENAME = "config.json"
+MODEL_CONFIG_FILENAME = "varkoder_config.json"
 
 _PICKLE_WARNING = (
     "Loading a pickled (.pkl) model executes arbitrary code on load. This is "

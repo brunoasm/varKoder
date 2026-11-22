@@ -372,7 +372,7 @@ def setup_parser():
         "-l",
         "--model",
         help=("trained model: a local model directory (varkoder_model.safetensors "
-              "+ config.json), a Hugging Face repo id, or a legacy .pkl file "
+              "+ varkoder_config.json), a Hugging Face repo id, or a legacy .pkl file "
               "(deprecated)."),
         default=DEFAULT_MODEL
     )

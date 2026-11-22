@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Publish a varKoder model to Hugging Face as safetensors weights + config.json.
+"""Publish a varKoder model to Hugging Face as safetensors weights + varkoder_config.json.
 
 Loads a trusted local .pkl, exports the safetensors artifact, verifies that the
 rebuilt model reproduces the pkl's predictions on sample images, and only then

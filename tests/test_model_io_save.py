@@ -39,3 +39,11 @@ def test_save_captures_normalization(tiny_timm_learner, tmp_path):
     cfg = json.loads((tmp_path / MODEL_CONFIG_FILENAME).read_text())
     assert cfg["normalize"] is not None
     assert len(cfg["normalize"]["mean"]) == 3 and len(cfg["normalize"]["std"]) == 3
+
+
+def test_config_filename_does_not_collide_with_timm():
+    """timm's push_to_hf_hub writes config.json, and the published default model
+    repo has one that varKoder <= 1.7 reads (its default architecture loads
+    straight from that repo through timm). Uploading varKoder's config under the
+    same name would overwrite it and break those versions."""
+    assert MODEL_CONFIG_FILENAME != "config.json"

@@ -66,7 +66,7 @@ def export_trained_model(learn, outdir, *, architecture, is_multilabel):
     warnings.warn(
         "Exporting trained_model.pkl is deprecated and will be removed in a "
         "future release; use the safetensors artifact (varkoder_model.safetensors "
-        "+ config.json).",
+        "+ varkoder_config.json).",
         FutureWarning, stacklevel=2,
     )
     # config must store the base timm name, never the "hf-hub:" form

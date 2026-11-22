@@ -40,7 +40,7 @@ There are two modes of training:
 | -d THRESHOLD, --threshold THRESHOLD | Confidence threshold to calculate validation set metrics during training. Ignored if using --single-label (default: 0.7) |
 | -V VALIDATION_SET, --validation-set VALIDATION_SET | comma-separated list of sample IDs to be included in the validation set, or path to a text file with such a list. If not provided, a random validation set will be created. See `--validation-set-fraction` to choose the fraction of samples used as validation. |
 | -f VALIDATION_SET_FRACTION, --validation-set-fraction VALIDATION_SET_FRACTION | fraction of samples to be held as a random validation set. If using multi-label, this applies to all samples. If using single-label, this applies to each species. (default: 0.2) |
-| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | model to fine-tune from: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). Used when `--architecture` is not given, since a pretrained model already determines the architecture; passing both is an error. Pass `none` to ignore any pretrained model and train from `--architecture` instead. (default: brunoasm/vit_large_patch32_224.NCBI_SRA, the published varKoder model) |
+| -m PRETRAINED_MODEL, --pretrained-model PRETRAINED_MODEL | model to fine-tune from: a local model directory (containing `varkoder_model.safetensors` + `varkoder_config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). Used when `--architecture` is not given, since a pretrained model already determines the architecture; passing both is an error. Pass `none` to ignore any pretrained model and train from `--architecture` instead. (default: brunoasm/vit_large_patch32_224.NCBI_SRA, the published varKoder model) |
 | -b MAX_BATCH_SIZE, --max-batch-size MAX_BATCH_SIZE | maximum batch size when using GPU for training. (default: 64) |
 | -B MIN_BATCH_SIZE, --min-batch-size MIN_BATCH_SIZE | minimum batch size for training. (default: 1) |
 | -C, --cpu | force use CPU for training instead of GPU. (default: False) |
@@ -63,7 +63,7 @@ There are two modes of training:
 
 By default, `varKoder train` fine-tunes an existing pretrained model rather than starting from scratch: `--pretrained-model` defaults to the published varKoder model (`brunoasm/vit_large_patch32_224.NCBI_SRA`). `--pretrained-model` accepts three kinds of sources:
 
-1. A local model directory produced by a previous `varKoder train` run, containing `varkoder_model.safetensors` + `config.json`.
+1. A local model directory produced by a previous `varKoder train` run, containing `varkoder_model.safetensors` + `varkoder_config.json`.
 2. A Hugging Face Hub repo id.
 3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning, since unpickling executes arbitrary code; prefer a safetensors model directory when one is available.
 
@@ -167,12 +167,12 @@ epochs and between stacked and unstacked datasets. Single-frame images are unaff
 
 At the end of the training cycle, the following files are written to the output folder selected by the user:
  - `varkoder_model.safetensors`: the trained model weights, in the [safetensors](https://github.com/huggingface/safetensors) weights-only format. Loading this file does not execute any code.
- - `config.json`: the architecture name, label names, number of classes, input image size, whether the model is multi-label, and normalization stats — everything needed to rebuild the model from `varkoder_model.safetensors`. `varKoder query` reads `is_multilabel` from here to decide which kind of predictions to report. Together, these two files fully describe the trained model — pass the output directory itself to `--pretrained-model` (to keep training it) or to `varKoder query --model` (to make predictions with it).
+ - `varkoder_config.json`: the architecture name, label names, number of classes, input image size, whether the model is multi-label, and normalization stats — everything needed to rebuild the model from `varkoder_model.safetensors`. `varKoder query` reads `is_multilabel` from here to decide which kind of predictions to report. Together, these two files fully describe the trained model — pass the output directory itself to `--pretrained-model` (to keep training it) or to `varKoder query --model` (to make predictions with it).
  - `trained_model.pkl`: the same model exported with `fastai`'s pickle-based format.
 
    > **Deprecation:** `trained_model.pkl` is still written for backward
    > compatibility but is **deprecated** and will be removed in a future release.
-   > Prefer `varkoder_model.safetensors` + `config.json`, which load without
+   > Prefer `varkoder_model.safetensors` + `varkoder_config.json`, which load without
    > executing pickled code.
 
  - `labels.txt`: a text file with the labels that can be predicted using this model.
@@ -232,7 +232,7 @@ Fine-tune a pretrained model by first training only the final layer:
 varKoder train path/to/images transfer_model --pretrained-model path/to/existing_model_dir --freeze-epochs 5 --epochs 20
 ```
 
-This loads a model you trained previously (a directory containing `varkoder_model.safetensors` + `config.json`) and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning. A Hugging Face repo id or a legacy `.pkl` file (deprecated) can also be passed to `--pretrained-model`.
+This loads a model you trained previously (a directory containing `varkoder_model.safetensors` + `varkoder_config.json`) and trains it with 5 epochs where only the last layer is updated (frozen epochs), followed by 15 epochs where all layers are updated, which is useful for transfer learning. A Hugging Face repo id or a legacy `.pkl` file (deprecated) can also be passed to `--pretrained-model`.
 
 ### Example 5: Customizing Training Parameters
 

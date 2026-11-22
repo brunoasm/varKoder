@@ -1,6 +1,6 @@
 # varKoder query
 
-The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details. Models trained with `varKoder train` are saved and loaded as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `config.json`). The default model on Hugging Face Hub is still published in the older fastai `.pkl` format, so querying with it prints a security warning until it is next retrained. See [Models](#models) below for the accepted `--model` sources.
+The `query` command predicts labels based on a trained model and unknown samples. You can use `varKoder train` to train your own model, but by default a pretrained model available on huggingface hub is used. Currently, this model is [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA), follow the link for more details. Models trained with `varKoder train` are saved and loaded as weights-only [safetensors](https://github.com/huggingface/safetensors) (`varkoder_model.safetensors` + `varkoder_config.json`). The default model on Hugging Face Hub is still published in the older fastai `.pkl` format, so querying with it prints a security warning until it is next retrained. See [Models](#models) below for the accepted `--model` sources.
 
 ## Input format
 
@@ -29,7 +29,7 @@ If the input folder contains images (single-frame `png` varKodes and/or multi-fr
 | `-R SEED`, `--seed SEED` |  optional random seed to make sample preprocessing reproducible. |
 | `-x` `--overwrite` | overwrite results. | 
 | `-vv`, `--version` |  shows varKoder version. |
-| `-l MODEL`, `--model MODEL` | trained model to use for prediction: a local model directory (containing `varkoder_model.safetensors` + `config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
+| `-l MODEL`, `--model MODEL` | trained model to use for prediction: a local model directory (containing `varkoder_model.safetensors` + `varkoder_config.json`), a Hugging Face repo id, or a legacy `.pkl` file (deprecated, loads with a security warning). (default: brunoasm/vit_large_patch32_224.NCBI_SRA) | 
 | `-v`, `--verbose` |  show output for `fastp`, `dsk` and `bbtools`. By default these are ommited. This may be useful in debugging if you get errors. |
 | `-1`, `--no-pairs` |  prevents varKoder query from considering folder structure in input to find read pairs. Each fastq file will be treated as a separate sample. But default, we assume that folders contain reads for each sample. | 
 | `-I`, `--images` |  input folder contains processed images instead of raw reads. (default: False). If you use this flag, all options for sequence processing will be ignored and `varKoder` will look for `png` and multi-frame `apng` files in the input folder. It will report the predictions for these image files. |
@@ -66,8 +66,8 @@ If the `--images` argument is used, `varKoder query` will not attempt to process
 ## Models
 `--model` accepts three kinds of sources:
 
-1. A local model directory produced by `varKoder train`, containing `varkoder_model.safetensors` + `config.json`. This is the recommended way to use a model you trained yourself: point `--model` at the training output directory.
-2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA). varKoder downloads `varkoder_model.safetensors` + `config.json` if the repo has them, and otherwise falls back to the repo's pickled fastai model. The current default model has not been republished yet, so it takes the fallback path and prints the security warning below.
+1. A local model directory produced by `varKoder train`, containing `varkoder_model.safetensors` + `varkoder_config.json`. This is the recommended way to use a model you trained yourself: point `--model` at the training output directory.
+2. A Hugging Face Hub repo id, such as the default model, [brunoasm/vit_large_patch32_224.NCBI_SRA](https://huggingface.co/brunoasm/vit_large_patch32_224.NCBI_SRA). varKoder downloads `varkoder_model.safetensors` + `varkoder_config.json` if the repo has them, and otherwise falls back to the repo's pickled fastai model. The current default model has not been republished yet, so it takes the fallback path and prints the security warning below.
 3. A legacy `.pkl` file exported by an older varKoder version. Loading a `.pkl` is **deprecated** and prints a security warning; prefer a safetensors model directory or Hugging Face repo when one is available.
 
 > **Security note:** a `.pkl` file is a Python pickle, so loading one executes code stored in that file. This applies to local `--model` paths ending in `.pkl` and to Hugging Face repos without the safetensors artifact — including the current default model. Only load `.pkl` models from sources you trust. Safetensors models carry weights only and are not affected.
@@ -130,7 +130,7 @@ This processes the fastq files to generate varKodes, then uses the default Huggi
 
 ### Example 2: Using Your Custom-trained Model
 
-Query samples using a model you trained (point `--model` at the training output directory, which contains `varkoder_model.safetensors` + `config.json`):
+Query samples using a model you trained (point `--model` at the training output directory, which contains `varkoder_model.safetensors` + `varkoder_config.json`):
 
 ```bash
 varKoder query path/to/fastq_files custom_query_results --model path/to/trained_model_dir --threshold 0.7

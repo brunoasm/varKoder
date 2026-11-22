@@ -39,7 +39,7 @@ C_STACK_CMD="convert --overwrite -k 7 varKode ./images_stacked ./images_stacked_
 T1_CMD_BASE="train --overwrite --seed 2"
 T2_CMD_BASE="train --overwrite --seed 3 --random-weights"
 # Loads the weights-only artifact by pointing --model at the training output
-# directory (varkoder_model.safetensors + config.json). Q_STACK below covers the
+# directory (varkoder_model.safetensors + varkoder_config.json). Q_STACK below covers the
 # deprecated .pkl in the same directory.
 Q1_CMD="query --overwrite --include-probs --seed 4 -k 7 -c 1 -M 20M --keep-images --model trained_pretrained fastq_query/ inferences_Bembidion"
 Q2_CMD="query --overwrite --threshold 0.5 --seed 5 -k 7 -c 1 -M 20M -I inferences_Bembidion/query_images inferences_SRA"

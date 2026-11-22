@@ -19,15 +19,15 @@ def test_resolve_legacy_pkl_warns(tiny_timm_learner, tmp_path):
 
 
 def test_resolve_dir_missing_config_is_clear(tiny_timm_learner, tmp_path):
-    # A directory with the weights file but no config.json should raise a
+    # A directory with the weights file but no varkoder_config.json should raise a
     # clear, actionable error rather than a bare FileNotFoundError.
     save_varkoder_model(tiny_timm_learner, tmp_path,
                         architecture="resnet18", is_multilabel=False)
-    (tmp_path / "config.json").unlink()
+    (tmp_path / "varkoder_config.json").unlink()
     with pytest.raises(ValueError) as exc:
         resolve_model(str(tmp_path))
     msg = str(exc.value)
-    assert "config.json" in msg and str(tmp_path) in msg
+    assert "varkoder_config.json" in msg and str(tmp_path) in msg
 
 
 def test_resolve_bogus_source_is_clear():
